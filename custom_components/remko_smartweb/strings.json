@@ -27,6 +27,7 @@
         "title": "REMKO SmartWeb Options",
         "data": {
           "scan_interval": "Polling interval (seconds)",
+          "model": "Indoor unit model",
           "min_temp": "Min temperature (override)",
           "max_temp": "Max temperature (override)"
         }

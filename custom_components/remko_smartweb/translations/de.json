@@ -27,6 +27,7 @@
         "title": "REMKO SmartWeb Optionen",
         "data": {
           "scan_interval": "Polling-Intervall (Sekunden)",
+          "model": "Innengerät-Modell",
           "min_temp": "Minimale Temperatur (Override)",
           "max_temp": "Maximale Temperatur (Override)"
         }

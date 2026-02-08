@@ -34,6 +34,7 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 ## Options
 - Polling interval (seconds)
 - Min/Max temperature (override for UI bounds)
+- Indoor unit model (used to set default min/max)
 
 ## Temperature limits
 - MXW 204/264/354/524 are auto-mapped to 17–30 °C based on the device name.

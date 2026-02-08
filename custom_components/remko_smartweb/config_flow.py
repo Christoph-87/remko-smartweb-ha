@@ -11,6 +11,7 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
+    CONF_MODEL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_MIN_TEMP,
     DEFAULT_MAX_TEMP,
@@ -119,18 +120,37 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        model = self._config_entry.options.get(CONF_MODEL, "other")
+        model_defaults = {
+            "mxw_204": (17, 30),
+            "mxw_264": (17, 30),
+            "mxw_354": (17, 30),
+            "mxw_524": (17, 30),
+            "other": (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP),
+        }
+        d_min, d_max = model_defaults.get(model, (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP))
+
         schema = vol.Schema({
+            vol.Optional(CONF_MODEL, default=model): vol.In(
+                {
+                    "mxw_204": "MXW 204",
+                    "mxw_264": "MXW 264",
+                    "mxw_354": "MXW 354",
+                    "mxw_524": "MXW 524",
+                    "other": "Other / Unknown",
+                }
+            ),
             vol.Optional(
                 CONF_SCAN_INTERVAL,
                 default=self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
             ): vol.Coerce(int),
             vol.Optional(
                 CONF_MIN_TEMP,
-                default=self._config_entry.options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP),
+                default=self._config_entry.options.get(CONF_MIN_TEMP, d_min),
             ): vol.Coerce(int),
             vol.Optional(
                 CONF_MAX_TEMP,
-                default=self._config_entry.options.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP),
+                default=self._config_entry.options.get(CONF_MAX_TEMP, d_max),
             ): vol.Coerce(int),
         })
         return self.async_show_form(step_id="init", data_schema=schema)

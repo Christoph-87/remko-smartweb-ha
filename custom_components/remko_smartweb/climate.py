@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, CONF_MIN_TEMP, CONF_MAX_TEMP, DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
+from .const import DOMAIN, CONF_MIN_TEMP, CONF_MAX_TEMP, CONF_MODEL, DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 HVAC_MAP = {
     "auto": HVACMode.AUTO,
@@ -27,7 +27,7 @@ PRESET_MODES = ["none", "eco", "turbo", "sleep", "bioclean"]
 
 
 def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
-    # Known MXW models use 17-30°C (user-confirmed). Fallback to default.
+    # Legacy fallback by name; prefer explicit model option in config flow.
     name = (device_name or "").upper()
     for model in ("MXW 204", "MXW 264", "MXW 354", "MXW 524"):
         if model in name:
@@ -40,7 +40,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = data["coordinator"]
     client = data["client"]
     device_name = data["device_name"]
-    inferred_min, inferred_max = _infer_min_max_temp(device_name)
+    model = entry.options.get(CONF_MODEL, "other")
+    model_defaults = {
+        "mxw_204": (17, 30),
+        "mxw_264": (17, 30),
+        "mxw_354": (17, 30),
+        "mxw_524": (17, 30),
+        "other": _infer_min_max_temp(device_name),
+    }
+    inferred_min, inferred_max = model_defaults.get(model, _infer_min_max_temp(device_name))
     min_temp = entry.options.get(CONF_MIN_TEMP, inferred_min)
     max_temp = entry.options.get(CONF_MAX_TEMP, inferred_max)
 

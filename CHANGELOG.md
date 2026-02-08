@@ -1,11 +1,14 @@
 # Changelog
 
+## v0.1.10
+- Configurable indoor unit model (MXW 204/264/354/524 or Other)
+- Defaults min/max temperature based on selected model
+
 ## v0.1.8
 - Climate preset modes (eco, turbo, sleep, bioclean)
 - HVAC action reporting for nicer UI
 - Optimistic updates skip setpoint changes
 - My Home Assistant quick-add link in README
-
 ## v0.1.6
 - Auto-select device when only one exists
 - Configurable min/max temperature bounds in options
