@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "REMKO SmartWeb",
+        "description": "Enter your SmartWeb credentials and device name.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "device_name": "Device name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect. Check credentials and device name."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "REMKO SmartWeb Options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  }
+}

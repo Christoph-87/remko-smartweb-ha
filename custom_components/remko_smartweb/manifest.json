@@ -1,0 +1,11 @@
+{
+  "domain": "remko_smartweb",
+  "name": "REMKO SmartWeb",
+  "version": "0.1.0",
+  "documentation": "https://github.com/Christoph-87/remko-smartweb-poc",
+  "requirements": ["requests>=2.31.0", "paho-mqtt>=1.6.1"],
+  "dependencies": [],
+  "codeowners": ["@Christoph-87"],
+  "config_flow": true,
+  "iot_class": "cloud_polling"
+}
