@@ -40,6 +40,60 @@ def _extract_sid_sk_from_text(text: str):
     return None
 
 
+def _extract_smt_user_from_text(text: str):
+    for pat in (
+        r"SMT_USER\\s*[:=]\\s*(\\d+)",
+        r"\"SMT_USER\"\\s*:\\s*(\\d+)",
+        r"smt_user\\s*[:=]\\s*(\\d+)",
+        r"\"smt_user\"\\s*:\\s*(\\d+)",
+    ):
+        m = re.search(pat, text, flags=re.I)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                pass
+    return None
+
+
+def _extract_global_var(text: str, key: str):
+    patterns = [
+        rf"global\\.{key}\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
+        rf"window\\.{key}\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
+        rf"\\b{key}\\b\\s*:\\s*['\\\"]([^'\\\"]+)['\\\"]",
+        rf"\\b{key}\\b\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _extract_smt_user_from_scripts(session: requests.Session, html: str):
+    scripts = re.findall(r'<script[^>]+src="([^"]+)"', html, flags=re.I)
+    for src in scripts:
+        if not src:
+            continue
+        src_abs = urljoin(BASE, src)
+        try:
+            r = session.get(src_abs, timeout=15)
+            r.raise_for_status()
+        except Exception:
+            continue
+        text = r.text
+        smt = _extract_smt_user_from_text(text)
+        if smt is not None:
+            return smt
+        v = _extract_global_var(text, "SMT_USER")
+        if v is not None:
+            try:
+                return int(v)
+            except Exception:
+                pass
+    return None
+
+
 def _extract_names_from_rest_list(html: str):
     name_map = {}
     if not html:
@@ -201,6 +255,52 @@ def _parse_c0_from_rx(rx_hex: str):
     }
 
 
+def _extract_values_from_payload(payload: str):
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return None
+    if isinstance(data, dict) and "values" in data:
+        return data.get("values")
+    # Some responses wrap JSON as string
+    if isinstance(data, str):
+        try:
+            data2 = json.loads(data)
+            if isinstance(data2, dict) and "values" in data2:
+                return data2.get("values")
+        except Exception:
+            return None
+    return None
+
+
+def _first_byte(hexstr: str | None):
+    if not hexstr:
+        return None
+    try:
+        return int(hexstr[0:2], 16)
+    except Exception:
+        return None
+
+
+def _parse_values_status(values: dict) -> dict | None:
+    if not isinstance(values, dict):
+        return None
+    b1194 = _first_byte(values.get("1194"))
+    b1190 = _first_byte(values.get("1190"))
+    b5530 = _first_byte(values.get("5530"))
+    if b1194 is None and b1190 is None and b5530 is None:
+        return None
+    status = {}
+    if b1194 is not None:
+        status["power"] = "ON" if b1194 == 0x01 else ("OFF" if b1194 == 0x02 else None)
+    if b1190 is not None:
+        status["setpoint"] = b1190 / 2
+    if b5530 is not None:
+        status["room"] = (b5530 - 40) / 2
+    status["unit"] = "C"
+    return status
+
+
 def _bool_from_str(val: str | None) -> bool | None:
     if val is None:
         return None
@@ -328,6 +428,116 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
     return "".join(f"{b:02X}" for b in packet)
 
 
+class _MqttSession:
+    def __init__(self, sid: str, sk: str, topic: str):
+        self.sid = sid
+        self.sk = sk
+        self.topic = topic
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
+        self._connected = threading.Event()
+        self._closed = False
+        self._last_rx = None
+        self._last_values = None
+        self._last_payload = None
+
+        self.client = mqtt.Client(
+            client_id=f"SMT{random.randint(0,9999):04d}{sid}",
+            protocol=mqtt.MQTTv311,
+            transport="websockets",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        self.client.username_pw_set(self.sid, self.sk)
+        self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+        self.client.ws_set_options(path=WSS_PATH)
+        self.client.on_connect = self._on_connect
+        self.client.on_message = self._on_message
+        self.client.on_disconnect = self._on_disconnect
+
+        self.client.connect(WSS_HOST, WSS_PORT, keepalive=60)
+        self.client.loop_start()
+
+    def _on_connect(self, client, userdata, flags, reason_code, properties=None):
+        rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        if rc != 0:
+            _LOGGER.warning("MQTT connect failed rc=%s", rc)
+            self._connected.set()
+            return
+        client.subscribe([
+            (f"{self.topic}/HOST2CLIENT", 2),
+            (f"{self.topic}/RESP", 2),
+            (f"{self.topic}/ESP", 2),
+        ])
+        self._connected.set()
+
+    def _on_disconnect(self, client, userdata, *args):
+        self._closed = True
+        self._connected.set()
+
+    def _on_message(self, client, userdata, msg):
+        try:
+            text = msg.payload.decode("utf-8", errors="replace")
+        except Exception:
+            text = repr(msg.payload)
+        with self._cond:
+            self._last_payload = text
+            # Rx hex for ESP status
+            try:
+                obj = json.loads(text)
+                if isinstance(obj, dict) and obj.get("Rx"):
+                    self._last_rx = text
+                    self._cond.notify_all()
+            except Exception:
+                pass
+            values = _extract_values_from_payload(text)
+            if isinstance(values, dict):
+                self._last_values = values
+                self._cond.notify_all()
+
+    def ensure_connected(self, timeout: float = 8.0) -> bool:
+        self._connected.wait(timeout=timeout)
+        return not self._closed
+
+    def publish(self, topic: str, payload: dict):
+        self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
+
+    def wait_rx(self, timeout: float = 10.0) -> str | None:
+        end = time.time() + timeout
+        with self._cond:
+            while time.time() < end:
+                if self._last_rx is not None:
+                    rx = self._last_rx
+                    self._last_rx = None
+                    return rx
+                remaining = end - time.time()
+                if remaining <= 0:
+                    break
+                self._cond.wait(timeout=remaining)
+        return None
+
+    def wait_values(self, timeout: float = 10.0) -> dict | None:
+        end = time.time() + timeout
+        with self._cond:
+            while time.time() < end:
+                if self._last_values is not None:
+                    values = self._last_values
+                    self._last_values = None
+                    return values
+                remaining = end - time.time()
+                if remaining <= 0:
+                    break
+                self._cond.wait(timeout=remaining)
+        return None
+
+    def close(self):
+        try:
+            self.client.loop_stop()
+            self.client.disconnect()
+        except Exception:
+            pass
+        self._closed = True
+
+
 # ----------------- client -----------------
 
 class RemkoSmartWebClient:
@@ -340,9 +550,11 @@ class RemkoSmartWebClient:
         self.sid = None
         self.sk = None
         self.topic = None
+        self.smt_user = None
         self._last_login = 0.0
         self._last_payload = None
         self._last_status = None
+        self._mqtt = None
 
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
@@ -356,6 +568,12 @@ class RemkoSmartWebClient:
         if self.sid and self.sk and self.topic:
             return
         self.resolve_device()
+
+    def _ensure_mqtt(self) -> None:
+        if self._mqtt is None or not self._mqtt.ensure_connected():
+            self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
+            if not self._mqtt.ensure_connected():
+                raise RuntimeError("MQTT connect failed")
 
     def login(self) -> None:
         r = self.session.post(
@@ -410,73 +628,43 @@ class RemkoSmartWebClient:
             raise RuntimeError("SID/SK not found")
         self.sid, self.sk = hit
         self.topic = f"{VERSION}/{self.sid}"
+        self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
+        if self.smt_user is None:
+            _LOGGER.warning("SMT_USER not found in device page; CLIENT2HOST polling may be limited")
 
-    def _mqtt_roundtrip(self, publish_topic: str, payload: dict, wait_resp=True, timeout=10) -> str | None:
-        """Publish MQTT payload and optionally wait for an Rx response."""
+    def _mqtt_roundtrip_esp(self, payload: dict, timeout=10) -> str | None:
+        """Publish ESP payload and wait for Rx response on persistent MQTT."""
         if not self.sid or not self.sk or not self.topic:
             raise RuntimeError("Device not resolved")
+        self._ensure_mqtt()
+        self._mqtt.publish(f"{self.topic}/ESP", payload)
+        return self._mqtt.wait_rx(timeout=timeout)
 
-        rx = {"payload": None}
-        ev = threading.Event()
-
-        def _rc_value(rc):
-            return rc.value if hasattr(rc, "value") else rc
-
-        def on_connect(client, userdata, flags, reason_code, properties=None):
-            if _rc_value(reason_code) != 0:
-                ev.set()
-                return
-            client.subscribe([(f"{self.topic}/RESP", 2), (f"{self.topic}/ESP", 2)])
-            client.publish(publish_topic, json.dumps(payload), qos=2, retain=False)
-            if not wait_resp:
-                ev.set()
-
-        def on_message(client, userdata, msg):
-            try:
-                text = msg.payload.decode("utf-8", errors="replace")
-            except Exception:
-                text = repr(msg.payload)
-
-            if not wait_resp:
-                rx["payload"] = text
-                ev.set()
-                return
-
-            try:
-                obj = json.loads(text)
-                if obj.get("Rx"):
-                    rx["payload"] = text
-                    ev.set()
-            except Exception:
-                # ignore non-JSON or messages without Rx
-                return
-
-        client = mqtt.Client(
-            client_id=f"SMT{random.randint(0,9999):04d}{self.sid}",
-            protocol=mqtt.MQTTv311,
-            transport="websockets",
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        )
-        client.username_pw_set(self.sid, self.sk)
-        client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
-        client.ws_set_options(path=WSS_PATH)
-        client.on_connect = on_connect
-        client.on_message = on_message
-
-        client.connect(WSS_HOST, WSS_PORT, keepalive=60)
-        client.loop_start()
-        ev.wait(timeout=timeout)
-        client.loop_stop()
-        client.disconnect()
-
-        return rx["payload"]
+    def _mqtt_poll_values(self, timeout=10) -> dict | None:
+        """Poll values via CLIENT2HOST on persistent MQTT."""
+        if not self.sid or not self.sk or not self.topic:
+            raise RuntimeError("Device not resolved")
+        self._ensure_mqtt()
+        poll = {
+            "FORCE_RESPONSE": True,
+            "query_list": [1190, 1194, 5530],
+            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
+            "LASTWRITE": 0,
+            "ISTOUCH": False,
+            "DEVID": "",
+        }
+        if self.smt_user is not None:
+            poll["SMT_USER"] = self.smt_user
+        self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
+        return self._mqtt.wait_values(timeout=timeout)
 
     def read_status(self) -> dict:
         self._ensure_login()
         self._ensure_device()
+        self._ensure_mqtt()
         tx = _build_status_cmd()
         payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
-        resp = self._mqtt_roundtrip(f"{self.topic}/ESP", payload, wait_resp=True, timeout=10)
+        resp = self._mqtt_roundtrip_esp(payload, timeout=10)
 
         def _parse(resp_text: str | None) -> dict | None:
             if not resp_text:
@@ -498,26 +686,76 @@ class RemkoSmartWebClient:
             self._last_status = parsed
             return parsed
 
+        # fallback: poll values via CLIENT2HOST
+        values = self._mqtt_poll_values(timeout=10)
+        parsed_values = _parse_values_status(values) if values else None
+        if parsed_values:
+            if self._last_status:
+                merged = dict(self._last_status)
+                merged.update({k: v for k, v in parsed_values.items() if v is not None})
+                self._last_status = merged
+                return merged
+            self._last_status = parsed_values
+            return parsed_values
+
         # retry once after forcing a re-login
         self._ensure_login(force=True)
         self._ensure_device()
-        resp = self._mqtt_roundtrip(f"{self.topic}/ESP", payload, wait_resp=True, timeout=10)
+        resp = self._mqtt_roundtrip_esp(payload, timeout=10)
         parsed = _parse(resp)
         if parsed:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
             return parsed
+
+        if self._last_status:
+            return self._last_status
         raise RuntimeError("Unable to parse status")
+
+    def _read_status_c0(self, retries: int = 2) -> dict:
+        """Read status via ESP (C0 Rx only)."""
+        self._ensure_login()
+        self._ensure_device()
+        self._ensure_mqtt()
+        tx = _build_status_cmd()
+        payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
+
+        def _parse(resp_text: str | None) -> dict | None:
+            if not resp_text:
+                return None
+            try:
+                obj = json.loads(resp_text)
+                rx_hex = obj.get("Rx")
+                if rx_hex:
+                    parsed = _parse_c0_from_rx(rx_hex)
+                    if parsed:
+                        return parsed
+            except Exception:
+                return None
+            return None
+
+        last_err = None
+        for _ in range(max(1, retries)):
+            resp = self._mqtt_roundtrip_esp(payload, timeout=10)
+            parsed = _parse(resp)
+            if parsed:
+                self._last_payload = parsed.get("_payload")
+                self._last_status = parsed
+                return parsed
+            last_err = "Unable to parse status"
+            time.sleep(0.5)
+        raise RuntimeError(last_err)
 
     def set_values(self, overrides: dict) -> None:
         """Read current state, build a SET frame, then publish to /ESP."""
         self._ensure_login()
         self._ensure_device()
+        self._ensure_mqtt()
         payload = None
         last_err = None
         for _ in range(2):
             try:
-                status = self.read_status()
+                status = self._read_status_c0(retries=1)
                 payload = status.get("_payload")
                 last_err = None
                 break
@@ -529,15 +767,15 @@ class RemkoSmartWebClient:
         tx = _build_set_cmd_from_c0(payload, overrides)
         if not tx:
             raise RuntimeError("Failed to build SET frame")
-        self._mqtt_roundtrip(
-            f"{self.topic}/ESP",
-            {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"},
-            wait_resp=False,
-            timeout=5,
-        )
+        self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
         # Try to read back status after SET to keep state in sync (best effort).
         time.sleep(1.0)
         try:
             self.read_status()
         except Exception as err:
             _LOGGER.warning("Readback after SET failed: %s", err)
+
+    def close(self):
+        if self._mqtt is not None:
+            self._mqtt.close()
+            self._mqtt = None

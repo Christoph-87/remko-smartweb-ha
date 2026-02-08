@@ -3,10 +3,16 @@
     "step": {
       "user": {
         "title": "REMKO SmartWeb",
-        "description": "Enter your SmartWeb credentials and device name.",
+        "description": "Enter your SmartWeb credentials.",
         "data": {
           "email": "Email",
-          "password": "Password",
+          "password": "Password"
+        }
+      },
+      "device": {
+        "title": "REMKO SmartWeb",
+        "description": "Select your device.",
+        "data": {
           "device_name": "Device name"
         }
       }

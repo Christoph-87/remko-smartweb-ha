@@ -13,18 +13,45 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         errors = {}
         if user_input is not None:
-            ok = await self._async_validate(user_input)
+            ok, device_names = await self._async_fetch_devices(user_input)
             if ok:
-                return self.async_create_entry(title=user_input[CONF_DEVICE_NAME], data=user_input)
+                self._email = user_input[CONF_EMAIL]
+                self._password = user_input[CONF_PASSWORD]
+                self._device_names = device_names
+                return await self.async_step_device()
             errors["base"] = "cannot_connect"
 
         schema = vol.Schema({
             vol.Required(CONF_EMAIL): str,
             vol.Required(CONF_PASSWORD): str,
-            vol.Required(CONF_DEVICE_NAME): str,
         })
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_device(self, user_input=None):
+        errors = {}
+        if user_input is not None:
+            data = {
+                CONF_EMAIL: self._email,
+                CONF_PASSWORD: self._password,
+                CONF_DEVICE_NAME: user_input[CONF_DEVICE_NAME],
+            }
+            ok = await self._async_validate(data)
+            if ok:
+                return self.async_create_entry(title=data[CONF_DEVICE_NAME], data=data)
+            errors["base"] = "cannot_connect"
+
+        device_names = getattr(self, "_device_names", None) or []
+        if device_names:
+            schema = vol.Schema({
+                vol.Required(CONF_DEVICE_NAME): vol.In(device_names),
+            })
+        else:
+            schema = vol.Schema({
+                vol.Required(CONF_DEVICE_NAME): str,
+            })
+
+        return self.async_show_form(step_id="device", data_schema=schema, errors=errors)
 
     async def _async_validate(self, data) -> bool:
         def _check():
@@ -41,6 +68,22 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.hass.async_add_executor_job(_check)
         except Exception:
             return False
+
+    async def _async_fetch_devices(self, data):
+        def _fetch():
+            client = RemkoSmartWebClient(
+                email=data[CONF_EMAIL],
+                password=data[CONF_PASSWORD],
+                device_name="",
+            )
+            client.login()
+            return client.list_devices()
+
+        try:
+            names = await self.hass.async_add_executor_job(_fetch)
+            return True, names
+        except Exception:
+            return False, []
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)

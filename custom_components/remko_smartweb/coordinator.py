@@ -27,4 +27,8 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         try:
             return await self.hass.async_add_executor_job(self.client.read_status)
         except Exception as err:
+            # Keep last known data to avoid entities going unavailable on transient failures.
+            if self.data:
+                _LOGGER.warning("Status update failed, keeping last data: %s", err)
+                return self.data
             raise UpdateFailed(str(err)) from err

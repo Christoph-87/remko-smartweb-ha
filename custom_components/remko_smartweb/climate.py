@@ -7,6 +7,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN
 
@@ -124,4 +125,4 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
     async def _async_set(self, overrides: dict):
         # HA calls can arrive quickly; we use a single read->write cycle per call.
         await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        await self.coordinator.async_request_refresh()
+        async_call_later(self.hass, 2.0, lambda *_: self.coordinator.async_request_refresh())

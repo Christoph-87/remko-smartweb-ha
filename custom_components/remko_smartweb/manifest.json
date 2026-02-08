@@ -1,8 +1,9 @@
 {
   "domain": "remko_smartweb",
   "name": "REMKO SmartWeb",
-  "version": "0.1.0",
-  "documentation": "https://github.com/Christoph-87/remko-smartweb-poc",
+  "version": "0.1.4",
+  "documentation": "https://github.com/Christoph-87/remko-smartweb-ha",
+  "issue_tracker": "https://github.com/Christoph-87/remko-smartweb-ha/issues",
   "requirements": ["requests>=2.31.0", "paho-mqtt>=1.6.1"],
   "dependencies": [],
   "codeowners": ["@Christoph-87"],

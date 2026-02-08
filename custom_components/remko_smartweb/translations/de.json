@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "REMKO SmartWeb",
+        "description": "Gib deine SmartWeb-Zugangsdaten ein.",
+        "data": {
+          "email": "E-Mail",
+          "password": "Passwort"
+        }
+      },
+      "device": {
+        "title": "REMKO SmartWeb",
+        "description": "Wähle dein Gerät aus.",
+        "data": {
+          "device_name": "Gerätename"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen. Prüfe Zugangsdaten und Gerätenamen."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "REMKO SmartWeb Optionen",
+        "data": {
+          "scan_interval": "Polling-Intervall (Sekunden)"
+        }
+      }
+    }
+  }
+}
