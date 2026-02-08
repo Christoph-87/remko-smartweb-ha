@@ -364,7 +364,17 @@ class RemkoSmartWebClient:
             raise RuntimeError("Login failed: no PHPSESSID")
         self._last_login = time.time()
 
+    def list_devices(self) -> list[str]:
+        """Return available device names from /rest/liste."""
+        self._ensure_login()
+        r_list = self.session.get(f"{BASE}/rest/liste", timeout=15)
+        r_list.raise_for_status()
+        name_map = _extract_names_from_rest_list(r_list.text)
+        names = [v for v in name_map.values() if v]
+        return sorted(set(names), key=str.lower)
+
     def resolve_device(self) -> None:
+        self._ensure_login()
         # fetch list
         r_list = self.session.get(f"{BASE}/rest/liste", timeout=15)
         r_list.raise_for_status()
@@ -413,6 +423,8 @@ class RemkoSmartWebClient:
                 return
             client.subscribe([(f"{self.topic}/RESP", 2), (f"{self.topic}/ESP", 2)])
             client.publish(publish_topic, json.dumps(payload), qos=2, retain=False)
+            if not wait_resp:
+                ev.set()
 
         def on_message(client, userdata, msg):
             try:
@@ -448,10 +460,7 @@ class RemkoSmartWebClient:
 
         client.connect(WSS_HOST, WSS_PORT, keepalive=60)
         client.loop_start()
-        if wait_resp:
-            ev.wait(timeout=timeout)
-        else:
-            time.sleep(0.5)
+        ev.wait(timeout=timeout)
         client.loop_stop()
         client.disconnect()
 
