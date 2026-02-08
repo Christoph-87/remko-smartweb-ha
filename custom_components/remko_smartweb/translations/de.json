@@ -1,6 +1,13 @@
 {
   "config": {
     "step": {
+      "account": {
+        "title": "REMKO SmartWeb",
+        "description": "Vorhandene Zugangsdaten verwenden oder neue hinzufügen.",
+        "data": {
+          "account": "Konto"
+        }
+      },
       "user": {
         "title": "REMKO SmartWeb",
         "description": "Gib deine SmartWeb-Zugangsdaten ein. Geräte werden automatisch erkannt.",

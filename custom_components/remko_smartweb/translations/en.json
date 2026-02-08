@@ -1,6 +1,13 @@
 {
   "config": {
     "step": {
+      "account": {
+        "title": "REMKO SmartWeb",
+        "description": "Reuse existing credentials or add new ones.",
+        "data": {
+          "account": "Account"
+        }
+      },
       "user": {
         "title": "REMKO SmartWeb",
         "description": "Enter your SmartWeb credentials. Devices will be detected automatically.",

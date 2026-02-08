@@ -23,6 +23,10 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
+        existing = self._get_existing_accounts()
+        if existing and user_input is None:
+            return await self.async_step_account()
+
         errors = {}
         if user_input is not None:
             ok, device_names = await self._async_fetch_devices(user_input)
@@ -46,6 +50,42 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_account(self, user_input=None):
+        errors = {}
+        existing = self._get_existing_accounts()
+        if not existing:
+            return await self.async_step_user()
+
+        if user_input is not None:
+            selected = user_input.get("account")
+            if selected == "new":
+                return await self.async_step_user()
+            entry = next((e for e in self._get_entries() if e.entry_id == selected), None)
+            if entry:
+                self._email = entry.data.get(CONF_EMAIL)
+                self._password = entry.data.get(CONF_PASSWORD)
+                ok, device_names = await self._async_fetch_devices(
+                    {CONF_EMAIL: self._email, CONF_PASSWORD: self._password}
+                )
+                if ok:
+                    self._device_names = device_names
+                    if len(device_names) == 1:
+                        data = {
+                            CONF_EMAIL: self._email,
+                            CONF_PASSWORD: self._password,
+                            CONF_DEVICE_NAME: device_names[0],
+                        }
+                        return self.async_create_entry(title=device_names[0], data=data)
+                    return await self.async_step_device()
+            errors["base"] = "cannot_connect"
+
+        options = dict(existing)
+        options["new"] = "Use new credentials"
+        schema = vol.Schema({
+            vol.Required("account"): vol.In(options),
+        })
+        return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
 
     async def async_step_device(self, user_input=None):
         errors = {}
@@ -103,6 +143,17 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return True, names
         except Exception:
             return False, []
+
+    def _get_entries(self):
+        return self.hass.config_entries.async_entries(DOMAIN)
+
+    def _get_existing_accounts(self):
+        options = {}
+        for entry in self._get_entries():
+            email = entry.data.get(CONF_EMAIL, "")
+            label = f"{email}" if email else entry.title
+            options[entry.entry_id] = label
+        return options
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
