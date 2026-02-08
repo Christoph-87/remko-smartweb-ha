@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
 import ssl
@@ -18,6 +19,8 @@ WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
 LOGIN_TTL_SEC = 10 * 60
+
+_LOGGER = logging.getLogger(__name__)
 
 # ----------------- helpers -----------------
 
@@ -511,13 +514,18 @@ class RemkoSmartWebClient:
         self._ensure_login()
         self._ensure_device()
         payload = None
-        try:
-            status = self.read_status()
-            payload = status.get("_payload")
-        except Exception:
-            payload = self._last_payload
+        last_err = None
+        for _ in range(2):
+            try:
+                status = self.read_status()
+                payload = status.get("_payload")
+                last_err = None
+                break
+            except Exception as err:
+                last_err = err
+                time.sleep(0.5)
         if not payload:
-            raise RuntimeError("No C0 payload")
+            raise RuntimeError(f"No C0 payload (status read failed: {last_err})")
         tx = _build_set_cmd_from_c0(payload, overrides)
         if not tx:
             raise RuntimeError("Failed to build SET frame")
@@ -527,3 +535,9 @@ class RemkoSmartWebClient:
             wait_resp=False,
             timeout=5,
         )
+        # Try to read back status after SET to keep state in sync (best effort).
+        time.sleep(1.0)
+        try:
+            self.read_status()
+        except Exception as err:
+            _LOGGER.warning("Readback after SET failed: %s", err)
