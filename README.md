@@ -28,7 +28,6 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 
 ## Entities
 - Climate: HVAC mode, target temp, fan, swing, on/off
-- Switches: power, eco, turbo, sleep, bioclean
 - Sensors: room temperature, outdoor temperature, setpoint, error code
 
 ## Options

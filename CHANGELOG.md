@@ -9,6 +9,9 @@
 - HVAC action reporting for nicer UI
 - Optimistic updates skip setpoint changes
 - My Home Assistant quick-add link in README
+
+## Unreleased
+- Remove switch entities in favor of climate preset dropdown
 ## v0.1.6
 - Auto-select device when only one exists
 - Configurable min/max temperature bounds in options
