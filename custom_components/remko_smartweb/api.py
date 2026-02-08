@@ -338,6 +338,8 @@ class RemkoSmartWebClient:
         self.sk = None
         self.topic = None
         self._last_login = 0.0
+        self._last_payload = None
+        self._last_status = None
 
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
@@ -489,6 +491,8 @@ class RemkoSmartWebClient:
 
         parsed = _parse(resp)
         if parsed:
+            self._last_payload = parsed.get("_payload")
+            self._last_status = parsed
             return parsed
 
         # retry once after forcing a re-login
@@ -497,6 +501,8 @@ class RemkoSmartWebClient:
         resp = self._mqtt_roundtrip(f"{self.topic}/ESP", payload, wait_resp=True, timeout=10)
         parsed = _parse(resp)
         if parsed:
+            self._last_payload = parsed.get("_payload")
+            self._last_status = parsed
             return parsed
         raise RuntimeError("Unable to parse status")
 
@@ -504,8 +510,12 @@ class RemkoSmartWebClient:
         """Read current state, build a SET frame, then publish to /ESP."""
         self._ensure_login()
         self._ensure_device()
-        status = self.read_status()
-        payload = status.get("_payload")
+        payload = None
+        try:
+            status = self.read_status()
+            payload = status.get("_payload")
+        except Exception:
+            payload = self._last_payload
         if not payload:
             raise RuntimeError("No C0 payload")
         tx = _build_set_cmd_from_c0(payload, overrides)
