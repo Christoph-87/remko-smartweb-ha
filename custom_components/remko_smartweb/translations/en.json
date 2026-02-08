@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "REMKO SmartWeb",
-        "description": "Enter your SmartWeb credentials.",
+        "description": "Enter your SmartWeb credentials. Devices will be detected automatically.",
         "data": {
           "email": "Email",
           "password": "Password"
@@ -26,7 +26,9 @@
       "init": {
         "title": "REMKO SmartWeb Options",
         "data": {
-          "scan_interval": "Polling interval (seconds)"
+          "scan_interval": "Polling interval (seconds)",
+          "min_temp": "Min temperature (override)",
+          "max_temp": "Max temperature (override)"
         }
       }
     }

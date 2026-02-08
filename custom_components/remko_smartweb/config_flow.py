@@ -3,7 +3,18 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 
-from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, CONF_DEVICE_NAME, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+from .const import (
+    DOMAIN,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_DEVICE_NAME,
+    CONF_SCAN_INTERVAL,
+    CONF_MIN_TEMP,
+    CONF_MAX_TEMP,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_MIN_TEMP,
+    DEFAULT_MAX_TEMP,
+)
 from .api import RemkoSmartWebClient
 
 
@@ -18,6 +29,13 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._email = user_input[CONF_EMAIL]
                 self._password = user_input[CONF_PASSWORD]
                 self._device_names = device_names
+                if len(device_names) == 1:
+                    data = {
+                        CONF_EMAIL: self._email,
+                        CONF_PASSWORD: self._password,
+                        CONF_DEVICE_NAME: device_names[0],
+                    }
+                    return self.async_create_entry(title=device_names[0], data=data)
                 return await self.async_step_device()
             errors["base"] = "cannot_connect"
 
@@ -105,6 +123,14 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_SCAN_INTERVAL,
                 default=self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_MIN_TEMP,
+                default=self._config_entry.options.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP),
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_MAX_TEMP,
+                default=self._config_entry.options.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP),
             ): vol.Coerce(int),
         })
         return self.async_show_form(step_id="init", data_schema=schema)

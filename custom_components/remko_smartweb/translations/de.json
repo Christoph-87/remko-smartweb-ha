@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "REMKO SmartWeb",
-        "description": "Gib deine SmartWeb-Zugangsdaten ein.",
+        "description": "Gib deine SmartWeb-Zugangsdaten ein. Geräte werden automatisch erkannt.",
         "data": {
           "email": "E-Mail",
           "password": "Passwort"
@@ -26,7 +26,9 @@
       "init": {
         "title": "REMKO SmartWeb Optionen",
         "data": {
-          "scan_interval": "Polling-Intervall (Sekunden)"
+          "scan_interval": "Polling-Intervall (Sekunden)",
+          "min_temp": "Minimale Temperatur (Override)",
+          "max_temp": "Maximale Temperatur (Override)"
         }
       }
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.8
+- Climate preset modes (eco, turbo, sleep, bioclean)
+- HVAC action reporting for nicer UI
+- Optimistic updates skip setpoint changes
+- My Home Assistant quick-add link in README
+
+## v0.1.6
+- Auto-select device when only one exists
+- Configurable min/max temperature bounds in options
+
 ## v0.1.4
 - Persistent MQTT session for stability
 - CLIENT2HOST polling fallback for status
