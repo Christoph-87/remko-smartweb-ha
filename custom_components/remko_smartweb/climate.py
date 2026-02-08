@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
+from homeassistant.components.climate.const import HVACMode, HVACAction, ClimateEntityFeature
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_MIN_TEMP, CONF_MAX_TEMP, DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 HVAC_MAP = {
     "auto": HVACMode.AUTO,
@@ -23,6 +23,16 @@ MODE_MAP = {v: k for k, v in HVAC_MAP.items()}
 
 FAN_MODES = ["auto", "silent", "low", "medium", "high"]
 SWING_MODES = ["off", "vertical", "horizontal", "both"]
+PRESET_MODES = ["none", "eco", "turbo", "sleep", "bioclean"]
+
+
+def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
+    # Known MXW models use 17-30°C (user-confirmed). Fallback to default.
+    name = (device_name or "").upper()
+    for model in ("MXW 204", "MXW 264", "MXW 354", "MXW 524"):
+        if model in name:
+            return 17, 30
+    return DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
@@ -30,8 +40,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = data["coordinator"]
     client = data["client"]
     device_name = data["device_name"]
+    inferred_min, inferred_max = _infer_min_max_temp(device_name)
+    min_temp = entry.options.get(CONF_MIN_TEMP, inferred_min)
+    max_temp = entry.options.get(CONF_MAX_TEMP, inferred_max)
 
-    async_add_entities([RemkoSmartWebClimate(coordinator, client, device_name)])
+    async_add_entities([RemkoSmartWebClimate(coordinator, client, device_name, min_temp, max_temp)])
 
 
 class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
@@ -41,6 +54,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         | ClimateEntityFeature.SWING_MODE
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.PRESET_MODE
     )
 
     _attr_hvac_modes = [
@@ -54,13 +68,14 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     _attr_fan_modes = FAN_MODES
     _attr_swing_modes = SWING_MODES
-    _attr_min_temp = 16
-    _attr_max_temp = 30
+    _attr_preset_modes = PRESET_MODES
 
-    def __init__(self, coordinator, client, device_name: str):
+    def __init__(self, coordinator, client, device_name: str, min_temp: int, max_temp: int):
         super().__init__(coordinator)
         self._client = client
-        self._attr_name = f"{device_name} Climate"
+        self._attr_min_temp = min_temp
+        self._attr_max_temp = max_temp
+        self._attr_name = device_name
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_climate"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},
@@ -75,6 +90,21 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
             return HVACMode.OFF
         mode = self.coordinator.data.get("mode")
         return HVAC_MAP.get(mode, HVACMode.AUTO)
+
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        if self.coordinator.data.get("power") != "ON":
+            return HVACAction.OFF
+        mode = self.coordinator.data.get("mode")
+        if mode == "cool":
+            return HVACAction.COOLING
+        if mode == "heat":
+            return HVACAction.HEATING
+        if mode == "dry":
+            return HVACAction.DRYING
+        if mode == "fan":
+            return HVACAction.FAN
+        return HVACAction.IDLE
 
     @property
     def temperature_unit(self) -> UnitOfTemperature:
@@ -96,6 +126,13 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
     @property
     def swing_mode(self):
         return self.coordinator.data.get("swing")
+
+    @property
+    def preset_mode(self):
+        for key in ("eco", "turbo", "sleep", "bioclean"):
+            if self.coordinator.data.get(key):
+                return key
+        return "none"
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode):
         if hvac_mode == HVACMode.OFF:
@@ -122,10 +159,24 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         if swing_mode in SWING_MODES:
             await self._async_set({"swing": swing_mode})
 
+    async def async_set_preset_mode(self, preset_mode: str):
+        if preset_mode not in PRESET_MODES:
+            return
+        if preset_mode == "none":
+            overrides = {"eco": False, "turbo": False, "sleep": False, "bioclean": False}
+        else:
+            overrides = {
+                "eco": preset_mode == "eco",
+                "turbo": preset_mode == "turbo",
+                "sleep": preset_mode == "sleep",
+                "bioclean": preset_mode == "bioclean",
+            }
+        await self._async_set(overrides)
+
     async def _async_set(self, overrides: dict):
         # HA calls can arrive quickly; we use a single read->write cycle per call.
-        # Optimistic UI update to avoid flicker.
-        if self.coordinator.data is not None:
+        # Optimistic UI update to avoid flicker (skip for setpoint changes).
+        if self.coordinator.data is not None and "setpoint" not in overrides:
             data = dict(self.coordinator.data)
             for k, v in overrides.items():
                 if k == "power":
