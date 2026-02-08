@@ -63,5 +63,18 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         overrides = {self._key: state}
         if self._key == "power":
             overrides = {"power": state}
+        # Optimistic UI update to avoid flicker.
+        if self.coordinator.data is not None:
+            data = dict(self.coordinator.data)
+            if self._key == "power":
+                data["power"] = "ON" if state else "OFF"
+            else:
+                data[self._key] = bool(state)
+            self.coordinator.data = data
+            self.async_write_ha_state()
         await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        async_call_later(self.hass, 2.0, lambda *_: self.coordinator.async_request_refresh())
+        async_call_later(
+            self.hass,
+            2.0,
+            lambda *_: self.hass.async_create_task(self.coordinator.async_request_refresh()),
+        )

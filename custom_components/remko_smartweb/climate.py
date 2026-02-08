@@ -124,5 +124,19 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     async def _async_set(self, overrides: dict):
         # HA calls can arrive quickly; we use a single read->write cycle per call.
+        # Optimistic UI update to avoid flicker.
+        if self.coordinator.data is not None:
+            data = dict(self.coordinator.data)
+            for k, v in overrides.items():
+                if k == "power":
+                    data["power"] = "ON" if v else "OFF"
+                else:
+                    data[k] = v
+            self.coordinator.data = data
+            self.async_write_ha_state()
         await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        async_call_later(self.hass, 2.0, lambda *_: self.coordinator.async_request_refresh())
+        async_call_later(
+            self.hass,
+            2.0,
+            lambda *_: self.hass.async_create_task(self.coordinator.async_request_refresh()),
+        )
