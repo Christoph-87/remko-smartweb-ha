@@ -19,10 +19,74 @@ WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
 LOGIN_TTL_SEC = 10 * 60
+DEBUG_PAYLOAD_LIMIT = 2000
+REDACTED = "<redacted>"
+SENSITIVE_DEBUG_KEYS = {
+    "access_key",
+    "accesskey",
+    "client_id",
+    "cookie",
+    "email",
+    "passwort",
+    "password",
+    "phpsessid",
+    "secret",
+    "sid",
+    "sk",
+    "smt_user",
+    "token",
+}
 
 _LOGGER = logging.getLogger(__name__)
 
 # ----------------- helpers -----------------
+
+def _redact_debug_text(text: str) -> str:
+    """Mask likely credentials and session identifiers before logging."""
+    replacements = (
+        (r"([?&](?:SID|SK)=)[^&\s\"']+", rf"\1{REDACTED}"),
+        (r"([\"']?(?:SID|SK)[\"']?\s*[:=]\s*[\"']?)[0-9A-Fa-f]{16}([\"']?)", rf"\1{REDACTED}\2"),
+        (r"\b(PHPSESSID=)[^;\s\"']+", rf"\1{REDACTED}"),
+        (r"([\"']?CLIENT_ID[\"']?\s*[:=]\s*[\"']?)SMT[A-Za-z0-9]+([\"']?)", rf"\1{REDACTED}\2"),
+        (r"([\"']?SMT_USER[\"']?\s*[:=]\s*[\"']?)\d+([\"']?)", rf"\1{REDACTED}\2"),
+        (r"([\"']?(?:password|passwort|token|secret|access[_-]?key)[\"']?\s*[:=]\s*[\"']?)[^,}\]\s\"']+([\"']?)", rf"\1{REDACTED}\2"),
+        (r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})", REDACTED),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+    return text
+
+
+def _redact_debug_data(value):
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            normalized_key = str(key).lower().replace("-", "_")
+            if normalized_key in SENSITIVE_DEBUG_KEYS:
+                redacted[key] = REDACTED
+            else:
+                redacted[key] = _redact_debug_data(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_debug_data(item) for item in value]
+    if isinstance(value, str):
+        return _redact_debug_text(value)
+    return value
+
+
+def _debug_value(value, limit: int = DEBUG_PAYLOAD_LIMIT):
+    """Return a bounded representation for diagnostic logging."""
+    if value is None:
+        return None
+    try:
+        text = json.dumps(_redact_debug_data(value), sort_keys=True)
+    except Exception:
+        text = _redact_debug_text(str(value))
+    text = _redact_debug_text(text)
+    if len(text) > limit:
+        return f"{text[:limit]}... <truncated {len(text) - limit} chars>"
+    return text
+
 
 def _extract_sid_sk_from_url(url: str):
     qs = parse_qs(urlparse(url).query)
@@ -529,6 +593,10 @@ class _MqttSession:
                 self._cond.wait(timeout=remaining)
         return None
 
+    def last_payload_snapshot(self):
+        with self._cond:
+            return self._last_payload
+
     def close(self):
         try:
             self.client.loop_stop()
@@ -658,6 +726,26 @@ class RemkoSmartWebClient:
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
 
+    def _last_mqtt_payload_snapshot(self):
+        if self._mqtt is None:
+            return None
+        return self._mqtt.last_payload_snapshot()
+
+    def _log_unsupported_payload(self, stage: str, **diagnostics) -> None:
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        safe_diagnostics = {
+            key: _debug_value(value)
+            for key, value in diagnostics.items()
+            if value is not None
+        }
+        _LOGGER.debug(
+            "Unsupported or unparsed REMKO SmartWeb payload for device %r at %s: %s",
+            self.device_name,
+            stage,
+            safe_diagnostics,
+        )
+
     def read_status(self) -> dict:
         self._ensure_login()
         self._ensure_device()
@@ -685,6 +773,11 @@ class RemkoSmartWebClient:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
             return parsed
+        self._log_unsupported_payload(
+            "esp_status",
+            esp_response=resp,
+            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+        )
 
         # fallback: poll values via CLIENT2HOST
         values = self._mqtt_poll_values(timeout=10)
@@ -697,6 +790,11 @@ class RemkoSmartWebClient:
                 return merged
             self._last_status = parsed_values
             return parsed_values
+        self._log_unsupported_payload(
+            "client2host_values",
+            values=values,
+            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+        )
 
         # retry once after forcing a re-login
         self._ensure_login(force=True)
@@ -707,6 +805,11 @@ class RemkoSmartWebClient:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
             return parsed
+        self._log_unsupported_payload(
+            "esp_status_retry",
+            esp_response=resp,
+            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+        )
 
         if self._last_status:
             return self._last_status
@@ -742,6 +845,11 @@ class RemkoSmartWebClient:
                 self._last_payload = parsed.get("_payload")
                 self._last_status = parsed
                 return parsed
+            self._log_unsupported_payload(
+                "esp_status_c0",
+                esp_response=resp,
+                last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+            )
             last_err = "Unable to parse status"
             time.sleep(0.5)
         raise RuntimeError(last_err)

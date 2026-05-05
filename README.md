@@ -6,7 +6,7 @@ Home Assistant custom integration for REMKO SmartWeb.
 
 ## Install (HACS)
 1. HACS → Integrations → Menu (⋮) → **Custom repositories**.
-2. Add `https://github.com/MartinKuhl/remko-smartweb-ha` and select **Integration**.
+2. Add `https://github.com/Christoph-87/remko-smartweb-ha` and select **Integration**.
 3. Install **REMKO SmartWeb** from HACS.
 4. Restart Home Assistant.
 5. Settings → Devices & Services → **Add Integration** → `REMKO SmartWeb`.
@@ -54,13 +54,33 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 - Entities go unavailable: check network access to `smartweb.remko.media:8083` and reduce polling.
 - Power toggle feels sluggish: SmartWeb cloud responses can be delayed; try a longer polling interval.
 
+## Request support for a new device
+This integration can connect to REMKO SmartWeb devices that are visible in your account, but each device family may expose different values and writable parameters. If your device is not supported yet, the integration can log diagnostic payloads that help map sensors and controls.
+
+1. Add the integration and select the device from your REMKO SmartWeb account.
+2. Enable debug logging in Home Assistant:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.remko_smartweb: debug
+```
+
+3. Restart Home Assistant or reload the integration.
+4. Let the integration poll the device for a few minutes.
+5. If the REMKO SmartWeb app or web UI allows changing values, change one parameter at a time and wait for the integration to poll again after each change. Note what you changed and the approximate time.
+6. Download the Home Assistant log and search for `remko_smartweb`.
+7. Remove personal or sensitive data before sharing logs. Do not post your email address, password, cookies, session IDs, or access keys.
+8. Open an issue and include:
+   - Exact REMKO model name, for example `RBW 302 Pro`
+   - Device name as shown in REMKO SmartWeb
+   - Which sensors you expect
+   - Which parameters you want to change from Home Assistant
+   - Relevant debug log lines
+   - Screenshots of the REMKO SmartWeb UI showing the available values and settings, if possible
+
+Raw diagnostic logs do not automatically add support for a device. They provide the value IDs and payloads needed to implement device-specific sensors, switches, numbers, or selects.
+
 ## Releases
-- HACS requires a GitHub release tag (e.g. `v0.1.4`).
-
-## Next steps
-- Implement API client (login, list devices, MQTT status/read)
-- Implement switch + climate service calls
-- Add polling / coordinator
-
-## Credits
-- based on this version: https://github.com/Christoph-87/remko-smartweb-ha
+- For HACS releases, create a GitHub release whose tag matches the integration version in `custom_components/remko_smartweb/manifest.json`, for example `v0.2.0`.

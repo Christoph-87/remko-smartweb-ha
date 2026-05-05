@@ -1,0 +1,96 @@
+name: New device support
+description: Request support for a REMKO SmartWeb device that is not mapped yet.
+title: "Add support for <device model>"
+labels: ["enhancement", "new-device"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping add support for another REMKO SmartWeb device.
+
+        Please enable debug logging first and remove personal or sensitive data before sharing logs. Do not post your email address, password, cookies, session IDs, access keys, or full account details.
+
+        ```yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.remko_smartweb: debug
+        ```
+
+  - type: input
+    id: model
+    attributes:
+      label: Exact REMKO model
+      description: Enter the model name printed in the app, web UI, or device documentation.
+      placeholder: "RBW 302 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: smartweb-device-name
+    attributes:
+      label: Device name in REMKO SmartWeb
+      description: Enter the device name exactly as shown in your REMKO SmartWeb account.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-sensors
+    attributes:
+      label: Sensors you expect
+      description: List the values you want to see in Home Assistant.
+      placeholder: |
+        - Hot water temperature
+        - Target temperature
+        - Operating state
+        - Error code
+    validations:
+      required: true
+
+  - type: textarea
+    id: writable-parameters
+    attributes:
+      label: Parameters you want to change
+      description: List settings that should be writable from Home Assistant.
+      placeholder: |
+        - Target temperature
+        - Operating mode
+        - Eco/boost mode
+    validations:
+      required: false
+
+  - type: textarea
+    id: debug-logs
+    attributes:
+      label: Debug log lines
+      description: Paste relevant `custom_components.remko_smartweb` log lines after removing sensitive data.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: ui-screenshots
+    attributes:
+      label: REMKO SmartWeb UI screenshots
+      description: Attach screenshots showing available values and settings, if possible.
+    validations:
+      required: false
+
+  - type: textarea
+    id: value-changes
+    attributes:
+      label: Values changed during logging
+      description: If you changed parameters while debug logging was enabled, note what you changed and the approximate time.
+      placeholder: |
+        2026-05-05 18:10 - changed target temperature from 45 C to 48 C
+        2026-05-05 18:15 - enabled boost mode
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed personal data, credentials, cookies, session IDs, and access keys from the logs.
+          required: true

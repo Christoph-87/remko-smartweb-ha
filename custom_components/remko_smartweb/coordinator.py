@@ -33,4 +33,10 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
             if self.data:
                 _LOGGER.warning("Status update failed, keeping last data: %s", err)
                 return self.data
+            if str(err) == "Unable to parse status":
+                _LOGGER.warning(
+                    "Connected to REMKO SmartWeb, but the device status payload could not be parsed. "
+                    "Enable debug logging for custom_components.remko_smartweb to collect diagnostics "
+                    "for unsupported devices."
+                )
             raise UpdateFailed(str(err)) from err

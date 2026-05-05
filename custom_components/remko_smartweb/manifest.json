@@ -1,12 +1,12 @@
 {
   "domain": "remko_smartweb",
   "name": "REMKO SmartWeb",
-  "codeowners": ["@MartinKuhl"],
+  "codeowners": ["@Christoph-87"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/MartinKuhl/remko-smartweb-ha",
+  "documentation": "https://github.com/Christoph-87/remko-smartweb-ha",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/MartinKuhl/remko-smartweb-ha/issues",
+  "issue_tracker": "https://github.com/Christoph-87/remko-smartweb-ha/issues",
   "requirements": ["requests>=2.31.0", "paho-mqtt>=1.6.1"],
   "version": "0.2.0"
 }
