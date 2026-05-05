@@ -102,7 +102,7 @@ def _extract_names_from_rest_list(html: str):
         rel = m.group(1)
         if rel in name_map:
             continue
-        tail = html[m.end(): m.end() + 600]
+        tail = html[m.end(): m.end() + 1000]
         m2 = re.search(r"<span[^>]*>([^<]{1,200})</span>", tail, flags=re.I)
         if m2:
             name_map[rel] = m2.group(1).strip()
