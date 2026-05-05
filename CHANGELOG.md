@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0
+- Increase tail length for HTML parsing
+- Fix thread-safety error: replace lambda with async def in async_call_later callbacks
+
 ## v0.1.10
 - Configurable indoor unit model (MXW 204/264/354/524 or Other)
 - Defaults min/max temperature based on selected model
