@@ -6,7 +6,7 @@ Home Assistant custom integration for REMKO SmartWeb.
 
 ## Install (HACS)
 1. HACS → Integrations → Menu (⋮) → **Custom repositories**.
-2. Add `https://github.com/Christoph-87/remko-smartweb-ha` and select **Integration**.
+2. Add `https://github.com/MartinKuhl/remko-smartweb-ha` and select **Integration**.
 3. Install **REMKO SmartWeb** from HACS.
 4. Restart Home Assistant.
 5. Settings → Devices & Services → **Add Integration** → `REMKO SmartWeb`.
@@ -61,3 +61,6 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 - Implement API client (login, list devices, MQTT status/read)
 - Implement switch + climate service calls
 - Add polling / coordinator
+
+## Credits
+- based on this version: https://github.com/Christoph-87/remko-smartweb-ha

@@ -194,8 +194,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
             self.coordinator.data = data
             self.async_write_ha_state()
         await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        async_call_later(
-            self.hass,
-            2.0,
-            lambda *_: self.hass.async_create_task(self.coordinator.async_request_refresh()),
-        )
+        async def _do_refresh(_now):
+            await self.coordinator.async_request_refresh()
+
+        async_call_later(self.hass, 2.0, _do_refresh)
