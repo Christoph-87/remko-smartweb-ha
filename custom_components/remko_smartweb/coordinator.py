@@ -25,7 +25,9 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         try:
-            return await self.hass.async_add_executor_job(self.client.read_status)
+            data = await self.hass.async_add_executor_job(self.client.read_status)
+            # Keep device name stable for optimistic updates if needed.
+            return data
         except Exception as err:
             # Keep last known data to avoid entities going unavailable on transient failures.
             if self.data:

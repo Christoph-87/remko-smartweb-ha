@@ -25,7 +25,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect. Check credentials and device name."
+      "cannot_connect": "Cannot connect. Check credentials and device name.",
+      "no_devices": "No new devices found for this account."
     }
   },
   "options": {

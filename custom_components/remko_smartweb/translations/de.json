@@ -25,7 +25,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Verbindung fehlgeschlagen. Prüfe Zugangsdaten und Gerätenamen."
+      "cannot_connect": "Verbindung fehlgeschlagen. Prüfe Zugangsdaten und Gerätenamen.",
+      "no_devices": "Keine neuen Geräte für dieses Konto gefunden."
     }
   },
   "options": {

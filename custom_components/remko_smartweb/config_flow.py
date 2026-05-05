@@ -33,7 +33,10 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if ok:
                 self._email = user_input[CONF_EMAIL]
                 self._password = user_input[CONF_PASSWORD]
-                self._device_names = device_names
+                self._device_names = self._filter_existing_devices(device_names, self._email)
+                if not self._device_names:
+                    errors["base"] = "no_devices"
+                    return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
                 if len(device_names) == 1:
                     data = {
                         CONF_EMAIL: self._email,
@@ -69,14 +72,17 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {CONF_EMAIL: self._email, CONF_PASSWORD: self._password}
                 )
                 if ok:
-                    self._device_names = device_names
-                    if len(device_names) == 1:
+                    self._device_names = self._filter_existing_devices(device_names, self._email)
+                    if not self._device_names:
+                        errors["base"] = "no_devices"
+                        return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
+                    if len(self._device_names) == 1:
                         data = {
                             CONF_EMAIL: self._email,
                             CONF_PASSWORD: self._password,
-                            CONF_DEVICE_NAME: device_names[0],
+                            CONF_DEVICE_NAME: self._device_names[0],
                         }
-                        return self.async_create_entry(title=device_names[0], data=data)
+                        return self.async_create_entry(title=self._device_names[0], data=data)
                     return await self.async_step_device()
             errors["base"] = "cannot_connect"
 
@@ -148,12 +154,38 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.hass.config_entries.async_entries(DOMAIN)
 
     def _get_existing_accounts(self):
-        options = {}
+        buckets = {}
         for entry in self._get_entries():
-            email = entry.data.get(CONF_EMAIL, "")
-            label = f"{email}" if email else entry.title
-            options[entry.entry_id] = label
+            email = (entry.data.get(CONF_EMAIL) or "").strip()
+            password = entry.data.get(CONF_PASSWORD) or ""
+            key = (email.lower(), password)
+            if key not in buckets:
+                buckets[key] = {"entry_id": entry.entry_id, "email": email, "count": 0}
+            buckets[key]["count"] += 1
+
+        options = {}
+        for item in buckets.values():
+            email = item["email"]
+            count = item["count"]
+            if email:
+                label = f"{email} ({count} devices)"
+            else:
+                label = f"Account ({count} devices)"
+            options[item["entry_id"]] = label
         return options
+
+    def _filter_existing_devices(self, device_names: list[str], email: str | None):
+        if not device_names:
+            return []
+        email = (email or "").strip().lower()
+        existing = set()
+        for entry in self._get_entries():
+            if email and entry.data.get(CONF_EMAIL, "").strip().lower() != email:
+                continue
+            name = entry.data.get(CONF_DEVICE_NAME)
+            if name:
+                existing.add(name.strip().lower())
+        return [n for n in device_names if n.strip().lower() not in existing]
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
