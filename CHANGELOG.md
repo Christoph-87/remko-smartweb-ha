@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1
+- Add diagnostic debug logging for unsupported or not-yet-mapped REMKO SmartWeb devices
+- Mask likely sensitive values in diagnostic debug logs
+- Add instructions and an issue template for new device support requests
+- Update repository links and code owner metadata
+
 ## v0.2.0
 - Increase tail length for HTML parsing
 - Fix thread-safety error: replace lambda with async def in async_call_later callbacks
