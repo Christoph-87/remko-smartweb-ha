@@ -20,6 +20,7 @@ WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
 LOGIN_TTL_SEC = 10 * 60
+ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
 REDACTED = "<redacted>"
 SENSITIVE_DEBUG_KEYS = {
@@ -39,8 +40,27 @@ SENSITIVE_DEBUG_KEYS = {
 }
 
 _LOGGER = logging.getLogger(__name__)
+_ACCOUNT_REQUEST_LOCK = threading.Lock()
+_ACCOUNT_LAST_REQUEST_AT = 0.0
 
 # ----------------- helpers -----------------
+
+def _pace_account_request() -> None:
+    global _ACCOUNT_LAST_REQUEST_AT
+    with _ACCOUNT_REQUEST_LOCK:
+        wait = ACCOUNT_REQUEST_MIN_INTERVAL_SEC - (time.time() - _ACCOUNT_LAST_REQUEST_AT)
+        if wait > 0:
+            time.sleep(wait)
+        _ACCOUNT_LAST_REQUEST_AT = time.time()
+
+
+def _normalize_device_name(name: str | None) -> str:
+    if not name:
+        return ""
+    normalized = name.casefold()
+    normalized = normalized.replace("–", "-").replace("—", "-")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 def _redact_debug_text(text: str) -> str:
     """Mask likely credentials and session identifiers before logging."""
@@ -661,11 +681,36 @@ class _MqttSession:
 
 # ----------------- client -----------------
 
+class SmartWebError(RuntimeError):
+    """Base exception for SmartWeb API failures."""
+
+
+class SmartWebLoginError(SmartWebError):
+    """Raised when SmartWeb login fails."""
+
+
+class DeviceListUnavailable(SmartWebError):
+    """Raised when SmartWeb does not return a usable device list."""
+
+
+class DeviceNotFound(SmartWebError):
+    """Raised when a configured device cannot be found in the SmartWeb account."""
+
+
+class DeviceResolveError(SmartWebError):
+    """Raised when a listed device cannot be resolved to MQTT credentials."""
+
+
+class UnsupportedPayload(SmartWebError):
+    """Raised when a reachable device returns an unsupported status payload."""
+
+
 class RemkoSmartWebClient:
-    def __init__(self, email: str, password: str, device_name: str):
+    def __init__(self, email: str, password: str, device_name: str, device_path: str | None = None):
         self.email = email
         self.password = password
         self.device_name = device_name
+        self.device_path = device_path
         self.session = requests.Session()
 
         self.sid = None
@@ -675,6 +720,8 @@ class RemkoSmartWebClient:
         self._last_login = 0.0
         self._last_payload = None
         self._last_status = None
+        self._last_device_list_error = None
+        self._last_device_list_empty = False
         self._mqtt = None
 
     def _ensure_login(self, force: bool = False) -> None:
@@ -694,10 +741,16 @@ class RemkoSmartWebClient:
         if self._mqtt is None or not self._mqtt.ensure_connected():
             self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
             if not self._mqtt.ensure_connected():
-                raise RuntimeError("MQTT connect failed")
+                raise DeviceResolveError("MQTT connect failed")
+
+    def _account_request(self, method: str, url: str, **kwargs):
+        _pace_account_request()
+        request = getattr(self.session, method)
+        return request(url, **kwargs)
 
     def login(self) -> None:
-        r = self.session.post(
+        r = self._account_request(
+            "post",
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
             headers={"X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f"{BASE}/"},
@@ -705,36 +758,82 @@ class RemkoSmartWebClient:
         )
         r.raise_for_status()
         if "PHPSESSID" not in self.session.cookies.get_dict():
-            raise RuntimeError("Login failed: no PHPSESSID")
+            raise SmartWebLoginError("Login failed: no PHPSESSID")
         self._last_login = time.time()
 
     def list_devices(self) -> list[str]:
         """Return available device names from /rest/liste."""
         self._ensure_login()
-        r_list = self.session.get(f"{BASE}/rest/liste", timeout=15)
-        r_list.raise_for_status()
-        name_map = _extract_names_from_rest_list(r_list.text)
+        name_map = self._fetch_device_name_map()
         names = [v for v in name_map.values() if v]
         return sorted(set(names), key=str.lower)
 
-    def resolve_device(self) -> None:
+    def list_device_map(self) -> dict[str, str]:
+        """Return available device names mapped to internal SmartWeb paths."""
         self._ensure_login()
-        # fetch list
-        r_list = self.session.get(f"{BASE}/rest/liste", timeout=15)
-        r_list.raise_for_status()
-        name_map = _extract_names_from_rest_list(r_list.text)
+        name_map = self._fetch_device_name_map()
+        return {name: rel for rel, name in name_map.items() if name}
 
-        # pick device by name
-        rel = None
-        for k, v in name_map.items():
-            if v.lower() == self.device_name.lower():
-                rel = k
-                break
-        if not rel:
-            raise RuntimeError("Device name not found in /rest/liste")
+    def _fetch_device_name_map(self, retries: int = 3) -> dict:
+        """Fetch /rest/liste with retries for transient SmartWeb list issues."""
+        last_error = None
+        last_name_map = {}
+        saw_empty_response = False
+        self._last_device_list_error = None
+        self._last_device_list_empty = False
+        for attempt in range(1, retries + 1):
+            if attempt > 1:
+                try:
+                    self._ensure_login(force=True)
+                except Exception as err:
+                    last_error = err
+                    _LOGGER.debug("SmartWeb re-login before device list retry failed: %s", err)
+            try:
+                r_list = self._account_request("get", f"{BASE}/rest/liste", timeout=15)
+                r_list.raise_for_status()
+                last_name_map = _extract_names_from_rest_list(r_list.text)
+                if last_name_map:
+                    self._last_device_list_error = None
+                    self._last_device_list_empty = False
+                    if attempt > 1:
+                        _LOGGER.debug(
+                            "SmartWeb device list recovered on attempt %s with devices: %s",
+                            attempt,
+                            sorted(last_name_map.values(), key=str.lower),
+                        )
+                    return last_name_map
+                saw_empty_response = True
+                _LOGGER.debug(
+                    "SmartWeb device list returned no parseable devices on attempt %s "
+                    "(response length: %s)",
+                    attempt,
+                    len(r_list.text or ""),
+                )
+            except Exception as err:
+                last_error = err
+                _LOGGER.debug("SmartWeb device list request failed on attempt %s: %s", attempt, err)
+            if attempt < retries:
+                time.sleep(float(attempt))
+        if last_error:
+            _LOGGER.debug("SmartWeb device list retries exhausted: %s", last_error)
+            self._last_device_list_error = last_error
+        self._last_device_list_empty = saw_empty_response and not last_name_map
+        return last_name_map
 
+    def _find_device_rel(self, name_map: dict) -> str | None:
+        if self.device_path and self.device_path in name_map:
+            return self.device_path
+        target = _normalize_device_name(self.device_name)
+        for rel, name in name_map.items():
+            if _normalize_device_name(name) == target:
+                return rel
+        return None
+
+    def _resolve_device_rel(self, rel: str) -> None:
+        self.device_path = rel
         url = urljoin(BASE, rel)
-        r0 = self.session.get(url, allow_redirects=False, timeout=15)
+        r0 = self._account_request("get", url, allow_redirects=False, timeout=15)
+        r0.raise_for_status()
         loc = r0.headers.get("Location")
         if loc:
             hit = _extract_sid_sk_from_url(urljoin(BASE, loc))
@@ -743,20 +842,74 @@ class RemkoSmartWebClient:
                 self.topic = f"{VERSION}/{self.sid}"
                 return
 
-        r1 = self.session.get(url, allow_redirects=True, timeout=15)
+        r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
+        r1.raise_for_status()
         hit = _extract_sid_sk_from_url(r1.url) or _extract_sid_sk_from_text(r1.text)
         if not hit:
-            raise RuntimeError("SID/SK not found")
+            raise DeviceResolveError("SID/SK not found")
         self.sid, self.sk = hit
         self.topic = f"{VERSION}/{self.sid}"
         self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
         if self.smt_user is None:
             _LOGGER.warning("SMT_USER not found in device page; CLIENT2HOST polling may be limited")
 
+    def resolve_device(self) -> None:
+        self._ensure_login()
+        if self.device_path:
+            try:
+                self._resolve_device_rel(self.device_path)
+                return
+            except Exception as err:
+                _LOGGER.debug(
+                    "Direct SmartWeb device path resolution failed for %r (%s), falling back to /rest/liste",
+                    self.device_name,
+                    err,
+                )
+
+        name_map = self._fetch_device_name_map()
+        rel = self._find_device_rel(name_map)
+        if not rel:
+            available = sorted(v for v in name_map.values() if v)
+            if self.device_path and name_map:
+                _LOGGER.warning(
+                    "Device path %r for %r not found in /rest/liste. Falling back to name lookup failed. "
+                    "Available devices: %s",
+                    self.device_path,
+                    self.device_name,
+                    available,
+                )
+            if available:
+                _LOGGER.warning(
+                    "Device name %r not found in /rest/liste. Available devices: %s",
+                    self.device_name,
+                    available,
+                )
+            else:
+                _LOGGER.warning(
+                    "Device name %r not found in /rest/liste because SmartWeb returned no parseable devices",
+                    self.device_name,
+                )
+            if self._last_device_list_error is not None:
+                raise DeviceListUnavailable(
+                    "SmartWeb device list could not be loaded after retries: "
+                    f"{self._last_device_list_error}"
+                )
+            if self._last_device_list_empty:
+                raise DeviceListUnavailable(
+                    "SmartWeb returned an empty or unparseable device list from /rest/liste"
+                )
+            if available:
+                raise DeviceNotFound(
+                    "Configured device name not found in /rest/liste. "
+                    f"Available devices: {', '.join(available)}"
+                )
+            raise DeviceNotFound("Device name not found in /rest/liste")
+        self._resolve_device_rel(rel)
+
     def _mqtt_roundtrip_esp(self, payload: dict, timeout=10) -> str | None:
         """Publish ESP payload and wait for Rx response on persistent MQTT."""
         if not self.sid or not self.sk or not self.topic:
-            raise RuntimeError("Device not resolved")
+            raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         self._mqtt.publish(f"{self.topic}/ESP", payload)
         return self._mqtt.wait_rx(timeout=timeout)
@@ -764,7 +917,7 @@ class RemkoSmartWebClient:
     def _mqtt_poll_values(self, timeout=10) -> dict | None:
         """Poll values via CLIENT2HOST on persistent MQTT."""
         if not self.sid or not self.sk or not self.topic:
-            raise RuntimeError("Device not resolved")
+            raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         poll = {
             "FORCE_RESPONSE": True,
@@ -866,7 +1019,7 @@ class RemkoSmartWebClient:
 
         if self._last_status:
             return self._last_status
-        raise RuntimeError("Unable to parse status")
+        raise UnsupportedPayload("Unable to parse status")
 
     def _read_status_c0(self, retries: int = 2) -> dict:
         """Read status via ESP (C0 Rx only)."""
@@ -905,7 +1058,7 @@ class RemkoSmartWebClient:
             )
             last_err = "Unable to parse status"
             time.sleep(0.5)
-        raise RuntimeError(last_err)
+        raise UnsupportedPayload(last_err)
 
     def set_values(self, overrides: dict) -> None:
         """Read current state, build a SET frame, then publish to /ESP."""
@@ -924,10 +1077,10 @@ class RemkoSmartWebClient:
                 last_err = err
                 time.sleep(0.5)
         if not payload:
-            raise RuntimeError(f"No C0 payload (status read failed: {last_err})")
+            raise UnsupportedPayload(f"No C0 payload (status read failed: {last_err})")
         tx = _build_set_cmd_from_c0(payload, overrides)
         if not tx:
-            raise RuntimeError("Failed to build SET frame")
+            raise UnsupportedPayload("Failed to build SET frame")
         self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
         # Try to read back status after SET to keep state in sync (best effort).
         time.sleep(1.0)

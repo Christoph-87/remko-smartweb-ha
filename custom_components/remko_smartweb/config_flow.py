@@ -8,6 +8,7 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
+    CONF_DEVICE_PATH,
     CONF_SCAN_INTERVAL,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
@@ -28,29 +29,24 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_account()
 
         errors = {}
-        if user_input is not None:
-            ok, device_names = await self._async_fetch_devices(user_input)
-            if ok:
-                self._email = user_input[CONF_EMAIL]
-                self._password = user_input[CONF_PASSWORD]
-                self._device_names = self._filter_existing_devices(device_names, self._email)
-                if not self._device_names:
-                    errors["base"] = "no_devices"
-                    return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
-                if len(device_names) == 1:
-                    data = {
-                        CONF_EMAIL: self._email,
-                        CONF_PASSWORD: self._password,
-                        CONF_DEVICE_NAME: device_names[0],
-                    }
-                    return self.async_create_entry(title=device_names[0], data=data)
-                return await self.async_step_device()
-            errors["base"] = "cannot_connect"
-
         schema = vol.Schema({
             vol.Required(CONF_EMAIL): str,
             vol.Required(CONF_PASSWORD): str,
         })
+        if user_input is not None:
+            ok, device_map = await self._async_fetch_devices(user_input)
+            if ok:
+                self._email = user_input[CONF_EMAIL]
+                self._password = user_input[CONF_PASSWORD]
+                self._device_map = self._filter_existing_device_map(device_map, self._email)
+                self._device_names = sorted(self._device_map, key=str.lower)
+                if not self._device_names:
+                    errors["base"] = "no_devices"
+                    return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+                if len(self._device_names) == 1:
+                    return self._create_device_entry(self._device_names[0])
+                return await self.async_step_device()
+            errors["base"] = "cannot_connect"
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
@@ -60,6 +56,12 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not existing:
             return await self.async_step_user()
 
+        options = dict(existing)
+        options["new"] = "Use new credentials"
+        schema = vol.Schema({
+            vol.Required("account"): vol.In(options),
+        })
+
         if user_input is not None:
             selected = user_input.get("account")
             if selected == "new":
@@ -68,39 +70,25 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if entry:
                 self._email = entry.data.get(CONF_EMAIL)
                 self._password = entry.data.get(CONF_PASSWORD)
-                ok, device_names = await self._async_fetch_devices(
+                ok, device_map = await self._async_fetch_devices(
                     {CONF_EMAIL: self._email, CONF_PASSWORD: self._password}
                 )
                 if ok:
-                    self._device_names = self._filter_existing_devices(device_names, self._email)
+                    self._device_map = self._filter_existing_device_map(device_map, self._email)
+                    self._device_names = sorted(self._device_map, key=str.lower)
                     if not self._device_names:
                         errors["base"] = "no_devices"
                         return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
                     if len(self._device_names) == 1:
-                        data = {
-                            CONF_EMAIL: self._email,
-                            CONF_PASSWORD: self._password,
-                            CONF_DEVICE_NAME: self._device_names[0],
-                        }
-                        return self.async_create_entry(title=self._device_names[0], data=data)
+                        return self._create_device_entry(self._device_names[0])
                     return await self.async_step_device()
             errors["base"] = "cannot_connect"
-
-        options = dict(existing)
-        options["new"] = "Use new credentials"
-        schema = vol.Schema({
-            vol.Required("account"): vol.In(options),
-        })
         return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
 
     async def async_step_device(self, user_input=None):
         errors = {}
         if user_input is not None:
-            data = {
-                CONF_EMAIL: self._email,
-                CONF_PASSWORD: self._password,
-                CONF_DEVICE_NAME: user_input[CONF_DEVICE_NAME],
-            }
+            data = self._entry_data_for_device(user_input[CONF_DEVICE_NAME])
             ok = await self._async_validate(data)
             if ok:
                 return self.async_create_entry(title=data[CONF_DEVICE_NAME], data=data)
@@ -124,6 +112,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 email=data[CONF_EMAIL],
                 password=data[CONF_PASSWORD],
                 device_name=data[CONF_DEVICE_NAME],
+                device_path=data.get(CONF_DEVICE_PATH),
             )
             client.login()
             client.resolve_device()
@@ -142,13 +131,13 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 device_name="",
             )
             client.login()
-            return client.list_devices()
+            return client.list_device_map()
 
         try:
-            names = await self.hass.async_add_executor_job(_fetch)
-            return True, names
+            device_map = await self.hass.async_add_executor_job(_fetch)
+            return True, device_map
         except Exception:
-            return False, []
+            return False, {}
 
     def _get_entries(self):
         return self.hass.config_entries.async_entries(DOMAIN)
@@ -174,18 +163,41 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             options[item["entry_id"]] = label
         return options
 
-    def _filter_existing_devices(self, device_names: list[str], email: str | None):
-        if not device_names:
-            return []
+    def _filter_existing_device_map(self, device_map: dict[str, str], email: str | None):
+        if not device_map:
+            return {}
         email = (email or "").strip().lower()
-        existing = set()
+        existing_names = set()
+        existing_paths = set()
         for entry in self._get_entries():
             if email and entry.data.get(CONF_EMAIL, "").strip().lower() != email:
                 continue
             name = entry.data.get(CONF_DEVICE_NAME)
             if name:
-                existing.add(name.strip().lower())
-        return [n for n in device_names if n.strip().lower() not in existing]
+                existing_names.add(name.strip().lower())
+            path = entry.data.get(CONF_DEVICE_PATH)
+            if path:
+                existing_paths.add(path)
+        return {
+            name: path
+            for name, path in device_map.items()
+            if name.strip().lower() not in existing_names and path not in existing_paths
+        }
+
+    def _entry_data_for_device(self, device_name: str):
+        data = {
+            CONF_EMAIL: self._email,
+            CONF_PASSWORD: self._password,
+            CONF_DEVICE_NAME: device_name,
+        }
+        device_path = getattr(self, "_device_map", {}).get(device_name)
+        if device_path:
+            data[CONF_DEVICE_PATH] = device_path
+        return data
+
+    def _create_device_entry(self, device_name: str):
+        data = self._entry_data_for_device(device_name)
+        return self.async_create_entry(title=device_name, data=data)
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
