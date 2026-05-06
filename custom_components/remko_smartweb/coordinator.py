@@ -5,26 +5,50 @@ import logging
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
-from .api import RemkoSmartWebClient
+from .api import DeviceNotFound, RemkoSmartWebClient, SmartWebLoginError, UnsupportedPayload
 from .const import DOMAIN, DEFAULT_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKOFF_INTERVAL = 300
+CACHE_VERSION = 1
+PERSISTENT_ERRORS = (DeviceNotFound, SmartWebLoginError, UnsupportedPayload)
 
 
 class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
-    def __init__(self, hass: HomeAssistant, client: RemkoSmartWebClient, scan_interval: int | None = None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: RemkoSmartWebClient,
+        entry_id: str,
+        scan_interval: int | None = None,
+    ) -> None:
         self.client = client
         interval = max(1, scan_interval or DEFAULT_SCAN_INTERVAL)
         self._base_interval = interval
         self._failure_count = 0
+        self._store = Store(hass, CACHE_VERSION, f"{DOMAIN}_{entry_id}_last_state")
+        self._last_saved_data = None
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=interval),
         )
+
+    async def async_load_last_known_data(self) -> None:
+        """Prime the coordinator with the last successful state from HA storage."""
+        data = await self._store.async_load()
+        if isinstance(data, dict):
+            self._last_saved_data = dict(data)
+            self.async_set_updated_data(dict(data))
+
+    async def _async_save_last_known_data(self, data: dict) -> None:
+        if data == self._last_saved_data:
+            return
+        self._last_saved_data = dict(data)
+        await self._store.async_save(dict(data))
 
     def _reset_backoff(self) -> None:
         if self._failure_count:
@@ -50,10 +74,12 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         try:
             data = await self.hass.async_add_executor_job(self.client.read_status)
             self._reset_backoff()
-            # Keep device name stable for optimistic updates if needed.
+            await self._async_save_last_known_data(data)
             return data
         except Exception as err:
             self._increase_backoff()
+            if isinstance(err, PERSISTENT_ERRORS):
+                raise UpdateFailed(str(err)) from err
             # Keep last known data to avoid entities going unavailable on transient failures.
             if self.data:
                 _LOGGER.warning("Status update failed, keeping last data: %s", err)

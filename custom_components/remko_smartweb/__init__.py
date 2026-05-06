@@ -70,9 +70,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_path=device_path,
         account=account,
     )
-    coordinator = RemkoSmartWebCoordinator(hass, client, scan_interval=scan_interval)
+    coordinator = RemkoSmartWebCoordinator(
+        hass,
+        client,
+        entry_id=entry.entry_id,
+        scan_interval=scan_interval,
+    )
 
     try:
+        await coordinator.async_load_last_known_data()
         await coordinator.async_config_entry_first_refresh()
     except Exception:
         await hass.async_add_executor_job(client.close)
