@@ -20,6 +20,7 @@ WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
 LOGIN_TTL_SEC = 10 * 60
+DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
 REDACTED = "<redacted>"
@@ -705,51 +706,39 @@ class UnsupportedPayload(SmartWebError):
     """Raised when a reachable device returns an unsupported status payload."""
 
 
-class RemkoSmartWebClient:
-    def __init__(self, email: str, password: str, device_name: str, device_path: str | None = None):
+class RemkoSmartWebAccount:
+    """Shared SmartWeb HTTP account state for one credential pair."""
+
+    def __init__(self, email: str, password: str):
         self.email = email
         self.password = password
-        self.device_name = device_name
-        self.device_path = device_path
         self.session = requests.Session()
-
-        self.sid = None
-        self.sk = None
-        self.topic = None
-        self.smt_user = None
+        self._lock = threading.RLock()
         self._last_login = 0.0
-        self._last_payload = None
-        self._last_status = None
-        self._last_device_list_error = None
-        self._last_device_list_empty = False
-        self._mqtt = None
+        self._device_name_map = None
+        self._device_name_map_at = 0.0
+        self.last_device_list_error = None
+        self.last_device_list_empty = False
 
-    def _ensure_login(self, force: bool = False) -> None:
+    def ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
-        if not force:
-            if (time.time() - self._last_login) < LOGIN_TTL_SEC and "PHPSESSID" in self.session.cookies.get_dict():
-                return
-        self.login()
+        with self._lock:
+            if not force:
+                if (
+                    (time.time() - self._last_login) < LOGIN_TTL_SEC
+                    and "PHPSESSID" in self.session.cookies.get_dict()
+                ):
+                    return
+            self.login()
 
-    def _ensure_device(self) -> None:
-        """Ensure SID/SK/topic are resolved from SmartWeb."""
-        if self.sid and self.sk and self.topic:
-            return
-        self.resolve_device()
-
-    def _ensure_mqtt(self) -> None:
-        if self._mqtt is None or not self._mqtt.ensure_connected():
-            self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
-            if not self._mqtt.ensure_connected():
-                raise DeviceResolveError("MQTT connect failed")
-
-    def _account_request(self, method: str, url: str, **kwargs):
+    def account_request(self, method: str, url: str, **kwargs):
         _pace_account_request()
-        request = getattr(self.session, method)
-        return request(url, **kwargs)
+        with self._lock:
+            request = getattr(self.session, method)
+            return request(url, **kwargs)
 
     def login(self) -> None:
-        r = self._account_request(
+        r = self.account_request(
             "post",
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
@@ -763,45 +752,62 @@ class RemkoSmartWebClient:
 
     def list_devices(self) -> list[str]:
         """Return available device names from /rest/liste."""
-        self._ensure_login()
-        name_map = self._fetch_device_name_map()
+        self.ensure_login()
+        name_map = self.fetch_device_name_map()
         names = [v for v in name_map.values() if v]
         return sorted(set(names), key=str.lower)
 
     def list_device_map(self) -> dict[str, str]:
         """Return available device names mapped to internal SmartWeb paths."""
-        self._ensure_login()
-        name_map = self._fetch_device_name_map()
+        self.ensure_login()
+        name_map = self.fetch_device_name_map()
         return {name: rel for rel, name in name_map.items() if name}
 
-    def _fetch_device_name_map(self, retries: int = 3) -> dict:
-        """Fetch /rest/liste with retries for transient SmartWeb list issues."""
+    def fetch_device_name_map(self, retries: int = 3, force: bool = False) -> dict:
+        """Fetch /rest/liste with retries, caching successful results per account."""
+        with self._lock:
+            if (
+                not force
+                and self._device_name_map is not None
+                and (time.time() - self._device_name_map_at) < DEVICE_LIST_TTL_SEC
+            ):
+                return dict(self._device_name_map)
+
         last_error = None
         last_name_map = {}
         saw_empty_response = False
-        self._last_device_list_error = None
-        self._last_device_list_empty = False
+        self.last_device_list_error = None
+        self.last_device_list_empty = False
         for attempt in range(1, retries + 1):
             if attempt > 1:
                 try:
-                    self._ensure_login(force=True)
+                    self.ensure_login(force=True)
                 except Exception as err:
                     last_error = err
                     _LOGGER.debug("SmartWeb re-login before device list retry failed: %s", err)
             try:
-                r_list = self._account_request("get", f"{BASE}/rest/liste", timeout=15)
-                r_list.raise_for_status()
-                last_name_map = _extract_names_from_rest_list(r_list.text)
-                if last_name_map:
-                    self._last_device_list_error = None
-                    self._last_device_list_empty = False
-                    if attempt > 1:
-                        _LOGGER.debug(
-                            "SmartWeb device list recovered on attempt %s with devices: %s",
-                            attempt,
-                            sorted(last_name_map.values(), key=str.lower),
-                        )
-                    return last_name_map
+                with self._lock:
+                    if (
+                        not force
+                        and self._device_name_map is not None
+                        and (time.time() - self._device_name_map_at) < DEVICE_LIST_TTL_SEC
+                    ):
+                        return dict(self._device_name_map)
+                    r_list = self.account_request("get", f"{BASE}/rest/liste", timeout=15)
+                    r_list.raise_for_status()
+                    last_name_map = _extract_names_from_rest_list(r_list.text)
+                    if last_name_map:
+                        self._device_name_map = dict(last_name_map)
+                        self._device_name_map_at = time.time()
+                        self.last_device_list_error = None
+                        self.last_device_list_empty = False
+                        if attempt > 1:
+                            _LOGGER.debug(
+                                "SmartWeb device list recovered on attempt %s with devices: %s",
+                                attempt,
+                                sorted(last_name_map.values(), key=str.lower),
+                            )
+                        return dict(last_name_map)
                 saw_empty_response = True
                 _LOGGER.debug(
                     "SmartWeb device list returned no parseable devices on attempt %s "
@@ -816,9 +822,77 @@ class RemkoSmartWebClient:
                 time.sleep(float(attempt))
         if last_error:
             _LOGGER.debug("SmartWeb device list retries exhausted: %s", last_error)
-            self._last_device_list_error = last_error
-        self._last_device_list_empty = saw_empty_response and not last_name_map
-        return last_name_map
+            self.last_device_list_error = last_error
+        self.last_device_list_empty = saw_empty_response and not last_name_map
+        return dict(last_name_map)
+
+    def close(self):
+        self.session.close()
+
+
+class RemkoSmartWebClient:
+    def __init__(
+        self,
+        email: str,
+        password: str,
+        device_name: str,
+        device_path: str | None = None,
+        account: RemkoSmartWebAccount | None = None,
+    ):
+        self.email = email
+        self.password = password
+        self.device_name = device_name
+        self.device_path = device_path
+        self._owns_account = account is None
+        self.account = account or RemkoSmartWebAccount(email, password)
+        self.session = self.account.session
+
+        self.sid = None
+        self.sk = None
+        self.topic = None
+        self.smt_user = None
+        self._last_payload = None
+        self._last_status = None
+        self._last_device_list_error = None
+        self._last_device_list_empty = False
+        self._mqtt = None
+
+    def _ensure_login(self, force: bool = False) -> None:
+        """Ensure a logged-in session is available, reusing it within a TTL."""
+        self.account.ensure_login(force=force)
+
+    def _ensure_device(self) -> None:
+        """Ensure SID/SK/topic are resolved from SmartWeb."""
+        if self.sid and self.sk and self.topic:
+            return
+        self.resolve_device()
+
+    def _ensure_mqtt(self) -> None:
+        if self._mqtt is None or not self._mqtt.ensure_connected():
+            self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
+            if not self._mqtt.ensure_connected():
+                raise DeviceResolveError("MQTT connect failed")
+
+    def _account_request(self, method: str, url: str, **kwargs):
+        return self.account.account_request(method, url, **kwargs)
+
+    def login(self) -> None:
+        self.account.login()
+
+    def list_devices(self) -> list[str]:
+        """Return available device names from /rest/liste."""
+        return self.account.list_devices()
+
+    def list_device_map(self) -> dict[str, str]:
+        """Return available device names mapped to internal SmartWeb paths."""
+        return self.account.list_device_map()
+
+    def _fetch_device_name_map(self, retries: int = 3) -> dict:
+        """Fetch /rest/liste with retries for transient SmartWeb list issues."""
+        name_map = self.account.fetch_device_name_map(retries=retries)
+        self._last_device_list_error = self.account.last_device_list_error
+        self._last_device_list_empty = self.account.last_device_list_empty
+        return name_map
 
     def _find_device_rel(self, name_map: dict) -> str | None:
         if self.device_path and self.device_path in name_map:
@@ -1093,3 +1167,5 @@ class RemkoSmartWebClient:
         if self._mqtt is not None:
             self._mqtt.close()
             self._mqtt = None
+        if self._owns_account:
+            self.account.close()

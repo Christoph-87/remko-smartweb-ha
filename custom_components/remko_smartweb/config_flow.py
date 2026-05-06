@@ -114,9 +114,12 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 device_name=data[CONF_DEVICE_NAME],
                 device_path=data.get(CONF_DEVICE_PATH),
             )
-            client.login()
-            client.resolve_device()
-            return True
+            try:
+                client.login()
+                client.resolve_device()
+                return True
+            finally:
+                client.close()
 
         try:
             return await self.hass.async_add_executor_job(_check)
@@ -130,8 +133,11 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 password=data[CONF_PASSWORD],
                 device_name="",
             )
-            client.login()
-            return client.list_device_map()
+            try:
+                client.login()
+                return client.list_device_map()
+            finally:
+                client.close()
 
         try:
             device_map = await self.hass.async_add_executor_job(_fetch)
