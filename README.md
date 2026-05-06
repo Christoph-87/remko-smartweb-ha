@@ -83,4 +83,4 @@ logger:
 Raw diagnostic logs do not automatically add support for a device. They provide the value IDs and payloads needed to implement device-specific sensors, switches, numbers, or selects.
 
 ## Releases
-- For HACS releases, create a GitHub release whose tag matches the integration version in `custom_components/remko_smartweb/manifest.json`, for example `v0.2.1`.
+- For HACS releases, create a GitHub release whose tag matches the integration version in `custom_components/remko_smartweb/manifest.json`, for example `v0.2.2`.

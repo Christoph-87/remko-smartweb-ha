@@ -7,6 +7,7 @@ import re
 import ssl
 import threading
 import time
+from collections import deque
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import requests
@@ -45,6 +46,7 @@ def _redact_debug_text(text: str) -> str:
     """Mask likely credentials and session identifiers before logging."""
     replacements = (
         (r"([?&](?:SID|SK)=)[^&\s\"']+", rf"\1{REDACTED}"),
+        (r"(V\d{2}P\d{2}/)[0-9A-Fa-f]{16}", rf"\1{REDACTED}"),
         (r"([\"']?(?:SID|SK)[\"']?\s*[:=]\s*[\"']?)[0-9A-Fa-f]{16}([\"']?)", rf"\1{REDACTED}\2"),
         (r"\b(PHPSESSID=)[^;\s\"']+", rf"\1{REDACTED}"),
         (r"([\"']?CLIENT_ID[\"']?\s*[:=]\s*[\"']?)SMT[A-Za-z0-9]+([\"']?)", rf"\1{REDACTED}\2"),
@@ -86,6 +88,40 @@ def _debug_value(value, limit: int = DEBUG_PAYLOAD_LIMIT):
     if len(text) > limit:
         return f"{text[:limit]}... <truncated {len(text) - limit} chars>"
     return text
+
+
+def _mqtt_message_summary(topic: str, payload: str) -> dict:
+    summary = {
+        "topic": _redact_debug_text(topic),
+        "payload": payload,
+        "kind": "text",
+    }
+    try:
+        obj = json.loads(payload)
+    except Exception:
+        return summary
+
+    if isinstance(obj, str):
+        summary["kind"] = "json_string"
+        summary["payload"] = obj
+        try:
+            obj = json.loads(obj)
+        except Exception:
+            return summary
+
+    if isinstance(obj, dict):
+        keys = sorted(str(key) for key in obj.keys())
+        summary["json_keys"] = keys
+        if "Rx" in obj:
+            summary["kind"] = "rx"
+        elif "Tx" in obj:
+            summary["kind"] = "tx_echo"
+        elif "values" in obj:
+            summary["kind"] = "values"
+        else:
+            values = _extract_values_from_payload(payload)
+            summary["kind"] = "values" if isinstance(values, dict) else "json"
+    return summary
 
 
 def _extract_sid_sk_from_url(url: str):
@@ -503,7 +539,10 @@ class _MqttSession:
         self._closed = False
         self._last_rx = None
         self._last_values = None
-        self._last_payload = None
+        self._last_tx_echo = None
+        self._recent_messages = deque(maxlen=20)
+        self._received_non_tx_count = 0
+        self._subscribed_topics = []
 
         self.client = mqtt.Client(
             client_id=f"SMT{random.randint(0,9999):04d}{sid}",
@@ -527,11 +566,15 @@ class _MqttSession:
             _LOGGER.warning("MQTT connect failed rc=%s", rc)
             self._connected.set()
             return
-        client.subscribe([
+        subscriptions = [
             (f"{self.topic}/HOST2CLIENT", 2),
+            (f"{self.topic}/CLIENT2HOST", 2),
             (f"{self.topic}/RESP", 2),
             (f"{self.topic}/ESP", 2),
-        ])
+        ]
+        client.subscribe(subscriptions)
+        with self._lock:
+            self._subscribed_topics = [topic for topic, _qos in subscriptions]
         self._connected.set()
 
     def _on_disconnect(self, client, userdata, *args):
@@ -543,8 +586,13 @@ class _MqttSession:
             text = msg.payload.decode("utf-8", errors="replace")
         except Exception:
             text = repr(msg.payload)
+        summary = _mqtt_message_summary(msg.topic, text)
         with self._cond:
-            self._last_payload = text
+            if summary.get("kind") == "tx_echo":
+                self._last_tx_echo = summary
+            else:
+                self._received_non_tx_count += 1
+                self._recent_messages.append(summary)
             # Rx hex for ESP status
             try:
                 obj = json.loads(text)
@@ -593,9 +641,14 @@ class _MqttSession:
                 self._cond.wait(timeout=remaining)
         return None
 
-    def last_payload_snapshot(self):
+    def diagnostic_snapshot(self):
         with self._cond:
-            return self._last_payload
+            return {
+                "recent_messages": list(self._recent_messages),
+                "last_tx_echo": self._last_tx_echo,
+                "received_non_tx_count": self._received_non_tx_count,
+                "subscribed_topics": list(self._subscribed_topics),
+            }
 
     def close(self):
         try:
@@ -726,10 +779,10 @@ class RemkoSmartWebClient:
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
 
-    def _last_mqtt_payload_snapshot(self):
+    def _mqtt_diagnostic_snapshot(self):
         if self._mqtt is None:
             return None
-        return self._mqtt.last_payload_snapshot()
+        return self._mqtt.diagnostic_snapshot()
 
     def _log_unsupported_payload(self, stage: str, **diagnostics) -> None:
         if not _LOGGER.isEnabledFor(logging.DEBUG):
@@ -776,7 +829,7 @@ class RemkoSmartWebClient:
         self._log_unsupported_payload(
             "esp_status",
             esp_response=resp,
-            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+            mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
         )
 
         # fallback: poll values via CLIENT2HOST
@@ -793,7 +846,7 @@ class RemkoSmartWebClient:
         self._log_unsupported_payload(
             "client2host_values",
             values=values,
-            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+            mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
         )
 
         # retry once after forcing a re-login
@@ -808,7 +861,7 @@ class RemkoSmartWebClient:
         self._log_unsupported_payload(
             "esp_status_retry",
             esp_response=resp,
-            last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+            mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
         )
 
         if self._last_status:
@@ -848,7 +901,7 @@ class RemkoSmartWebClient:
             self._log_unsupported_payload(
                 "esp_status_c0",
                 esp_response=resp,
-                last_mqtt_payload=self._last_mqtt_payload_snapshot(),
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
             )
             last_err = "Unable to parse status"
             time.sleep(0.5)

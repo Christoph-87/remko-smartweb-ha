@@ -1,7 +1,9 @@
 # Changelog
 
-## v0.2.1
+## v0.2.2
 - Add diagnostic debug logging for unsupported or not-yet-mapped REMKO SmartWeb devices
+- Improve unsupported-device diagnostics with MQTT topic summaries and outgoing Tx echo detection
+- Subscribe to CLIENT2HOST during diagnostics and report whether non-Tx MQTT messages were received
 - Mask likely sensitive values in diagnostic debug logs
 - Add instructions and an issue template for new device support requests
 - Update repository links and code owner metadata
