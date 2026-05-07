@@ -23,8 +23,9 @@ LOGIN_TTL_SEC = 10 * 60
 DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
-DEBUG_VALUES_LIMIT = 50000
+DEBUG_VALUES_LIMIT = 200000
 REDACTED = "<redacted>"
+VALUE_STATUS_QUERY_LIST = [1190, 1194, 5530, 1152, 1333, 1336]
 SENSITIVE_DEBUG_KEYS = {
     "access_key",
     "accesskey",
@@ -130,6 +131,30 @@ def _debug_values(values: dict | None, limit: int = DEBUG_VALUES_LIMIT):
     if sorted_values is None:
         return None
     return _debug_value({"count": len(sorted_values), "values": sorted_values}, limit=limit)
+
+
+def _compact_mqtt_diagnostics(diagnostics: dict | None) -> dict | None:
+    """Keep MQTT diagnostics readable; full values are logged separately."""
+    if not isinstance(diagnostics, dict):
+        return diagnostics
+    compact = dict(diagnostics)
+    messages = []
+    for message in compact.get("recent_messages") or []:
+        if not isinstance(message, dict):
+            messages.append(message)
+            continue
+        item = dict(message)
+        if item.get("kind") == "values":
+            item.pop("values", None)
+            item["values_omitted"] = True
+        messages.append(item)
+    compact["recent_messages"] = messages
+    if isinstance(compact.get("last_values"), dict):
+        compact["last_values"] = {
+            "values_count": len(compact["last_values"]),
+            "values_omitted": True,
+        }
+    return compact
 
 
 def _values_diff(previous: dict | None, current: dict, limit: int = 200) -> dict:
@@ -467,13 +492,42 @@ def _first_byte(hexstr: str | None):
         return None
 
 
+def _first_word(hexstr: str | None):
+    if not hexstr or len(hexstr) < 4:
+        return None
+    try:
+        return int(hexstr[0:4], 16)
+    except Exception:
+        return None
+
+
+def _temperature_tenths(hexstr: str | None):
+    value = _first_word(hexstr)
+    if value is None or value == 0:
+        return None
+    temperature = value / 10
+    if -50 <= temperature <= 120:
+        return temperature
+    return None
+
+
 def _parse_values_status(values: dict) -> dict | None:
     if not isinstance(values, dict):
         return None
     b1194 = _first_byte(values.get("1194"))
     b1190 = _first_byte(values.get("1190"))
     b5530 = _first_byte(values.get("5530"))
-    if b1194 is None and b1190 is None and b5530 is None:
+    b1152 = _first_byte(values.get("1152"))
+    dhw_setpoint = _temperature_tenths(values.get("1333"))
+    dhw_current = _temperature_tenths(values.get("1336"))
+    if (
+        b1194 is None
+        and b1190 is None
+        and b5530 is None
+        and b1152 is None
+        and dhw_setpoint is None
+        and dhw_current is None
+    ):
         return None
     status = {}
     if b1194 is not None:
@@ -482,6 +536,15 @@ def _parse_values_status(values: dict) -> dict | None:
         status["setpoint"] = b1190 / 2
     if b5530 is not None:
         status["room"] = (b5530 - 40) / 2
+    if dhw_setpoint is not None:
+        status["dhw_setpoint"] = dhw_setpoint
+        status["setpoint"] = dhw_setpoint
+        status["mode"] = "heat"
+    if dhw_current is not None:
+        status["dhw_top_temperature"] = dhw_current
+        status["room"] = dhw_current
+    if status.get("power") is None and (dhw_setpoint is not None or dhw_current is not None):
+        status["power"] = "ON" if b1152 in (None, 0x01) else None
     status["unit"] = "C"
     if not any(value is not None for key, value in status.items() if key != "unit"):
         return None
@@ -626,6 +689,7 @@ class _MqttSession:
         self._closed = False
         self._last_rx = None
         self._last_values = None
+        self._last_seen_values = None
         self._last_tx_echo = None
         self._recent_messages = deque(maxlen=20)
         self._received_non_tx_count = 0
@@ -691,6 +755,7 @@ class _MqttSession:
             values = _extract_values_from_payload(text)
             if isinstance(values, dict):
                 self._last_values = values
+                self._last_seen_values = values
                 self._cond.notify_all()
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
@@ -733,6 +798,7 @@ class _MqttSession:
             return {
                 "recent_messages": list(self._recent_messages),
                 "last_tx_echo": self._last_tx_echo,
+                "last_values": self._last_seen_values,
                 "received_non_tx_count": self._received_non_tx_count,
                 "subscribed_topics": list(self._subscribed_topics),
             }
@@ -1062,7 +1128,7 @@ class RemkoSmartWebClient:
         self._ensure_mqtt()
         poll = {
             "FORCE_RESPONSE": True,
-            "query_list": [1190, 1194, 5530],
+            "query_list": VALUE_STATUS_QUERY_LIST,
             "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
             "LASTWRITE": 0,
             "ISTOUCH": False,
@@ -1078,28 +1144,54 @@ class RemkoSmartWebClient:
             return None
         return self._mqtt.diagnostic_snapshot()
 
+    def _log_mapping_snapshot(self, stage: str, values: dict) -> None:
+        current_values = _sorted_debug_values(values)
+        changes = _values_diff(
+            self._last_mapping_values,
+            current_values,
+        )
+        self._last_mapping_values = dict(current_values)
+
+        if changes["baseline"]:
+            _LOGGER.debug(
+                "REMKO SmartWeb mapping baseline: %s",
+                _debug_value(
+                    {
+                        "device": self.device_name,
+                        "stage": stage,
+                        "values_count": len(current_values),
+                        "keys": list(current_values.keys()),
+                    },
+                    limit=DEBUG_VALUES_LIMIT,
+                ),
+            )
+            return
+
+        if changes["changed_count"] == 0:
+            return
+
+        mapping_changes = {
+            "device": self.device_name,
+            "stage": stage,
+            "changes_since_previous_snapshot": changes,
+        }
+        _LOGGER.debug(
+            "REMKO SmartWeb mapping changes: %s",
+            _debug_value(mapping_changes, limit=DEBUG_VALUES_LIMIT),
+        )
+
     def _log_unsupported_payload(self, stage: str, **diagnostics) -> None:
         if not _LOGGER.isEnabledFor(logging.DEBUG):
             return
         values = diagnostics.get("values")
         if isinstance(values, dict):
-            current_values = _sorted_debug_values(values)
-            mapping_snapshot = {
-                "device": self.device_name,
-                "stage": stage,
-                "values": {"count": len(current_values), "values": current_values},
-                "changes_since_previous_snapshot": _values_diff(
-                    self._last_mapping_values,
-                    current_values,
-                ),
-            }
-            self._last_mapping_values = dict(current_values)
-            _LOGGER.debug(
-                "REMKO SmartWeb mapping snapshot: %s",
-                _debug_value(mapping_snapshot, limit=DEBUG_VALUES_LIMIT),
-            )
+            self._log_mapping_snapshot(stage, values)
+        mqtt_diagnostics = diagnostics.get("mqtt_diagnostics")
+        if isinstance(mqtt_diagnostics, dict) and isinstance(mqtt_diagnostics.get("last_values"), dict):
+            self._log_mapping_snapshot(f"{stage}_mqtt_last_values", mqtt_diagnostics["last_values"])
         safe_diagnostics = {
-            key: _debug_values(value) if key == "values" and isinstance(value, dict) else _debug_value(value)
+            key: _debug_values(value) if key == "values" and isinstance(value, dict)
+            else _debug_value(_compact_mqtt_diagnostics(value) if key == "mqtt_diagnostics" else value)
             for key, value in diagnostics.items()
             if value is not None
         }

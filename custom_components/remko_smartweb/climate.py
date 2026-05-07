@@ -28,7 +28,10 @@ PRESET_MODES = ["none", "eco", "turbo", "sleep", "bioclean"]
 
 def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
     # Legacy fallback by name; prefer explicit model option in config flow.
-    name = (device_name or "").upper()
+    name = (device_name or "").casefold()
+    if "brauchwasser" in name or "warmwasser" in name:
+        return 30, 65
+    name = name.upper()
     for model in ("MXW 204", "MXW 264", "MXW 354", "MXW 524"):
         if model in name:
             return 17, 30

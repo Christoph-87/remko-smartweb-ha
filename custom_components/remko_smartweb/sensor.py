@@ -13,6 +13,8 @@ SENSORS = [
     ("room", "Room Temperature", "temperature"),
     ("outdoor", "Outdoor Temperature", "temperature"),
     ("setpoint", "Setpoint", "temperature"),
+    ("dhw_setpoint", "DHW Setpoint", "temperature"),
+    ("dhw_top_temperature", "DHW Top Temperature", "temperature"),
     ("error", "Error Code", None),
 ]
 
