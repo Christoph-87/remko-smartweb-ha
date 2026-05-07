@@ -23,6 +23,7 @@ LOGIN_TTL_SEC = 10 * 60
 DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
+DEBUG_VALUES_LIMIT = 50000
 REDACTED = "<redacted>"
 SENSITIVE_DEBUG_KEYS = {
     "access_key",
@@ -111,6 +112,51 @@ def _debug_value(value, limit: int = DEBUG_PAYLOAD_LIMIT):
     return text
 
 
+def _sorted_debug_values(values: dict | None) -> dict | None:
+    if not isinstance(values, dict):
+        return None
+    try:
+        return {
+            str(key): str(values[key])
+            for key in sorted(values, key=lambda item: int(item) if str(item).isdigit() else str(item))
+        }
+    except Exception:
+        return {str(key): str(value) for key, value in values.items()}
+
+
+def _debug_values(values: dict | None, limit: int = DEBUG_VALUES_LIMIT):
+    """Return a mapping-friendly representation of SmartWeb values."""
+    sorted_values = _sorted_debug_values(values)
+    if sorted_values is None:
+        return None
+    return _debug_value({"count": len(sorted_values), "values": sorted_values}, limit=limit)
+
+
+def _values_diff(previous: dict | None, current: dict, limit: int = 200) -> dict:
+    """Return changed SmartWeb values for easier manual mapping."""
+    if not isinstance(previous, dict):
+        return {"baseline": True, "changed": {}, "changed_count": 0}
+    changes = {}
+    all_keys = sorted(
+        {str(key) for key in previous.keys()} | {str(key) for key in current.keys()},
+        key=lambda item: int(item) if item.isdigit() else item,
+    )
+    for key in all_keys:
+        old = previous.get(key)
+        new = current.get(key)
+        if old != new:
+            changes[key] = {"old": old, "new": new}
+    changed_count = len(changes)
+    if changed_count > limit:
+        changes = dict(list(changes.items())[:limit])
+    return {
+        "baseline": False,
+        "changed": changes,
+        "changed_count": changed_count,
+        "omitted_count": max(0, changed_count - limit),
+    }
+
+
 def _mqtt_message_summary(topic: str, payload: str) -> dict:
     summary = {
         "topic": _redact_debug_text(topic),
@@ -135,13 +181,27 @@ def _mqtt_message_summary(topic: str, payload: str) -> dict:
         summary["json_keys"] = keys
         if "Rx" in obj:
             summary["kind"] = "rx"
+            summary["payload"] = _debug_value(obj)
         elif "Tx" in obj:
             summary["kind"] = "tx_echo"
+            summary["payload"] = _debug_value(obj)
         elif "values" in obj:
             summary["kind"] = "values"
+            values = obj.get("values")
+            if isinstance(values, dict):
+                summary.pop("payload", None)
+                summary["values_count"] = len(values)
+                summary["values"] = _debug_values(values)
         else:
             values = _extract_values_from_payload(payload)
-            summary["kind"] = "values" if isinstance(values, dict) else "json"
+            if isinstance(values, dict):
+                summary["kind"] = "values"
+                summary.pop("payload", None)
+                summary["values_count"] = len(values)
+                summary["values"] = _debug_values(values)
+            else:
+                summary["kind"] = "json"
+                summary["payload"] = _debug_value(obj)
     return summary
 
 
@@ -219,8 +279,12 @@ def _extract_names_from_rest_list(html: str):
     name_map = {}
     if not html:
         return name_map
-    for m in re.finditer(r'href="(/geraet/fernbedienung/[0-9a-f]{32})"', html, flags=re.I):
-        rel = m.group(1)
+    device_link_re = re.compile(
+        r'href="/geraet/(?:fernbedienung|benutzer|bearbeiten|loeschen)/([0-9a-f]{32})"',
+        flags=re.I,
+    )
+    for m in device_link_re.finditer(html):
+        rel = f"/geraet/fernbedienung/{m.group(1)}"
         if rel in name_map:
             continue
         tail = html[m.end(): m.end() + 1000]
@@ -419,6 +483,8 @@ def _parse_values_status(values: dict) -> dict | None:
     if b5530 is not None:
         status["room"] = (b5530 - 40) / 2
     status["unit"] = "C"
+    if not any(value is not None for key, value in status.items() if key != "unit"):
+        return None
     return status
 
 
@@ -853,6 +919,7 @@ class RemkoSmartWebClient:
         self.smt_user = None
         self._last_payload = None
         self._last_status = None
+        self._last_mapping_values = None
         self._last_device_list_error = None
         self._last_device_list_empty = False
         self._mqtt = None
@@ -1014,8 +1081,25 @@ class RemkoSmartWebClient:
     def _log_unsupported_payload(self, stage: str, **diagnostics) -> None:
         if not _LOGGER.isEnabledFor(logging.DEBUG):
             return
+        values = diagnostics.get("values")
+        if isinstance(values, dict):
+            current_values = _sorted_debug_values(values)
+            mapping_snapshot = {
+                "device": self.device_name,
+                "stage": stage,
+                "values": {"count": len(current_values), "values": current_values},
+                "changes_since_previous_snapshot": _values_diff(
+                    self._last_mapping_values,
+                    current_values,
+                ),
+            }
+            self._last_mapping_values = dict(current_values)
+            _LOGGER.debug(
+                "REMKO SmartWeb mapping snapshot: %s",
+                _debug_value(mapping_snapshot, limit=DEBUG_VALUES_LIMIT),
+            )
         safe_diagnostics = {
-            key: _debug_value(value)
+            key: _debug_values(value) if key == "values" and isinstance(value, dict) else _debug_value(value)
             for key, value in diagnostics.items()
             if value is not None
         }
