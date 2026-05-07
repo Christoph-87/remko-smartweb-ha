@@ -12,11 +12,14 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
+    CONF_DEVICE_KIND,
     CONF_SCAN_INTERVAL,
+    DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
     PLATFORMS,
 )
 from .coordinator import RemkoSmartWebCoordinator
+from .profiles import get_device_profile
 
 _LOGGER = logging.getLogger(__name__)
 ACCOUNT_DATA = "accounts"
@@ -60,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
     device_name = entry.data[CONF_DEVICE_NAME]
     device_path = entry.data.get(CONF_DEVICE_PATH)
+    device_kind = entry.options.get(CONF_DEVICE_KIND, DEVICE_KIND_AUTO)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     account = _get_or_create_account(hass, email, password)
 
@@ -68,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=password,
         device_name=device_name,
         device_path=device_path,
+        device_kind=device_kind,
         account=account,
     )
     coordinator = RemkoSmartWebCoordinator(
@@ -97,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "client": client,
         "coordinator": coordinator,
         "device_name": device_name,
+        "device_profile": get_device_profile(device_name, coordinator.data, device_kind),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

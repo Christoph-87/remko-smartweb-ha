@@ -43,6 +43,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = data["coordinator"]
     client = data["client"]
     device_name = data["device_name"]
+    profile = data["device_profile"]
+    if not profile.supports_climate:
+        async_add_entities([])
+        return
     model = entry.options.get(CONF_MODEL, "other")
     model_defaults = {
         "mxw_204": (17, 30),

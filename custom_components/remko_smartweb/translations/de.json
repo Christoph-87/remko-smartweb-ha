@@ -22,6 +22,13 @@
         "data": {
           "device_name": "Gerätename"
         }
+      },
+      "device_kind": {
+        "title": "REMKO SmartWeb",
+        "description": "Wähle den Gerätetyp aus. Auto-Erkennung nutzt den SmartWeb-Gerätenamen und den ersten Werte-Snapshot. Falls das nicht stimmt, wähle den Typ manuell. Nutze nur Diagnose für nicht unterstützte Geräte, die nur Mapping-Logs sammeln sollen.",
+        "data": {
+          "device_kind": "Gerätetyp"
+        }
       }
     },
     "error": {
@@ -35,6 +42,7 @@
         "title": "REMKO SmartWeb Optionen",
         "data": {
           "scan_interval": "Polling-Intervall (Sekunden)",
+          "device_kind": "Gerätetyp",
           "model": "Innengerät-Modell",
           "min_temp": "Minimale Temperatur (Override)",
           "max_temp": "Maximale Temperatur (Override)"

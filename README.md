@@ -32,12 +32,21 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 
 ## Options
 - Polling interval (seconds)
+- Device type (auto-detect, air conditioner / climate, domestic hot water, diagnostics only)
 - Min/Max temperature (override for UI bounds)
 - Indoor unit model (used to set default min/max)
 
 ## Temperature limits
 - MXW 204/264/354/524 are auto-mapped to 17–30 °C based on the device name.
+- Domestic hot water devices with `Brauchwasser` or `Warmwasser` in the name default to 30–65 °C.
 - Other devices default to 16–30 °C (override in options if needed).
+
+## Device type detection
+- New devices can be configured as auto-detect, air conditioner / climate, domestic hot water, or diagnostics only.
+- Existing entries without a stored device type continue to use auto-detection.
+- Auto-detection uses the SmartWeb device name and the first value snapshot. If it is wrong, change the device type in the integration options.
+- Debug mapping logs can still be used for partially supported or unknown devices when debug logging is enabled.
+- Diagnostics-only devices do not create control entities, but they can be set up to keep collecting mapping logs.
 
 ## Notes
 - This integration logs in to `smartweb.remko.media` and communicates via MQTT (WebSockets).

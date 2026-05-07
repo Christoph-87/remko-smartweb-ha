@@ -13,6 +13,9 @@ from urllib.parse import urljoin, urlparse, parse_qs
 import requests
 import paho.mqtt.client as mqtt
 
+from .const import DEVICE_KIND_AUTO
+from .profiles import get_parser_profile
+
 BASE = "https://smartweb.remko.media"
 LOGIN_URL = f"{BASE}/rest/login_do"
 WSS_HOST = "smartweb.remko.media"
@@ -64,6 +67,7 @@ def _normalize_device_name(name: str | None) -> str:
     normalized = normalized.replace("–", "-").replace("—", "-")
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
+
 
 def _redact_debug_text(text: str) -> str:
     """Mask likely credentials and session identifiers before logging."""
@@ -319,16 +323,6 @@ def _extract_names_from_rest_list(html: str):
     return name_map
 
 
-def _hex_to_bytes(hexstr: str):
-    hexstr = hexstr.strip()
-    if len(hexstr) % 2 != 0:
-        return None
-    try:
-        return [int(hexstr[i:i+2], 16) for i in range(0, len(hexstr), 2)]
-    except Exception:
-        return None
-
-
 _CRC8_TABLE = [
     0x00, 0x5E, 0xBC, 0xE2, 0x61, 0x3F, 0xDD, 0x83,
     0xC2, 0x9C, 0x7E, 0x20, 0xA3, 0xFD, 0x1F, 0x41,
@@ -395,76 +389,6 @@ def _build_status_cmd() -> str:
     return "".join(f"{b:02X}" for b in packet)
 
 
-def _parse_c0_from_rx(rx_hex: str):
-    data = _hex_to_bytes(rx_hex)
-    if not data or len(data) < 20:
-        return None
-    if data[0] != 0xAA:
-        return None
-    payload = data[10:-2]
-    if not payload or payload[0] != 0xC0:
-        return None
-
-    pwr = (payload[1] & 0x01) > 0
-    mode_raw = (payload[2] & 0xE0) >> 5
-    setpoint = (payload[2] & 0x0F) + 16 + ((payload[2] & 0x10) >> 4) * 0.5
-    fan_raw = payload[3] & 0x7F
-    vertical = (payload[7] & 0x03) > 0
-    horizontal = (payload[7] & 0x0C) > 0
-    eco = ((payload[9] & 0x10) >> 4) > 0
-    turbo = ((payload[10] & 0x02) >> 1) > 0
-    sleep = (payload[10] & 0x01) > 0
-    indoor = (payload[11] - 50) / 2
-    outdoor = (payload[12] - 50) / 2
-    error = payload[16]
-    temp_unit_f = ((payload[10] & 0x04) >> 2) > 0
-
-    mode_map = {1: "auto", 2: "cool", 3: "dry", 4: "heat", 5: "fan"}
-    mode = mode_map.get(mode_raw, f"mode{mode_raw}")
-
-    if fan_raw < 21:
-        fan = "silent"
-    elif fan_raw < 41:
-        fan = "low"
-    elif fan_raw < 61:
-        fan = "medium"
-    elif fan_raw < 101:
-        fan = "high"
-    else:
-        fan = "auto"
-
-    if vertical and horizontal:
-        swing = "both"
-    elif vertical:
-        swing = "vertical"
-    elif horizontal:
-        swing = "horizontal"
-    else:
-        swing = "off"
-
-    unit = "F" if temp_unit_f else "C"
-    if temp_unit_f:
-        setpoint = round(setpoint * 1.8 + 32, 1)
-        indoor = round(indoor * 1.8 + 32, 1)
-        outdoor = round(outdoor * 1.8 + 32, 1)
-
-    return {
-        "power": "ON" if pwr else "OFF",
-        "setpoint": setpoint,
-        "room": indoor,
-        "mode": mode,
-        "fan": fan,
-        "swing": swing,
-        "eco": eco,
-        "turbo": turbo,
-        "sleep": sleep,
-        "outdoor": outdoor,
-        "error": error,
-        "unit": unit,
-        "_payload": payload,
-    }
-
-
 def _extract_values_from_payload(payload: str):
     try:
         data = json.loads(payload)
@@ -481,74 +405,6 @@ def _extract_values_from_payload(payload: str):
         except Exception:
             return None
     return None
-
-
-def _first_byte(hexstr: str | None):
-    if not hexstr:
-        return None
-    try:
-        return int(hexstr[0:2], 16)
-    except Exception:
-        return None
-
-
-def _first_word(hexstr: str | None):
-    if not hexstr or len(hexstr) < 4:
-        return None
-    try:
-        return int(hexstr[0:4], 16)
-    except Exception:
-        return None
-
-
-def _temperature_tenths(hexstr: str | None):
-    value = _first_word(hexstr)
-    if value is None or value == 0:
-        return None
-    temperature = value / 10
-    if -50 <= temperature <= 120:
-        return temperature
-    return None
-
-
-def _parse_values_status(values: dict) -> dict | None:
-    if not isinstance(values, dict):
-        return None
-    b1194 = _first_byte(values.get("1194"))
-    b1190 = _first_byte(values.get("1190"))
-    b5530 = _first_byte(values.get("5530"))
-    b1152 = _first_byte(values.get("1152"))
-    dhw_setpoint = _temperature_tenths(values.get("1333"))
-    dhw_current = _temperature_tenths(values.get("1336"))
-    if (
-        b1194 is None
-        and b1190 is None
-        and b5530 is None
-        and b1152 is None
-        and dhw_setpoint is None
-        and dhw_current is None
-    ):
-        return None
-    status = {}
-    if b1194 is not None:
-        status["power"] = "ON" if b1194 == 0x01 else ("OFF" if b1194 == 0x02 else None)
-    if b1190 is not None:
-        status["setpoint"] = b1190 / 2
-    if b5530 is not None:
-        status["room"] = (b5530 - 40) / 2
-    if dhw_setpoint is not None:
-        status["dhw_setpoint"] = dhw_setpoint
-        status["setpoint"] = dhw_setpoint
-        status["mode"] = "heat"
-    if dhw_current is not None:
-        status["dhw_top_temperature"] = dhw_current
-        status["room"] = dhw_current
-    if status.get("power") is None and (dhw_setpoint is not None or dhw_current is not None):
-        status["power"] = "ON" if b1152 in (None, 0x01) else None
-    status["unit"] = "C"
-    if not any(value is not None for key, value in status.items() if key != "unit"):
-        return None
-    return status
 
 
 def _bool_from_str(val: str | None) -> bool | None:
@@ -969,12 +825,15 @@ class RemkoSmartWebClient:
         password: str,
         device_name: str,
         device_path: str | None = None,
+        device_kind: str = DEVICE_KIND_AUTO,
         account: RemkoSmartWebAccount | None = None,
     ):
         self.email = email
         self.password = password
         self.device_name = device_name
         self.device_path = device_path
+        self.device_kind = device_kind
+        self.profile = get_parser_profile(device_name, device_kind)
         self._owns_account = account is None
         self.account = account or RemkoSmartWebAccount(email, password)
         self.session = self.account.session
@@ -1145,6 +1004,8 @@ class RemkoSmartWebClient:
         return self._mqtt.diagnostic_snapshot()
 
     def _log_mapping_snapshot(self, stage: str, values: dict) -> None:
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
         current_values = _sorted_debug_values(values)
         changes = _values_diff(
             self._last_mapping_values,
@@ -1217,7 +1078,7 @@ class RemkoSmartWebClient:
                 obj = json.loads(resp_text)
                 rx_hex = obj.get("Rx")
                 if rx_hex:
-                    parsed = _parse_c0_from_rx(rx_hex)
+                    parsed = self.profile.parse_c0_status(rx_hex)
                     if parsed:
                         return parsed
             except Exception:
@@ -1237,7 +1098,9 @@ class RemkoSmartWebClient:
 
         # fallback: poll values via CLIENT2HOST
         values = self._mqtt_poll_values(timeout=10)
-        parsed_values = _parse_values_status(values) if values else None
+        if isinstance(values, dict):
+            self._log_mapping_snapshot("client2host_values", values)
+        parsed_values = self.profile.parse_values_status(values) if values else None
         if parsed_values:
             if self._last_status:
                 merged = dict(self._last_status)
@@ -1269,6 +1132,9 @@ class RemkoSmartWebClient:
 
         if self._last_status:
             return self._last_status
+        if self.profile.diagnostics_only:
+            self._last_status = {"_diagnostics_only": True}
+            return self._last_status
         raise UnsupportedPayload("Unable to parse status")
 
     def _read_status_c0(self, retries: int = 2) -> dict:
@@ -1286,7 +1152,7 @@ class RemkoSmartWebClient:
                 obj = json.loads(resp_text)
                 rx_hex = obj.get("Rx")
                 if rx_hex:
-                    parsed = _parse_c0_from_rx(rx_hex)
+                    parsed = self.profile.parse_c0_status(rx_hex)
                     if parsed:
                         return parsed
             except Exception:

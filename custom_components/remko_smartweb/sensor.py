@@ -9,24 +9,16 @@ from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN
 
-SENSORS = [
-    ("room", "Room Temperature", "temperature"),
-    ("outdoor", "Outdoor Temperature", "temperature"),
-    ("setpoint", "Setpoint", "temperature"),
-    ("dhw_setpoint", "DHW Setpoint", "temperature"),
-    ("dhw_top_temperature", "DHW Top Temperature", "temperature"),
-    ("error", "Error Code", None),
-]
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
     device_name = data["device_name"]
+    profile = data["device_profile"]
 
     entities = [
         RemkoSmartWebSensor(coordinator, device_name, key, name, kind)
-        for (key, name, kind) in SENSORS
+        for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
     async_add_entities(entities)
 

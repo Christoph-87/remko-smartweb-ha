@@ -13,11 +13,24 @@ from .const import (
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
     CONF_MODEL,
+    CONF_DEVICE_KIND,
+    DEVICE_KIND_AUTO,
+    DEVICE_KIND_CLIMATE,
+    DEVICE_KIND_DHW,
+    DEVICE_KIND_DIAGNOSTICS,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_MIN_TEMP,
     DEFAULT_MAX_TEMP,
 )
 from .api import RemkoSmartWebClient
+from .profiles import looks_like_dhw_name
+
+DEVICE_KIND_OPTIONS = {
+    DEVICE_KIND_AUTO: "Auto-detect",
+    DEVICE_KIND_CLIMATE: "Air conditioner / climate",
+    DEVICE_KIND_DHW: "Domestic hot water",
+    DEVICE_KIND_DIAGNOSTICS: "Diagnostics only",
+}
 
 
 class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -44,7 +57,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "no_devices"
                     return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
                 if len(self._device_names) == 1:
-                    return self._create_device_entry(self._device_names[0])
+                    return await self._prepare_device_kind_step(self._device_names[0])
                 return await self.async_step_device()
             errors["base"] = "cannot_connect"
 
@@ -80,7 +93,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "no_devices"
                         return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
                     if len(self._device_names) == 1:
-                        return self._create_device_entry(self._device_names[0])
+                        return await self._prepare_device_kind_step(self._device_names[0])
                     return await self.async_step_device()
             errors["base"] = "cannot_connect"
         return self.async_show_form(step_id="account", data_schema=schema, errors=errors)
@@ -88,11 +101,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_device(self, user_input=None):
         errors = {}
         if user_input is not None:
-            data = self._entry_data_for_device(user_input[CONF_DEVICE_NAME])
-            ok = await self._async_validate(data)
-            if ok:
-                return self.async_create_entry(title=data[CONF_DEVICE_NAME], data=data)
-            errors["base"] = "cannot_connect"
+            return await self._prepare_device_kind_step(user_input[CONF_DEVICE_NAME])
 
         device_names = getattr(self, "_device_names", None) or []
         if device_names:
@@ -105,6 +114,32 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             })
 
         return self.async_show_form(step_id="device", data_schema=schema, errors=errors)
+
+    async def async_step_device_kind(self, user_input=None):
+        errors = {}
+        data = getattr(self, "_pending_entry_data", None)
+        if not data:
+            return await self.async_step_device()
+
+        detected_kind = self._suggest_device_kind(data[CONF_DEVICE_NAME])
+        options = self._device_kind_options(detected_kind)
+        default_kind = detected_kind if detected_kind != DEVICE_KIND_AUTO else DEVICE_KIND_AUTO
+        schema = vol.Schema({
+            vol.Required(CONF_DEVICE_KIND, default=default_kind): vol.In(options),
+        })
+
+        if user_input is not None:
+            entry_options = {CONF_DEVICE_KIND: user_input[CONF_DEVICE_KIND]}
+            ok = await self._async_validate(data)
+            if ok:
+                return self.async_create_entry(
+                    title=data[CONF_DEVICE_NAME],
+                    data=data,
+                    options=entry_options,
+                )
+            errors["base"] = "cannot_connect"
+
+        return self.async_show_form(step_id="device_kind", data_schema=schema, errors=errors)
 
     async def _async_validate(self, data) -> bool:
         def _check():
@@ -201,9 +236,21 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data[CONF_DEVICE_PATH] = device_path
         return data
 
-    def _create_device_entry(self, device_name: str):
-        data = self._entry_data_for_device(device_name)
-        return self.async_create_entry(title=device_name, data=data)
+    async def _prepare_device_kind_step(self, device_name: str):
+        self._pending_entry_data = self._entry_data_for_device(device_name)
+        return await self.async_step_device_kind()
+
+    def _suggest_device_kind(self, device_name: str) -> str:
+        if looks_like_dhw_name(device_name):
+            return DEVICE_KIND_DHW
+        return DEVICE_KIND_AUTO
+
+    def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
+        options = dict(DEVICE_KIND_OPTIONS)
+        if detected_kind and detected_kind != DEVICE_KIND_AUTO:
+            label = options.get(detected_kind, detected_kind)
+            options[detected_kind] = f"{label} (detected)"
+        return options
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
@@ -222,6 +269,10 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         model = self._config_entry.options.get(CONF_MODEL, "other")
+        device_kind = self._config_entry.options.get(
+            CONF_DEVICE_KIND,
+            self._suggest_device_kind(self._config_entry.data.get(CONF_DEVICE_NAME, "")),
+        )
         model_defaults = {
             "mxw_204": (17, 30),
             "mxw_264": (17, 30),
@@ -232,6 +283,9 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         d_min, d_max = model_defaults.get(model, (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP))
 
         schema = vol.Schema({
+            vol.Optional(CONF_DEVICE_KIND, default=device_kind): vol.In(
+                self._device_kind_options(device_kind)
+            ),
             vol.Optional(CONF_MODEL, default=model): vol.In(
                 {
                     "mxw_204": "MXW 204",
@@ -255,3 +309,15 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             ): vol.Coerce(int),
         })
         return self.async_show_form(step_id="init", data_schema=schema)
+
+    def _suggest_device_kind(self, device_name: str) -> str:
+        if looks_like_dhw_name(device_name):
+            return DEVICE_KIND_DHW
+        return DEVICE_KIND_AUTO
+
+    def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
+        options = dict(DEVICE_KIND_OPTIONS)
+        if detected_kind and detected_kind != DEVICE_KIND_AUTO:
+            label = options.get(detected_kind, detected_kind)
+            options[detected_kind] = f"{label} (detected)"
+        return options
