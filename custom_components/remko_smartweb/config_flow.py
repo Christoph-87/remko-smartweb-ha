@@ -263,16 +263,39 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry):
         self._config_entry = config_entry
+        self._options = dict(config_entry.options)
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            self._options.update(user_input)
+            if self._shows_climate_options(user_input[CONF_DEVICE_KIND]):
+                return await self.async_step_climate()
+            self._options.pop(CONF_MODEL, None)
+            self._options.pop(CONF_MIN_TEMP, None)
+            self._options.pop(CONF_MAX_TEMP, None)
+            return self.async_create_entry(title="", data=self._options)
 
-        model = self._config_entry.options.get(CONF_MODEL, "other")
         device_kind = self._config_entry.options.get(
             CONF_DEVICE_KIND,
             self._suggest_device_kind(self._config_entry.data.get(CONF_DEVICE_NAME, "")),
         )
+        schema = vol.Schema({
+            vol.Optional(CONF_DEVICE_KIND, default=device_kind): vol.In(
+                self._device_kind_options(device_kind)
+            ),
+            vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): vol.Coerce(int),
+        })
+        return self.async_show_form(step_id="init", data_schema=schema)
+
+    async def async_step_climate(self, user_input=None):
+        if user_input is not None:
+            self._options.update(user_input)
+            return self.async_create_entry(title="", data=self._options)
+
+        model = self._options.get(CONF_MODEL, "other")
         model_defaults = {
             "mxw_204": (17, 30),
             "mxw_264": (17, 30),
@@ -283,9 +306,6 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         d_min, d_max = model_defaults.get(model, (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP))
 
         schema = vol.Schema({
-            vol.Optional(CONF_DEVICE_KIND, default=device_kind): vol.In(
-                self._device_kind_options(device_kind)
-            ),
             vol.Optional(CONF_MODEL, default=model): vol.In(
                 {
                     "mxw_204": "MXW 204",
@@ -296,19 +316,15 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             vol.Optional(
-                CONF_SCAN_INTERVAL,
-                default=self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-            ): vol.Coerce(int),
-            vol.Optional(
                 CONF_MIN_TEMP,
-                default=self._config_entry.options.get(CONF_MIN_TEMP, d_min),
+                default=self._options.get(CONF_MIN_TEMP, d_min),
             ): vol.Coerce(int),
             vol.Optional(
                 CONF_MAX_TEMP,
-                default=self._config_entry.options.get(CONF_MAX_TEMP, d_max),
+                default=self._options.get(CONF_MAX_TEMP, d_max),
             ): vol.Coerce(int),
         })
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="climate", data_schema=schema)
 
     def _suggest_device_kind(self, device_name: str) -> str:
         if looks_like_dhw_name(device_name):
@@ -321,3 +337,6 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             label = options.get(detected_kind, detected_kind)
             options[detected_kind] = f"{label} (detected)"
         return options
+
+    def _shows_climate_options(self, device_kind: str) -> bool:
+        return device_kind in (DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE)

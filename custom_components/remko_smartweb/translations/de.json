@@ -42,7 +42,12 @@
         "title": "REMKO SmartWeb Optionen",
         "data": {
           "scan_interval": "Polling-Intervall (Sekunden)",
-          "device_kind": "Gerätetyp",
+          "device_kind": "Gerätetyp"
+        }
+      },
+      "climate": {
+        "title": "REMKO SmartWeb Klimagerät-Optionen",
+        "data": {
           "model": "Innengerät-Modell",
           "min_temp": "Minimale Temperatur (Override)",
           "max_temp": "Maximale Temperatur (Override)"

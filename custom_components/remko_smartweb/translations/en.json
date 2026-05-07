@@ -42,7 +42,12 @@
         "title": "REMKO SmartWeb Options",
         "data": {
           "scan_interval": "Polling interval (seconds)",
-          "device_kind": "Device type",
+          "device_kind": "Device type"
+        }
+      },
+      "climate": {
+        "title": "REMKO SmartWeb Climate Options",
+        "data": {
           "model": "Indoor unit model",
           "min_temp": "Min temperature (override)",
           "max_temp": "Max temperature (override)"
