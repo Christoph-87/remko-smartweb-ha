@@ -32,6 +32,8 @@ from custom_components.remko_smartweb.api import (
     _extract_sid_sk_from_text,
     _extract_sid_sk_from_url,
     _extract_smt_user_from_text,
+    _extract_smt_user_from_url,
+    _value_query_list,
 )
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
@@ -39,6 +41,7 @@ from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfi
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
+from custom_components.remko_smartweb.profiles.value_mapping import ValueWriteSpec, build_value_write
 
 
 CLIMATE_C0_RX = (
@@ -47,9 +50,26 @@ CLIMATE_C0_RX = (
 
 
 class ProfileParsingTests(unittest.TestCase):
+    def test_value_write_spec_encodes_scaled_and_enum_values(self):
+        specs = (
+            ValueWriteSpec("temperature", "1000", digits=4, scale=10),
+            ValueWriteSpec("power", "1001", enum={True: 1, False: 2}),
+        )
+
+        self.assertEqual(
+            build_value_write({"temperature": 55.5, "power": False}, specs),
+            {"1000": "022B", "1001": "02"},
+        )
+
+    def test_value_write_spec_ignores_unknown_enum_values(self):
+        specs = (ValueWriteSpec("mode", "1002", enum={"eco": 9}),)
+
+        self.assertIsNone(build_value_write({"mode": "unsupported"}, specs))
+
     def test_extract_smt_user_from_device_page_text(self):
         self.assertEqual(_extract_smt_user_from_text("global.SMT_USER=12345;"), 12345)
         self.assertEqual(_extract_smt_user_from_text('"SMT_USER": 67890'), 67890)
+        self.assertEqual(_extract_smt_user_from_url("https://example.invalid/?us=12345"), 12345)
 
     def test_extract_global_var_from_device_scripts(self):
         self.assertEqual(_extract_global_var('global.SMT_USER="12345";', "SMT_USER"), "12345")
@@ -63,6 +83,14 @@ class ProfileParsingTests(unittest.TestCase):
         )
         self.assertIsNone(_extract_sid_sk_from_text('global.SMT_ID="NaN";global.SMT_KEY="NaN";'))
         self.assertIsNone(_extract_sid_sk_from_url("https://example.invalid/?SID=&SK="))
+
+    def test_value_query_list_includes_written_ids_with_status_ids(self):
+        query_list = _value_query_list({"1333": "022B", "9999": "01"})
+
+        self.assertIn(1333, query_list)
+        self.assertIn(9999, query_list)
+        self.assertEqual(query_list.count(1333), 1)
+        self.assertGreater(len(query_list), 2)
 
     def test_climate_c0_status_parses_core_fields(self):
         status = ClimateDeviceProfile().parse_c0_status(CLIMATE_C0_RX)
@@ -164,6 +192,48 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_power_state"], "off")
         self.assertEqual(status["power"], "OFF")
 
+    def test_dhw_values_status_parses_padded_state_bytes(self):
+        values = {
+            "1192": "00000000000000000009",
+            "1194": "00000000000000000001",
+            "1333": "0226",
+            "5943": "0226",
+        }
+
+        status = DomesticHotWaterDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(status["dhw_mode"], "eco")
+        self.assertEqual(status["dhw_power_state"], "on")
+        self.assertEqual(status["power"], "ON")
+
+    def test_dhw_values_status_parses_long_padded_state_bytes_from_log(self):
+        values = {
+            "1192": (
+                "0000000000000000000000000000000000000000000000000000000000000000"
+                "0000000000000000000000000000000000000000000000000000000000000009"
+            ),
+            "1194": (
+                "0000000000000000000000000000000000000000000000000000000000000000"
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            ),
+            "1333": "0226",
+            "5943": "0226",
+        }
+
+        status = DomesticHotWaterDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(status["dhw_mode"], "eco")
+        self.assertEqual(status["mode"], "eco")
+        self.assertEqual(status["dhw_power_state"], "on")
+        self.assertEqual(status["power"], "ON")
+
+    def test_dhw_profile_builds_value_writes(self):
+        values = DomesticHotWaterDeviceProfile().build_value_write(
+            {"setpoint": 55.5, "power": True, "mode": "eco"}
+        )
+
+        self.assertEqual(values, {"1333": "022B", "1194": "01", "1192": "09"})
+
     def test_auto_profile_prefers_dhw_for_dhw_device_name(self):
         values = {
             "1190": "2C",
@@ -231,7 +301,29 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["swing"], "vertical")
         self.assertEqual(status["filter_state"], 1)
 
-    def test_get_device_profile_returns_specialized_readonly_profiles(self):
+    def test_kwt_profile_builds_value_writes(self):
+        values = KwtDeviceProfile().build_value_write(
+            {
+                "setpoint": 22.5,
+                "power": True,
+                "mode": "heat",
+                "fan": "medium",
+                "swing": "vertical",
+            }
+        )
+
+        self.assertEqual(
+            values,
+            {
+                "1190": "2D",
+                "1194": "01",
+                "1192": "06",
+                "1191": "04",
+                "1193": "04",
+            },
+        )
+
+    def test_get_device_profile_returns_specialized_profiles(self):
         self.assertIsInstance(
             get_device_profile("LTE", {"internal_humidity": 45}),
             LteDeviceProfile,

@@ -10,12 +10,17 @@ class SmartWebDeviceProfile:
     sensor_descriptions: tuple[SensorDescription, ...] = ()
     supports_climate = False
     supports_water_heater = False
+    supports_value_write = False
+    supports_climate_presets = True
     diagnostics_only = False
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:
         return None
 
     def parse_values_status(self, values: dict) -> dict | None:
+        return None
+
+    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
         return None
 
     def sensors_for_data(self, data: dict | None) -> list[SensorDescription]:

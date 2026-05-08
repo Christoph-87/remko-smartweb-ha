@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.3
+- Improve domestic hot water / RBW mode parsing for long padded SmartWeb values so Eco/On states are detected correctly
+- Make SmartWeb value writes stricter by ignoring CLIENT2HOST echoes and requiring confirmed HOST2CLIENT readback values
+- Roll back optimistic water-heater state updates when a SmartWeb value write is not confirmed
+- Include full SmartWeb status query IDs in value-write requests and improve SMT_USER / MQTT credential handling
+- Add profile-based SmartWeb value write mappings for DHW/RBW and KWT devices
+- Enable KWT climate value writes for target temperature, power, mode, fan, and swing
+- Add tests for padded DHW states, write confirmation, query-list payloads, and water-heater rollback behavior
+
 ## v0.3.0
 - Add read-only profiles for LTE / dehumidifier-style devices and KWT 180-300 DC
 - Improve domestic hot water / RBW parsing with setpoint, top/bottom temperature, ambient temperature, mode, and power state

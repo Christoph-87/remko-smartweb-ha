@@ -2,15 +2,37 @@ from __future__ import annotations
 
 from ..const import DEVICE_KIND_DHW
 from .base import SmartWebDeviceProfile
+from .value_mapping import ValueWriteSpec, build_value_write
+
+DHW_MODE_VALUE_IDS = {
+    "auto": 0x03,
+    "heat": 0x06,
+    "eco": 0x09,
+    "vacation": 0x0C,
+}
+DHW_WRITE_SPECS = (
+    ValueWriteSpec("setpoint", "1333", digits=4, scale=10),
+    ValueWriteSpec("power", "1194", enum={True: 0x01, False: 0x02}),
+    ValueWriteSpec("mode", "1192", enum=DHW_MODE_VALUE_IDS),
+)
 
 
-def _first_byte(hexstr: str | None):
+def _state_byte(hexstr: str | None):
     if not hexstr:
         return None
     try:
-        return int(hexstr[0:2], 16)
+        bytes_ = [
+            int(hexstr[index : index + 2], 16)
+            for index in range(0, len(hexstr) - 1, 2)
+        ]
     except Exception:
         return None
+    if not bytes_:
+        return None
+    for value in reversed(bytes_):
+        if value != 0:
+            return value
+    return bytes_[0]
 
 
 def _first_word(hexstr: str | None):
@@ -42,7 +64,7 @@ def _temperature_tenths(hexstr: str | None):
 
 
 def _dhw_mode(hexstr: str | None):
-    value = _first_byte(hexstr)
+    value = _state_byte(hexstr)
     return {
         0x00: "error",
         0x01: "on",
@@ -58,6 +80,7 @@ def _dhw_mode(hexstr: str | None):
 class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_DHW
     supports_water_heater = True
+    supports_value_write = True
     sensor_descriptions = (
         ("dhw_setpoint", "DHW Setpoint", "temperature"),
         ("dhw_top_temperature", "DHW Top Temperature", "temperature"),
@@ -70,8 +93,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
     def parse_values_status(self, values: dict) -> dict | None:
         if not isinstance(values, dict):
             return None
-        b1152 = _first_byte(values.get("1152"))
-        b1194 = _first_byte(values.get("1194"))
+        b1152 = _state_byte(values.get("1152"))
+        b1194 = _state_byte(values.get("1194"))
         dhw_mode = _dhw_mode(values.get("1192"))
         dhw_setpoint = _temperature_tenths(values.get("1333"))
         dhw_top = _temperature_tenths(values.get("5943"))
@@ -103,6 +126,7 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             status["dhw_ambient_temperature"] = dhw_ambient
         if dhw_mode is not None:
             status["dhw_mode"] = dhw_mode
+            status["mode"] = dhw_mode
         if b1194 is not None:
             status["dhw_power_state"] = "on" if b1194 == 0x01 else ("off" if b1194 == 0x02 else None)
             status["power"] = "ON" if b1194 == 0x01 else ("OFF" if b1194 == 0x02 else None)
@@ -112,3 +136,6 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None
         return status
+
+    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
+        return build_value_write(overrides, DHW_WRITE_SPECS)

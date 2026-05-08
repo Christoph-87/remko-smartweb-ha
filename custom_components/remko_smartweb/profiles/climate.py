@@ -23,35 +23,52 @@ def _first_byte(hexstr: str | None):
         return None
 
 
+MODE_BY_VALUE_ID = {
+    0x03: "auto",
+    0x04: "cool",
+    0x05: "dry",
+    0x06: "heat",
+    0x07: "fan",
+}
+FAN_BY_VALUE_ID = {
+    0x02: "auto",
+    0x03: "low",
+    0x04: "medium",
+    0x05: "high",
+    0x06: "silent",
+    0x0D: "high",
+}
+SWING_BY_VALUE_ID = {
+    0x00: "off",
+    0x01: "vertical",
+    0x02: "horizontal",
+    0x03: "both",
+    0x04: "vertical",
+}
+
+
+def _first_reverse(mapping: dict[int, str]) -> dict[str, int]:
+    reversed_mapping = {}
+    for value, name in mapping.items():
+        reversed_mapping.setdefault(name, value)
+    return reversed_mapping
+
+
+MODE_VALUE_IDS = _first_reverse(MODE_BY_VALUE_ID)
+FAN_VALUE_IDS = _first_reverse(FAN_BY_VALUE_ID)
+SWING_VALUE_IDS = _first_reverse(SWING_BY_VALUE_ID)
+
+
 def _mode_from_value_id(value: int | None):
-    return {
-        0x03: "auto",
-        0x04: "cool",
-        0x05: "dry",
-        0x06: "heat",
-        0x07: "fan",
-    }.get(value)
+    return MODE_BY_VALUE_ID.get(value)
 
 
 def _fan_from_value_id(value: int | None):
-    return {
-        0x02: "auto",
-        0x03: "low",
-        0x04: "medium",
-        0x05: "high",
-        0x06: "silent",
-        0x0D: "high",
-    }.get(value)
+    return FAN_BY_VALUE_ID.get(value)
 
 
 def _swing_from_value_id(value: int | None):
-    return {
-        0x00: "off",
-        0x01: "vertical",
-        0x02: "horizontal",
-        0x03: "both",
-        0x04: "vertical",
-    }.get(value)
+    return SWING_BY_VALUE_ID.get(value)
 
 
 class ClimateDeviceProfile(SmartWebDeviceProfile):

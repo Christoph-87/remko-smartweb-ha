@@ -14,7 +14,7 @@ import requests
 import paho.mqtt.client as mqtt
 
 from .const import DEVICE_KIND_AUTO
-from .profiles import get_parser_profile
+from .profiles import get_parser_profile, get_specialized_profile
 
 BASE = "https://smartweb.remko.media"
 LOGIN_URL = f"{BASE}/rest/login_do"
@@ -74,6 +74,21 @@ VALUE_STATUS_QUERY_LIST = [
     5933,
     5982,
 ]
+
+
+def _value_query_list(extra_ids=()) -> list[int]:
+    values = []
+    seen = set()
+    for value_id in list(VALUE_STATUS_QUERY_LIST) + [
+        int(value_id) for value_id in extra_ids if str(value_id).isdigit()
+    ]:
+        if value_id in seen:
+            continue
+        seen.add(value_id)
+        values.append(value_id)
+    return values
+
+
 SENSITIVE_DEBUG_KEYS = {
     "access_key",
     "accesskey",
@@ -180,6 +195,24 @@ def _debug_values(values: dict | None, limit: int = DEBUG_VALUES_LIMIT):
     if sorted_values is None:
         return None
     return _debug_value({"count": len(sorted_values), "values": sorted_values}, limit=limit)
+
+
+def _normalize_smartweb_hex_value(value) -> str | None:
+    text = str(value or "").strip()
+    if not text or re.fullmatch(r"[0-9A-Fa-f]+", text) is None:
+        return None
+    normalized = text.upper().lstrip("0")
+    return normalized or "0"
+
+
+def _smartweb_value_matches(expected, actual) -> bool:
+    if actual is None:
+        return False
+    if str(expected) == str(actual):
+        return True
+    expected_hex = _normalize_smartweb_hex_value(expected)
+    actual_hex = _normalize_smartweb_hex_value(actual)
+    return expected_hex is not None and expected_hex == actual_hex
 
 
 def _compact_mqtt_diagnostics(diagnostics: dict | None) -> dict | None:
@@ -291,7 +324,10 @@ def _extract_sid_sk_from_url(url: str):
 def _valid_credential_part(value: str | None) -> bool:
     if not value:
         return False
-    return value.strip().casefold() not in ("nan", "none", "null", "undefined")
+    text = value.strip()
+    if text.casefold() in ("nan", "none", "null", "undefined"):
+        return False
+    return re.fullmatch(r"[0-9A-Fa-f]{16}", text) is not None
 
 
 def _extract_sid_sk_from_text(text: str):
@@ -318,6 +354,15 @@ def _extract_smt_user_from_text(text: str):
                 return int(m.group(1))
             except Exception:
                 pass
+    return None
+
+
+def _extract_smt_user_from_url(url: str) -> int | None:
+    qs = parse_qs(urlparse(url).query, keep_blank_values=True)
+    for key in ("us", "SMT_USER", "smt_user"):
+        value = (qs.get(key) or [None])[0]
+        if str(value or "").isdigit():
+            return int(value)
     return None
 
 
@@ -602,6 +647,7 @@ class _MqttSession:
         self._last_values = None
         self._last_seen_values = None
         self._last_tx_echo = None
+        self._last_smt_user = None
         self._recent_messages = deque(maxlen=20)
         self._received_non_tx_count = 0
         self._subscribed_topics = []
@@ -658,13 +704,17 @@ class _MqttSession:
             # Rx hex for ESP status
             try:
                 obj = json.loads(text)
-                if isinstance(obj, dict) and obj.get("Rx"):
-                    self._last_rx = text
-                    self._cond.notify_all()
+                if isinstance(obj, dict):
+                    if obj.get("Rx"):
+                        self._last_rx = text
+                        self._cond.notify_all()
+                    smt_user = obj.get("SMT_USER")
+                    if str(smt_user or "").isdigit():
+                        self._last_smt_user = int(smt_user)
             except Exception:
                 pass
             values = _extract_values_from_payload(text)
-            if isinstance(values, dict):
+            if isinstance(values, dict) and str(msg.topic).endswith("/HOST2CLIENT"):
                 self._last_values = values
                 self._last_seen_values = values
                 self._cond.notify_all()
@@ -675,6 +725,14 @@ class _MqttSession:
 
     def publish(self, topic: str, payload: dict):
         self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
+
+    def clear_values(self) -> None:
+        with self._cond:
+            self._last_values = None
+
+    def last_smt_user(self) -> int | None:
+        with self._cond:
+            return self._last_smt_user
 
     def wait_rx(self, timeout: float = 10.0) -> str | None:
         end = time.time() + timeout
@@ -904,6 +962,12 @@ class RemkoSmartWebClient:
         self._last_device_list_empty = False
         self._mqtt = None
 
+    def initial_status_if_supported(self) -> dict | None:
+        """Return a minimal state when setup can safely proceed before live values arrive."""
+        if self.device_kind != DEVICE_KIND_AUTO or get_specialized_profile(self.device_name) is not None:
+            return {"unit": "C", "_status_pending": True}
+        return None
+
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
         self.account.ensure_login(force=force)
@@ -961,18 +1025,26 @@ class RemkoSmartWebClient:
     def _resolve_device_rel(self, rel: str) -> None:
         self.device_path = rel
         url = urljoin(BASE, rel)
+        self.smt_user = _extract_smt_user_from_url(url)
         r0 = self._account_request("get", url, allow_redirects=False, timeout=15)
         r0.raise_for_status()
         loc = r0.headers.get("Location")
         if loc:
-            hit = _extract_sid_sk_from_url(urljoin(BASE, loc))
+            redirect_url = urljoin(BASE, loc)
+            hit = _extract_sid_sk_from_url(redirect_url)
             if hit:
                 self.sid, self.sk = hit
                 self.topic = f"{VERSION}/{self.sid}"
+                self.smt_user = self.smt_user or _extract_smt_user_from_url(redirect_url)
                 try:
                     r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
                     if r1.ok:
-                        self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
+                        self.smt_user = (
+                            self.smt_user
+                            or _extract_smt_user_from_url(r1.url)
+                            or _extract_smt_user_from_text(r1.text)
+                            or _extract_smt_user_from_scripts(self.session, r1.text)
+                        )
                 except Exception as err:
                     _LOGGER.debug("Could not fetch SmartWeb device page for SMT_USER after redirect: %s", err)
                 if self.smt_user is None:
@@ -1004,7 +1076,12 @@ class RemkoSmartWebClient:
             raise DeviceResolveError("SID/SK or SMT_ID/SMT_KEY not found")
         self.sid, self.sk = hit
         self.topic = f"{VERSION}/{self.sid}"
-        self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
+        self.smt_user = (
+            self.smt_user
+            or _extract_smt_user_from_url(r1.url)
+            or _extract_smt_user_from_text(r1.text)
+            or _extract_smt_user_from_scripts(self.session, r1.text)
+        )
         if self.smt_user is None:
             _LOGGER.warning("SMT_USER not found in device page; CLIENT2HOST polling may be limited")
         _LOGGER.debug(
@@ -1081,14 +1158,15 @@ class RemkoSmartWebClient:
         self._ensure_mqtt()
         poll = {
             "FORCE_RESPONSE": True,
-            "query_list": VALUE_STATUS_QUERY_LIST,
+            "query_list": _value_query_list(),
             "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
             "LASTWRITE": 0,
             "ISTOUCH": False,
             "DEVID": "",
         }
-        if self.smt_user is not None:
-            poll["SMT_USER"] = self.smt_user
+        smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
+        if smt_user is not None:
+            poll["SMT_USER"] = smt_user
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
 
@@ -1099,21 +1177,23 @@ class RemkoSmartWebClient:
         self._ensure_mqtt()
         payload = {
             "values": {str(key): str(value) for key, value in values.items()},
-            "query_list": [int(key) for key in values if str(key).isdigit()],
+            "query_list": _value_query_list(values),
             "FORCE_RESPONSE": True,
             "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
             "DEVID": "",
         }
-        if self.smt_user is not None:
-            payload["SMT_USER"] = self.smt_user
+        smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
+        if smt_user is not None:
+            payload["SMT_USER"] = smt_user
         _LOGGER.warning(
             "Experimental REMKO SmartWeb value write for %r. No confirmed write capture is bundled; "
             "please verify in the REMKO app and share the following payload plus the response logs if it fails: %s",
             self.device_name,
             _debug_value(payload),
         )
+        self._mqtt.clear_values()
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", payload)
         response_values = self._mqtt.wait_values(timeout=timeout)
         if isinstance(response_values, dict):
@@ -1349,6 +1429,11 @@ class RemkoSmartWebClient:
         response_values = self._mqtt_write_values(values, timeout=10)
         if isinstance(response_values, dict):
             self._log_mapping_snapshot("client2host_write_values", response_values)
+            mismatches = {
+                str(key): {"expected": str(value), "actual": response_values.get(str(key))}
+                for key, value in values.items()
+                if not _smartweb_value_matches(value, response_values.get(str(key)))
+            }
             parsed_values = self.profile.parse_values_status(response_values)
             if parsed_values:
                 self._last_status = parsed_values
@@ -1357,7 +1442,13 @@ class RemkoSmartWebClient:
                     self.device_name,
                     _debug_value(parsed_values),
                 )
+            if not mismatches:
                 return
+            _LOGGER.warning(
+                "Experimental REMKO SmartWeb value write for %r was not confirmed by HOST2CLIENT values: %s",
+                self.device_name,
+                _debug_value(mismatches),
+            )
         time.sleep(1.0)
         try:
             readback = self.read_status()
@@ -1368,6 +1459,7 @@ class RemkoSmartWebClient:
             )
         except Exception as err:
             _LOGGER.warning("Readback after SmartWeb value write failed: %s", err)
+        raise UnsupportedPayload("SmartWeb value write was not confirmed")
 
     def close(self):
         if self._mqtt is not None:

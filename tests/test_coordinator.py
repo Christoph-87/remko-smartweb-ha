@@ -1,0 +1,360 @@
+from __future__ import annotations
+
+import asyncio
+from collections import deque
+import sys
+import threading
+import types
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+COMPONENT_PATH = ROOT / "custom_components" / "remko_smartweb"
+
+custom_components = types.ModuleType("custom_components")
+custom_components.__path__ = [str(ROOT / "custom_components")]
+sys.modules.setdefault("custom_components", custom_components)
+
+remko_smartweb = types.ModuleType("custom_components.remko_smartweb")
+remko_smartweb.__path__ = [str(COMPONENT_PATH)]
+sys.modules.setdefault("custom_components.remko_smartweb", remko_smartweb)
+
+homeassistant = types.ModuleType("homeassistant")
+ha_components = types.ModuleType("homeassistant.components")
+ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
+ha_core = types.ModuleType("homeassistant.core")
+ha_config_entries = types.ModuleType("homeassistant.config_entries")
+ha_helpers = types.ModuleType("homeassistant.helpers")
+ha_event = types.ModuleType("homeassistant.helpers.event")
+ha_entity = types.ModuleType("homeassistant.helpers.entity")
+ha_update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
+ha_storage = types.ModuleType("homeassistant.helpers.storage")
+ha_const = types.ModuleType("homeassistant.const")
+
+
+class WaterHeaterEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class WaterHeaterEntityFeature:
+    TARGET_TEMPERATURE = 1
+    OPERATION_MODE = 2
+
+
+class DataUpdateCoordinator:
+    def __class_getitem__(cls, item):
+        return cls
+
+    def __init__(self, hass, logger, name, update_interval):
+        self.hass = hass
+        self.logger = logger
+        self.name = name
+        self.update_interval = update_interval
+        self.data = None
+
+    def async_set_updated_data(self, data):
+        self.data = data
+
+
+class CoordinatorEntity:
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self.hass = coordinator.hass
+
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class UpdateFailed(Exception):
+    pass
+
+
+class Store:
+    def __init__(self, hass, version, key):
+        self.hass = hass
+        self.version = version
+        self.key = key
+
+    async def async_load(self):
+        return None
+
+    async def async_save(self, data):
+        return None
+
+
+class HomeAssistant:
+    def __init__(self):
+        self.scheduled_callbacks = []
+
+    async def async_add_executor_job(self, func, *args):
+        return func(*args)
+
+
+class ConfigEntry:
+    pass
+
+
+class DeviceInfo(dict):
+    pass
+
+
+class UnitOfTemperature:
+    CELSIUS = "C"
+    FAHRENHEIT = "F"
+
+
+def async_call_later(hass, delay, callback):
+    hass.scheduled_callbacks.append((delay, callback))
+    return None
+
+
+ha_water_heater.WaterHeaterEntity = WaterHeaterEntity
+ha_water_heater.WaterHeaterEntityFeature = WaterHeaterEntityFeature
+ha_core.HomeAssistant = HomeAssistant
+ha_config_entries.ConfigEntry = ConfigEntry
+ha_entity.DeviceInfo = DeviceInfo
+ha_event.async_call_later = async_call_later
+ha_update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+ha_update_coordinator.CoordinatorEntity = CoordinatorEntity
+ha_update_coordinator.UpdateFailed = UpdateFailed
+ha_storage.Store = Store
+ha_const.ATTR_TEMPERATURE = "temperature"
+ha_const.UnitOfTemperature = UnitOfTemperature
+
+sys.modules.setdefault("homeassistant", homeassistant)
+sys.modules.setdefault("homeassistant.components", ha_components)
+sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
+sys.modules.setdefault("homeassistant.core", ha_core)
+sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
+sys.modules.setdefault("homeassistant.helpers", ha_helpers)
+sys.modules.setdefault("homeassistant.helpers.event", ha_event)
+sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
+sys.modules.setdefault("homeassistant.helpers.update_coordinator", ha_update_coordinator)
+sys.modules.setdefault("homeassistant.helpers.storage", ha_storage)
+sys.modules.setdefault("homeassistant.const", ha_const)
+
+paho = types.ModuleType("paho")
+paho_mqtt = types.ModuleType("paho.mqtt")
+paho_mqtt_client = types.ModuleType("paho.mqtt.client")
+sys.modules.setdefault("paho", paho)
+sys.modules.setdefault("paho.mqtt", paho_mqtt)
+sys.modules.setdefault("paho.mqtt.client", paho_mqtt_client)
+
+requests = types.ModuleType("requests")
+requests.Session = object
+sys.modules.setdefault("requests", requests)
+
+import custom_components.remko_smartweb.api as api_module
+from custom_components.remko_smartweb.api import (
+    RemkoSmartWebClient,
+    UnsupportedPayload,
+    _MqttSession,
+    _smartweb_value_matches,
+)
+from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
+from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
+from custom_components.remko_smartweb.water_heater import RemkoSmartWebWaterHeater
+
+
+class FailingClient:
+    def read_status(self):
+        raise UnsupportedPayload("Unable to parse status")
+
+    def initial_status_if_supported(self):
+        return None
+
+
+class BootstrapClient(FailingClient):
+    def initial_status_if_supported(self):
+        return {"unit": "C", "_status_pending": True}
+
+
+class FakeMqtt:
+    def __init__(self, response_values=None):
+        self.response_values = response_values
+        self.published = []
+        self.cleared = False
+
+    def clear_values(self):
+        self.cleared = True
+
+    def publish(self, topic, payload):
+        self.published.append((topic, payload))
+
+    def wait_values(self, timeout=10):
+        return self.response_values
+
+    def last_smt_user(self):
+        return None
+
+
+class WriteFailureClient:
+    def __init__(self):
+        self.values = None
+
+    def set_value_ids(self, values):
+        self.values = values
+        raise UnsupportedPayload("SmartWeb value write was not confirmed")
+
+
+class CoordinatorTests(unittest.TestCase):
+    def test_unsupported_payload_keeps_last_data(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            FailingClient(),
+            entry_id="entry",
+            scan_interval=30,
+        )
+        coordinator.async_set_updated_data({"dhw_setpoint": 55.0, "unit": "C"})
+
+        data = asyncio.run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"dhw_setpoint": 55.0, "unit": "C"})
+
+    def test_unsupported_payload_without_last_data_still_fails_refresh(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            FailingClient(),
+            entry_id="entry",
+            scan_interval=30,
+        )
+
+        with self.assertRaises(UpdateFailed):
+            asyncio.run(coordinator._async_update_data())
+
+    def test_unsupported_payload_can_start_with_pending_initial_data(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            BootstrapClient(),
+            entry_id="entry",
+            scan_interval=30,
+        )
+
+        data = asyncio.run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"unit": "C", "_status_pending": True})
+
+    def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/CLIENT2HOST",
+                payload=b'{"values":{"1333":"022B"}}',
+            ),
+        )
+        self.assertIsNone(session._last_values)
+        self.assertIsNone(session.last_smt_user())
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/HOST2CLIENT",
+                payload=b'{"SMT_USER":12345,"values":{"1333":"0226"}}',
+            ),
+        )
+        self.assertEqual(session._last_values, {"1333": "0226"})
+        self.assertEqual(session.last_smt_user(), 12345)
+
+    def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
+        self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
+        self.assertTrue(_smartweb_value_matches("01", "00000000000000000001"))
+        self.assertTrue(_smartweb_value_matches("022B", "0000000000000000022B"))
+        self.assertFalse(_smartweb_value_matches("022B", "0226"))
+        self.assertFalse(_smartweb_value_matches("09", None))
+
+    def test_mqtt_write_values_uses_full_status_query_list(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_name = "DHW"
+        client._mqtt = FakeMqtt({"1333": "022B"})
+        client._ensure_mqtt = lambda: None
+
+        response = client._mqtt_write_values({"1333": "022B"}, timeout=1)
+
+        self.assertEqual(response, {"1333": "022B"})
+        self.assertTrue(client._mqtt.cleared)
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/CLIENT2HOST")
+        self.assertEqual(payload["values"], {"1333": "022B"})
+        self.assertIn(1333, payload["query_list"])
+        self.assertGreater(len(payload["query_list"]), 1)
+        self.assertEqual(payload["SMT_USER"], 12345)
+        self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
+        self.assertIn("0123456789ABCDEF", payload["CLIENT_ID"])
+
+    def test_set_value_ids_rejects_unconfirmed_readback_value(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "DHW"
+        client.profile = DomesticHotWaterDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_values = lambda values, timeout=10: {"1333": "0226"}
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client.read_status = lambda: {"dhw_setpoint": 55.0, "unit": "C"}
+
+        original_sleep = api_module.time.sleep
+        api_module.time.sleep = lambda _seconds: None
+        try:
+            with self.assertRaises(UnsupportedPayload):
+                client.set_value_ids({"1333": "022B"})
+        finally:
+            api_module.time.sleep = original_sleep
+
+    def test_water_heater_rolls_back_optimistic_state_on_failed_write(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "dhw_setpoint": 55.0,
+                "setpoint": 55.0,
+                "dhw_top_temperature": 55.0,
+                "power": "ON",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = WriteFailureClient()
+        entity = RemkoSmartWebWaterHeater(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        with self.assertRaises(UnsupportedPayload):
+            asyncio.run(entity.async_set_temperature(temperature=55.5))
+
+        self.assertEqual(
+            coordinator.data,
+            {
+                "dhw_setpoint": 55.0,
+                "setpoint": 55.0,
+                "dhw_top_temperature": 55.0,
+                "power": "ON",
+                "unit": "C",
+            },
+        )
+        self.assertEqual(client.values, {"1333": "022B"})
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

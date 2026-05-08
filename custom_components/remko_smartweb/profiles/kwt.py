@@ -2,7 +2,26 @@ from __future__ import annotations
 
 from ..const import DEVICE_KIND_DIAGNOSTICS
 from .base import SmartWebDeviceProfile
-from .climate import _fan_from_value_id, _mode_from_value_id, _swing_from_value_id
+from .climate import (
+    FAN_VALUE_IDS,
+    MODE_VALUE_IDS,
+    _fan_from_value_id,
+    _mode_from_value_id,
+)
+from .value_mapping import ValueWriteSpec, build_value_write
+
+KWT_SWING_BY_VALUE_ID = {
+    0x00: "off",
+    0x04: "vertical",
+}
+KWT_SWING_VALUE_IDS = {mode: value for value, mode in KWT_SWING_BY_VALUE_ID.items()}
+KWT_WRITE_SPECS = (
+    ValueWriteSpec("setpoint", "1190", scale=2),
+    ValueWriteSpec("power", "1194", enum={True: 0x01, False: 0x02}),
+    ValueWriteSpec("mode", "1192", enum=MODE_VALUE_IDS),
+    ValueWriteSpec("fan", "1191", enum=FAN_VALUE_IDS),
+    ValueWriteSpec("swing", "1193", enum=KWT_SWING_VALUE_IDS),
+)
 
 
 def looks_like_kwt_name(device_name: str | None) -> bool:
@@ -39,9 +58,12 @@ def _number(hexstr: str | None):
 
 
 class KwtDeviceProfile(SmartWebDeviceProfile):
-    """Read-only profile for KWT 180-300 DC devices exposed through Smart-Web values."""
+    """Profile for KWT 180-300 DC devices exposed through Smart-Web values."""
 
     kind = DEVICE_KIND_DIAGNOSTICS
+    supports_climate = True
+    supports_value_write = True
+    supports_climate_presets = False
     sensor_descriptions = (
         ("room", "Room Temperature", "temperature"),
         ("setpoint", "Setpoint", "temperature"),
@@ -77,7 +99,7 @@ class KwtDeviceProfile(SmartWebDeviceProfile):
         fan = _fan_from_value_id(_first_byte(values.get("1191")))
         if fan is not None:
             status["fan"] = fan
-        swing = _swing_from_value_id(_first_byte(values.get("1193")))
+        swing = KWT_SWING_BY_VALUE_ID.get(_first_byte(values.get("1193")))
         if swing is not None:
             status["swing"] = swing
         for key, value_id in (
@@ -92,3 +114,6 @@ class KwtDeviceProfile(SmartWebDeviceProfile):
                 status[key] = value
         status["unit"] = "C"
         return status if any(key != "unit" for key in status) else None
+
+    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
+        return build_value_write(overrides, KWT_WRITE_SPECS)

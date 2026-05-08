@@ -11,20 +11,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
 OPERATION_MODES = ["off", "heat", "auto", "eco", "vacation"]
-MODE_VALUE_IDS = {
-    "auto": 0x03,
-    "heat": 0x06,
-    "eco": 0x09,
-    "vacation": 0x0C,
-}
-
-
-def _hex_byte(value: int) -> str:
-    return f"{max(0, min(0xFF, int(value))):02X}"
-
-
-def _hex_word(value: int) -> str:
-    return f"{max(0, min(0xFFFF, int(value))):04X}"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
@@ -36,7 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     if not profile.supports_water_heater:
         async_add_entities([])
         return
-    async_add_entities([RemkoSmartWebWaterHeater(coordinator, client, device_name)])
+    async_add_entities([RemkoSmartWebWaterHeater(coordinator, client, device_name, profile)])
 
 
 class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
@@ -49,9 +35,10 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     _attr_max_temp = 65
     _attr_target_temperature_step = 0.5
 
-    def __init__(self, coordinator, client, device_name: str):
+    def __init__(self, coordinator, client, device_name: str, profile):
         super().__init__(coordinator)
         self._client = client
+        self._profile = profile
         self._attr_name = f"{device_name} Water Heater"
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_water_heater"
         self._attr_device_info = DeviceInfo(
@@ -104,17 +91,12 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         await self._async_set_dhw({"power": False})
 
     async def _async_set_dhw(self, overrides: dict):
-        values = {}
-        if "setpoint" in overrides:
-            values["1333"] = _hex_word(round(float(overrides["setpoint"]) * 10))
-        if "power" in overrides:
-            values["1194"] = _hex_byte(0x01 if overrides["power"] else 0x02)
-        if "mode" in overrides and overrides["mode"] in MODE_VALUE_IDS:
-            values["1192"] = _hex_byte(MODE_VALUE_IDS[overrides["mode"]])
+        values = self._profile.build_value_write(overrides)
         if not values:
             return
 
-        if self.coordinator.data is not None:
+        old_data = dict(self.coordinator.data) if self.coordinator.data is not None else None
+        if old_data is not None:
             data = dict(self.coordinator.data)
             if "setpoint" in overrides:
                 data["dhw_setpoint"] = float(overrides["setpoint"])
@@ -127,9 +109,15 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             self.coordinator.data = data
             self.async_write_ha_state()
 
-        await self.hass.async_add_executor_job(self._client.set_value_ids, values)
-
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()
 
-        async_call_later(self.hass, 2.0, _do_refresh)
+        try:
+            await self.hass.async_add_executor_job(self._client.set_value_ids, values)
+        except Exception:
+            if old_data is not None:
+                self.coordinator.data = old_data
+                self.async_write_ha_state()
+            raise
+        finally:
+            async_call_later(self.hass, 2.0, _do_refresh)

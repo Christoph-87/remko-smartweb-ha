@@ -1,3 +1,5 @@
 __pycache__/
 *.py[cod]
 *$py.class
+docs/smt.min.js
+docs/lib.ac.uart.js

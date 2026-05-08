@@ -78,12 +78,20 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
             return data
         except Exception as err:
             self._increase_backoff()
-            if isinstance(err, PERSISTENT_ERRORS):
-                raise UpdateFailed(str(err)) from err
             # Keep last known data to avoid entities going unavailable on transient failures.
             if self.data:
                 _LOGGER.warning("Status update failed, keeping last data: %s", err)
                 return self.data
+            if isinstance(err, UnsupportedPayload):
+                initial_data = self.client.initial_status_if_supported()
+                if initial_data:
+                    _LOGGER.warning(
+                        "Connected to REMKO SmartWeb, but no status values were received yet; "
+                        "starting with a pending initial state."
+                    )
+                    return initial_data
+            if isinstance(err, PERSISTENT_ERRORS):
+                raise UpdateFailed(str(err)) from err
             if str(err) == "Unable to parse status":
                 _LOGGER.warning(
                     "Connected to REMKO SmartWeb, but the device status payload could not be parsed. "

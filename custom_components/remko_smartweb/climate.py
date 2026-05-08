@@ -59,7 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     min_temp = entry.options.get(CONF_MIN_TEMP, inferred_min)
     max_temp = entry.options.get(CONF_MAX_TEMP, inferred_max)
 
-    async_add_entities([RemkoSmartWebClimate(coordinator, client, device_name, min_temp, max_temp)])
+    async_add_entities([RemkoSmartWebClimate(coordinator, client, device_name, min_temp, max_temp, profile)])
 
 
 class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
@@ -85,11 +85,15 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
     _attr_swing_modes = SWING_MODES
     _attr_preset_modes = PRESET_MODES
 
-    def __init__(self, coordinator, client, device_name: str, min_temp: int, max_temp: int):
+    def __init__(self, coordinator, client, device_name: str, min_temp: int, max_temp: int, profile):
         super().__init__(coordinator)
         self._client = client
+        self._profile = profile
         self._attr_min_temp = min_temp
         self._attr_max_temp = max_temp
+        if not getattr(profile, "supports_climate_presets", True):
+            self._attr_supported_features = self._attr_supported_features & ~ClimateEntityFeature.PRESET_MODE
+            self._attr_preset_modes = []
         self._attr_name = device_name
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_climate"
         self._attr_device_info = DeviceInfo(
@@ -144,6 +148,8 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def preset_mode(self):
+        if not getattr(self._profile, "supports_climate_presets", True):
+            return None
         for key in ("eco", "turbo", "sleep", "bioclean"):
             if self.coordinator.data.get(key):
                 return key
@@ -189,6 +195,9 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         await self._async_set(overrides)
 
     async def _async_set(self, overrides: dict):
+        value_write = self._profile.build_value_write(overrides)
+        if getattr(self._profile, "supports_value_write", False) and not value_write:
+            return
         # HA calls can arrive quickly; we use a single read->write cycle per call.
         # Optimistic UI update to avoid flicker (skip for setpoint changes).
         if self.coordinator.data is not None and "setpoint" not in overrides:
@@ -200,7 +209,11 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
                     data[k] = v
             self.coordinator.data = data
             self.async_write_ha_state()
-        await self.hass.async_add_executor_job(self._client.set_values, overrides)
+        if value_write:
+            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
+        else:
+            await self.hass.async_add_executor_job(self._client.set_values, overrides)
+
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()
 
