@@ -280,18 +280,28 @@ def _mqtt_message_summary(topic: str, payload: str) -> dict:
 
 
 def _extract_sid_sk_from_url(url: str):
-    qs = parse_qs(urlparse(url).query)
+    qs = parse_qs(urlparse(url).query, keep_blank_values=True)
     sid = (qs.get("SID") or [None])[0]
     sk = (qs.get("SK") or [None])[0]
-    if sid and sk:
+    if _valid_credential_part(sid) and _valid_credential_part(sk):
         return sid.upper(), sk.upper()
     return None
+
+
+def _valid_credential_part(value: str | None) -> bool:
+    if not value:
+        return False
+    return value.strip().casefold() not in ("nan", "none", "null", "undefined")
 
 
 def _extract_sid_sk_from_text(text: str):
     m = re.search(r"SID=([0-9A-Fa-f]{16}).*?SK=([0-9A-Fa-f]{16})", text)
     if m:
         return m.group(1).upper(), m.group(2).upper()
+    smt_id = _extract_global_var(text, "SMT_ID")
+    smt_key = _extract_global_var(text, "SMT_KEY")
+    if _valid_credential_part(smt_id) and _valid_credential_part(smt_key):
+        return smt_id.upper(), smt_key.upper()
     return None
 
 
@@ -900,11 +910,19 @@ class RemkoSmartWebClient:
 
     def _ensure_device(self) -> None:
         """Ensure SID/SK/topic are resolved from SmartWeb."""
-        if self.sid and self.sk and self.topic:
+        if _valid_credential_part(self.sid) and _valid_credential_part(self.sk) and self.topic and not self.topic.endswith("/"):
             return
+        self.sid = None
+        self.sk = None
+        self.topic = None
+        if self._mqtt is not None:
+            self._mqtt.close()
+            self._mqtt = None
         self.resolve_device()
 
     def _ensure_mqtt(self) -> None:
+        if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or not self.topic or self.topic.endswith("/"):
+            raise DeviceResolveError("Device MQTT credentials are incomplete")
         if self._mqtt is None or not self._mqtt.ensure_connected():
             self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
             if not self._mqtt.ensure_connected():
@@ -951,18 +969,49 @@ class RemkoSmartWebClient:
             if hit:
                 self.sid, self.sk = hit
                 self.topic = f"{VERSION}/{self.sid}"
+                try:
+                    r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
+                    if r1.ok:
+                        self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
+                except Exception as err:
+                    _LOGGER.debug("Could not fetch SmartWeb device page for SMT_USER after redirect: %s", err)
+                if self.smt_user is None:
+                    _LOGGER.warning("SMT_USER not found in device page; CLIENT2HOST polling may be limited")
+                _LOGGER.debug(
+                    "Resolved SmartWeb MQTT credentials for %r with topic %s",
+                    self.device_name,
+                    _redact_debug_text(self.topic),
+                )
                 return
 
         r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
         r1.raise_for_status()
         hit = _extract_sid_sk_from_url(r1.url) or _extract_sid_sk_from_text(r1.text)
         if not hit:
-            raise DeviceResolveError("SID/SK not found")
+            scripts = re.findall(r'<script[^>]+src="([^"]+)"', r1.text, flags=re.I)
+            for src in scripts:
+                if not src:
+                    continue
+                try:
+                    script_response = self._account_request("get", urljoin(BASE, src), timeout=15)
+                    script_response.raise_for_status()
+                except Exception:
+                    continue
+                hit = _extract_sid_sk_from_text(script_response.text)
+                if hit:
+                    break
+        if not hit:
+            raise DeviceResolveError("SID/SK or SMT_ID/SMT_KEY not found")
         self.sid, self.sk = hit
         self.topic = f"{VERSION}/{self.sid}"
         self.smt_user = _extract_smt_user_from_text(r1.text) or _extract_smt_user_from_scripts(self.session, r1.text)
         if self.smt_user is None:
             _LOGGER.warning("SMT_USER not found in device page; CLIENT2HOST polling may be limited")
+        _LOGGER.debug(
+            "Resolved SmartWeb MQTT credentials for %r with topic %s",
+            self.device_name,
+            _redact_debug_text(self.topic),
+        )
 
     def resolve_device(self) -> None:
         self._ensure_login()

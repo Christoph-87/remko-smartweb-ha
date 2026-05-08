@@ -27,7 +27,12 @@ requests = types.ModuleType("requests")
 requests.Session = object
 sys.modules.setdefault("requests", requests)
 
-from custom_components.remko_smartweb.api import _extract_global_var, _extract_smt_user_from_text
+from custom_components.remko_smartweb.api import (
+    _extract_global_var,
+    _extract_sid_sk_from_text,
+    _extract_sid_sk_from_url,
+    _extract_smt_user_from_text,
+)
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
 from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile
@@ -49,6 +54,15 @@ class ProfileParsingTests(unittest.TestCase):
     def test_extract_global_var_from_device_scripts(self):
         self.assertEqual(_extract_global_var('global.SMT_USER="12345";', "SMT_USER"), "12345")
         self.assertEqual(_extract_global_var('SMT_VERSION="4.31";', "SMT_VERSION"), "4.31")
+
+    def test_extract_mqtt_credentials_from_smartweb_ids(self):
+        text = 'global.SMT_ID="0123456789ABCDEF";global.SMT_KEY="FEDCBA9876543210";'
+        self.assertEqual(
+            _extract_sid_sk_from_text(text),
+            ("0123456789ABCDEF", "FEDCBA9876543210"),
+        )
+        self.assertIsNone(_extract_sid_sk_from_text('global.SMT_ID="NaN";global.SMT_KEY="NaN";'))
+        self.assertIsNone(_extract_sid_sk_from_url("https://example.invalid/?SID=&SK="))
 
     def test_climate_c0_status_parses_core_fields(self):
         status = ClimateDeviceProfile().parse_c0_status(CLIMATE_C0_RX)
