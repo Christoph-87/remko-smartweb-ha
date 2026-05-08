@@ -23,6 +23,10 @@ sys.modules.setdefault("paho", paho)
 sys.modules.setdefault("paho.mqtt", paho_mqtt)
 sys.modules.setdefault("paho.mqtt.client", paho_mqtt_client)
 
+requests = types.ModuleType("requests")
+requests.Session = object
+sys.modules.setdefault("requests", requests)
+
 from custom_components.remko_smartweb.api import _extract_global_var, _extract_smt_user_from_text
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
