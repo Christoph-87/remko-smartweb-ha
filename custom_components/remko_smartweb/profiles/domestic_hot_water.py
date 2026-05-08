@@ -37,6 +37,7 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
     sensor_descriptions = (
         ("dhw_setpoint", "DHW Setpoint", "temperature"),
         ("dhw_top_temperature", "DHW Top Temperature", "temperature"),
+        ("dhw_bottom_temperature", "DHW Bottom Temperature", "temperature"),
     )
 
     def parse_values_status(self, values: dict) -> dict | None:
@@ -44,8 +45,15 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             return None
         b1152 = _first_byte(values.get("1152"))
         dhw_setpoint = _temperature_tenths(values.get("1333"))
-        dhw_current = _temperature_tenths(values.get("1336"))
-        if dhw_setpoint is None and dhw_current is None and b1152 is None:
+        dhw_top = _temperature_tenths(values.get("5943"))
+        dhw_bottom = _temperature_tenths(values.get("5944"))
+        dhw_current = dhw_top if dhw_top is not None else _temperature_tenths(values.get("1336"))
+        if (
+            dhw_setpoint is None
+            and dhw_current is None
+            and dhw_bottom is None
+            and b1152 is None
+        ):
             return None
 
         status = {}
@@ -56,6 +64,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         if dhw_current is not None:
             status["dhw_top_temperature"] = dhw_current
             status["room"] = dhw_current
+        if dhw_bottom is not None:
+            status["dhw_bottom_temperature"] = dhw_bottom
         if status.get("power") is None and (dhw_setpoint is not None or dhw_current is not None):
             status["power"] = "ON" if b1152 in (None, 0x01) else None
         status["unit"] = "C"

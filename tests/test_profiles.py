@@ -86,6 +86,22 @@ class ProfileParsingTests(unittest.TestCase):
             },
         )
 
+    def test_dhw_values_status_prefers_observed_top_and_bottom_temperature_ids(self):
+        values = {
+            "1152": "01",
+            "1333": "0226",
+            "1336": "0226",
+            "5943": "0212",
+            "5944": "01EA",
+        }
+
+        status = DomesticHotWaterDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(status["dhw_setpoint"], 55.0)
+        self.assertEqual(status["dhw_top_temperature"], 53.0)
+        self.assertEqual(status["dhw_bottom_temperature"], 49.0)
+        self.assertEqual(status["room"], 53.0)
+
     def test_auto_profile_prefers_dhw_for_dhw_device_name(self):
         values = {
             "1190": "2C",
