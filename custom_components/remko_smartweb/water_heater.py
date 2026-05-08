@@ -4,6 +4,7 @@ from homeassistant.components.water_heater import WaterHeaterEntity, WaterHeater
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -33,7 +34,7 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     _attr_operation_list = OPERATION_MODES
     _attr_min_temp = 30
     _attr_max_temp = 65
-    _attr_target_temperature_step = 0.5
+    _attr_target_temperature_step = 1.0
 
     def __init__(self, coordinator, client, device_name: str, profile):
         super().__init__(coordinator)
@@ -114,10 +115,12 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
 
         try:
             await self.hass.async_add_executor_job(self._client.set_value_ids, values)
-        except Exception:
+        except Exception as err:
             if old_data is not None:
                 self.coordinator.data = old_data
                 self.async_write_ha_state()
-            raise
+            raise HomeAssistantError(
+                "REMKO SmartWeb value write was not confirmed by the device"
+            ) from err
         finally:
             async_call_later(self.hass, 2.0, _do_refresh)

@@ -1006,9 +1006,9 @@ class RemkoSmartWebClient:
         """Return available device names mapped to internal SmartWeb paths."""
         return self.account.list_device_map()
 
-    def _fetch_device_name_map(self, retries: int = 3) -> dict:
+    def _fetch_device_name_map(self, retries: int = 3, force: bool = False) -> dict:
         """Fetch /rest/liste with retries for transient SmartWeb list issues."""
-        name_map = self.account.fetch_device_name_map(retries=retries)
+        name_map = self.account.fetch_device_name_map(retries=retries, force=force)
         self._last_device_list_error = self.account.last_device_list_error
         self._last_device_list_empty = self.account.last_device_list_empty
         return name_map
@@ -1090,9 +1090,9 @@ class RemkoSmartWebClient:
             _redact_debug_text(self.topic),
         )
 
-    def resolve_device(self) -> None:
+    def resolve_device(self, force_list: bool = False) -> None:
         self._ensure_login()
-        if self.device_path:
+        if self.device_path and not force_list:
             try:
                 self._resolve_device_rel(self.device_path)
                 return
@@ -1103,7 +1103,7 @@ class RemkoSmartWebClient:
                     err,
                 )
 
-        name_map = self._fetch_device_name_map()
+        name_map = self._fetch_device_name_map(force=force_list)
         rel = self._find_device_rel(name_map)
         if not rel:
             available = sorted(v for v in name_map.values() if v)
@@ -1142,6 +1142,16 @@ class RemkoSmartWebClient:
                 )
             raise DeviceNotFound("Device name not found in /rest/liste")
         self._resolve_device_rel(rel)
+
+    def _refresh_device_from_list(self) -> None:
+        """Force a fresh /rest/liste lookup and recreate MQTT state for this device."""
+        if self._mqtt is not None:
+            self._mqtt.close()
+            self._mqtt = None
+        self.sid = None
+        self.sk = None
+        self.topic = None
+        self.resolve_device(force_list=True)
 
     def _mqtt_roundtrip_esp(self, payload: dict, timeout=10) -> str | None:
         """Publish ESP payload and wait for Rx response on persistent MQTT."""
@@ -1326,6 +1336,15 @@ class RemkoSmartWebClient:
             values=values,
             mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
         )
+
+        try:
+            _LOGGER.debug(
+                "Status values for %r stayed empty/unparseable; refreshing device lookup from /rest/liste",
+                self.device_name,
+            )
+            self._refresh_device_from_list()
+        except Exception as err:
+            _LOGGER.debug("Forced SmartWeb device list refresh failed for %r: %s", self.device_name, err)
 
         # retry once after forcing a re-login
         self._ensure_login(force=True)

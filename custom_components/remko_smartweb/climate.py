@@ -84,6 +84,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
     _attr_fan_modes = FAN_MODES
     _attr_swing_modes = SWING_MODES
     _attr_preset_modes = PRESET_MODES
+    _attr_target_temperature_step = 1.0
 
     def __init__(self, coordinator, client, device_name: str, min_temp: int, max_temp: int, profile):
         super().__init__(coordinator)

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.4
+- Retry device resolution through a fresh `/rest/liste` lookup when SmartWeb status/value responses stay empty or unparseable
+- Avoid reusing a stored device path during forced device-list refreshes so stale paths can recover automatically
+- Use whole-degree target temperature steps for climate and water-heater entities to match REMKO device behavior
+- Report unconfirmed water-heater writes as Home Assistant service errors instead of unexpected websocket exceptions
+- Add tests for forced device-list refreshes and whole-degree water-heater behavior
+
 ## v0.3.3
 - Improve domestic hot water / RBW mode parsing for long padded SmartWeb values so Eco/On states are detected correctly
 - Make SmartWeb value writes stricter by ignoring CLIENT2HOST echoes and requiring confirmed HOST2CLIENT readback values

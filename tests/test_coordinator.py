@@ -30,6 +30,7 @@ ha_entity = types.ModuleType("homeassistant.helpers.entity")
 ha_update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 ha_storage = types.ModuleType("homeassistant.helpers.storage")
 ha_const = types.ModuleType("homeassistant.const")
+ha_exceptions = types.ModuleType("homeassistant.exceptions")
 
 
 class WaterHeaterEntity:
@@ -67,6 +68,10 @@ class CoordinatorEntity:
 
 
 class UpdateFailed(Exception):
+    pass
+
+
+class HomeAssistantError(Exception):
     pass
 
 
@@ -121,6 +126,7 @@ ha_update_coordinator.UpdateFailed = UpdateFailed
 ha_storage.Store = Store
 ha_const.ATTR_TEMPERATURE = "temperature"
 ha_const.UnitOfTemperature = UnitOfTemperature
+ha_exceptions.HomeAssistantError = HomeAssistantError
 
 sys.modules.setdefault("homeassistant", homeassistant)
 sys.modules.setdefault("homeassistant.components", ha_components)
@@ -133,6 +139,7 @@ sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
 sys.modules.setdefault("homeassistant.helpers.update_coordinator", ha_update_coordinator)
 sys.modules.setdefault("homeassistant.helpers.storage", ha_storage)
 sys.modules.setdefault("homeassistant.const", ha_const)
+sys.modules.setdefault("homeassistant.exceptions", ha_exceptions)
 
 paho = types.ModuleType("paho")
 paho_mqtt = types.ModuleType("paho.mqtt")
@@ -299,6 +306,33 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
         self.assertIn("0123456789ABCDEF", payload["CLIENT_ID"])
 
+    def test_resolve_device_force_list_skips_stored_device_path(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "DHW"
+        client.device_path = "/stale-device"
+        client._ensure_login = lambda: None
+        force_flags = []
+        resolved_paths = []
+
+        def _fetch_device_name_map(retries=3, force=False):
+            force_flags.append(force)
+            return {"/fresh-device": "DHW"}
+
+        def _resolve_device_rel(rel):
+            resolved_paths.append(rel)
+
+        client._fetch_device_name_map = _fetch_device_name_map
+        client._find_device_rel = RemkoSmartWebClient._find_device_rel.__get__(
+            client,
+            RemkoSmartWebClient,
+        )
+        client._resolve_device_rel = _resolve_device_rel
+
+        client.resolve_device(force_list=True)
+
+        self.assertEqual(force_flags, [True])
+        self.assertEqual(resolved_paths, ["/fresh-device"])
+
     def test_set_value_ids_rejects_unconfirmed_readback_value(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "DHW"
@@ -339,7 +373,9 @@ class CoordinatorTests(unittest.TestCase):
             DomesticHotWaterDeviceProfile(),
         )
 
-        with self.assertRaises(UnsupportedPayload):
+        self.assertEqual(entity._attr_target_temperature_step, 1.0)
+
+        with self.assertRaises(HomeAssistantError):
             asyncio.run(entity.async_set_temperature(temperature=55.5))
 
         self.assertEqual(
