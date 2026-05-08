@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.0
+- Add read-only profiles for LTE / dehumidifier-style devices and KWT 180-300 DC
+- Improve domestic hot water / RBW parsing with setpoint, top/bottom temperature, ambient temperature, mode, and power state
+- Add experimental domestic hot water / RBW water-heater entity for target temperature, operation mode, and on/off writes
+- Add SmartWeb value-ID write path over CLIENT2HOST with warning-level payload, response, and readback logs for testers
+- Expand SmartWeb value polling to include IDs observed in the REMKO frontend for AC, KWT, DHW/RBW, and LTE devices
+- Fix SMT_USER and global variable extraction from SmartWeb pages so initial CLIENT2HOST value polling works more reliably
+- Add humidity units/device class for percentage sensors
+
 ## v0.2.3
 - Add diagnostic debug logging for unsupported or not-yet-mapped REMKO SmartWeb devices
 - Improve unsupported-device diagnostics with MQTT topic summaries and outgoing Tx echo detection

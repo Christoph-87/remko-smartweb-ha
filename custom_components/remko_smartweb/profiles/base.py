@@ -9,6 +9,7 @@ class SmartWebDeviceProfile:
     kind = DEVICE_KIND_DIAGNOSTICS
     sensor_descriptions: tuple[SensorDescription, ...] = ()
     supports_climate = False
+    supports_water_heater = False
     diagnostics_only = False
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:

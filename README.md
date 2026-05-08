@@ -27,8 +27,16 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 5. If multiple devices exist, select your device name from the list.
 
 ## Entities
-- Climate: HVAC mode, target temp, fan, swing, on/off
-- Sensors: room temperature, outdoor temperature, setpoint, error code
+- Climate: HVAC mode, target temp, fan, swing, presets, on/off for supported air conditioners
+- Water heater: target temperature and operation mode for domestic hot water / RBW-style devices
+- Sensors: temperatures, setpoints, mode/state values, errors, and device-specific diagnostics where mapped
+
+## Supported device families
+- Air conditioner / climate devices using C0 ESP frames or SmartWeb value IDs
+- Domestic hot water / RBW-style devices using SmartWeb value IDs
+- LTE / dehumidifier-style devices as read-only sensors
+- KWT 180-300 DC as read-only sensors
+- Unknown devices can be added as diagnostics-only to collect mapping logs
 
 ## Options
 - Polling interval (seconds)
@@ -44,7 +52,7 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 ## Device type detection
 - New devices can be configured as auto-detect, air conditioner / climate, domestic hot water, or diagnostics only.
 - Existing entries without a stored device type continue to use auto-detection.
-- Auto-detection uses the SmartWeb device name and the first value snapshot. If it is wrong, change the device type in the integration options.
+- Auto-detection uses the SmartWeb device name and the first value snapshot. It recognizes common `Brauchwasser`, `Warmwasser`, `RBW`, `LTE`, and `KWT` names. If it is wrong, change the device type in the integration options.
 - Debug mapping logs can still be used for partially supported or unknown devices when debug logging is enabled.
 - Diagnostics-only devices do not create control entities, but they can be set up to keep collecting mapping logs.
 
@@ -56,12 +64,15 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 
 ## Behavior notes
 - Commands are applied **optimistically** to keep the UI responsive; a follow-up status read corrects the state if needed.
+- Domestic hot water / RBW writes are experimental. The integration writes SmartWeb value IDs observed in the REMKO frontend, but this path still needs validation with real devices.
+- Experimental DHW/RBW writes log the outgoing payload, values response, and readback status at warning level so testers can report useful feedback without a separate MQTT capture.
 - Multi-split systems cannot heat and cool different indoor units at the same time. Use automations if you want to enforce a shared mode across devices.
 
 ## Troubleshooting
 - No entities after install: restart Home Assistant after installing/updating.
 - Entities go unavailable: check network access to `smartweb.remko.media:8083` and reduce polling.
 - Power toggle feels sluggish: SmartWeb cloud responses can be delayed; try a longer polling interval.
+- DHW/RBW target temperature or mode does not change: enable debug logging and share the `Experimental REMKO SmartWeb value write` log lines, plus whether the REMKO app changed.
 
 ## Request support for a new device
 This integration can connect to REMKO SmartWeb devices that are visible in your account, but each device family may expose different values and writable parameters. If your device is not supported yet, the integration can log diagnostic payloads that help map sensors and controls.
@@ -92,4 +103,4 @@ logger:
 Raw diagnostic logs do not automatically add support for a device. They provide the value IDs and payloads needed to implement device-specific sensors, switches, numbers, or selects.
 
 ## Releases
-- For HACS releases, create a GitHub release whose tag matches the integration version in `custom_components/remko_smartweb/manifest.json`, for example `v0.2.5`.
+- For HACS releases, create a GitHub release whose tag matches the integration version in `custom_components/remko_smartweb/manifest.json`, for example `v0.3.0`.

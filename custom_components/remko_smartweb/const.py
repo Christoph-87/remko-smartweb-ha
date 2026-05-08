@@ -19,4 +19,4 @@ DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_MIN_TEMP = 16
 DEFAULT_MAX_TEMP = 30
 
-PLATFORMS = ["sensor", "climate"]
+PLATFORMS = ["sensor", "climate", "water_heater"]

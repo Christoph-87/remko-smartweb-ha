@@ -28,7 +28,52 @@ ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
 DEBUG_VALUES_LIMIT = 200000
 REDACTED = "<redacted>"
-VALUE_STATUS_QUERY_LIST = [1190, 1194, 5530, 1152, 1333, 1336, 5943, 5944]
+VALUE_STATUS_QUERY_LIST = [
+    # Common AC / KWT values observed in the REMKO Smart-Web frontend.
+    1046,
+    1190,
+    1191,
+    1192,
+    1193,
+    1194,
+    1218,
+    1228,
+    1229,
+    1451,
+    3024,
+    5000,
+    5315,
+    5530,
+    5532,
+    5534,
+    5539,
+    # Smart-Web / DHW / RBW values.
+    1152,
+    1176,
+    1177,
+    1178,
+    1333,
+    1336,
+    1453,
+    1454,
+    5032,
+    5943,
+    5944,
+    # LTE / dehumidifier-style values.
+    1302,
+    5195,
+    5490,
+    5628,
+    5769,
+    5927,
+    5928,
+    5929,
+    5930,
+    5931,
+    5932,
+    5933,
+    5982,
+]
 SENSITIVE_DEBUG_KEYS = {
     "access_key",
     "accesskey",
@@ -252,10 +297,10 @@ def _extract_sid_sk_from_text(text: str):
 
 def _extract_smt_user_from_text(text: str):
     for pat in (
-        r"SMT_USER\\s*[:=]\\s*(\\d+)",
-        r"\"SMT_USER\"\\s*:\\s*(\\d+)",
-        r"smt_user\\s*[:=]\\s*(\\d+)",
-        r"\"smt_user\"\\s*:\\s*(\\d+)",
+        r"SMT_USER\s*[:=]\s*(\d+)",
+        r"\"SMT_USER\"\s*:\s*(\d+)",
+        r"smt_user\s*[:=]\s*(\d+)",
+        r"\"smt_user\"\s*:\s*(\d+)",
     ):
         m = re.search(pat, text, flags=re.I)
         if m:
@@ -268,10 +313,10 @@ def _extract_smt_user_from_text(text: str):
 
 def _extract_global_var(text: str, key: str):
     patterns = [
-        rf"global\\.{key}\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
-        rf"window\\.{key}\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
-        rf"\\b{key}\\b\\s*:\\s*['\\\"]([^'\\\"]+)['\\\"]",
-        rf"\\b{key}\\b\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
+        rf"global\.{key}\s*=\s*['\"]([^'\"]+)['\"]",
+        rf"window\.{key}\s*=\s*['\"]([^'\"]+)['\"]",
+        rf"\b{key}\b\s*:\s*['\"]([^'\"]+)['\"]",
+        rf"\b{key}\b\s*=\s*['\"]([^'\"]+)['\"]",
     ]
     for pat in patterns:
         m = re.search(pat, text)
@@ -998,6 +1043,44 @@ class RemkoSmartWebClient:
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
 
+    def _mqtt_write_values(self, values: dict[str, str], timeout=10) -> dict | None:
+        """Write Smart-Web value IDs via CLIENT2HOST and wait for a values update."""
+        if not self.sid or not self.sk or not self.topic:
+            raise DeviceResolveError("Device not resolved")
+        self._ensure_mqtt()
+        payload = {
+            "values": {str(key): str(value) for key, value in values.items()},
+            "query_list": [int(key) for key in values if str(key).isdigit()],
+            "FORCE_RESPONSE": True,
+            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
+            "LASTWRITE": int(time.time() * 1000),
+            "ISTOUCH": False,
+            "DEVID": "",
+        }
+        if self.smt_user is not None:
+            payload["SMT_USER"] = self.smt_user
+        _LOGGER.warning(
+            "Experimental REMKO SmartWeb value write for %r. No confirmed write capture is bundled; "
+            "please verify in the REMKO app and share the following payload plus the response logs if it fails: %s",
+            self.device_name,
+            _debug_value(payload),
+        )
+        self._mqtt.publish(f"{self.topic}/CLIENT2HOST", payload)
+        response_values = self._mqtt.wait_values(timeout=timeout)
+        if isinstance(response_values, dict):
+            _LOGGER.warning(
+                "Experimental REMKO SmartWeb value write for %r received values response: %s",
+                self.device_name,
+                _debug_values(response_values),
+            )
+        else:
+            _LOGGER.warning(
+                "Experimental REMKO SmartWeb value write for %r did not receive a values response within %s seconds",
+                self.device_name,
+                timeout,
+            )
+        return response_values
+
     def _mqtt_diagnostic_snapshot(self):
         if self._mqtt is None:
             return None
@@ -1204,6 +1287,38 @@ class RemkoSmartWebClient:
             self.read_status()
         except Exception as err:
             _LOGGER.warning("Readback after SET failed: %s", err)
+
+    def set_value_ids(self, values: dict[str, str]) -> None:
+        """Write Smart-Web value IDs directly via CLIENT2HOST.
+
+        This is used for devices whose frontend operates on Smart-Web values instead of C0 ESP
+        frames, such as RBW/DHW devices.
+        """
+        self._ensure_login()
+        self._ensure_device()
+        self._ensure_mqtt()
+        response_values = self._mqtt_write_values(values, timeout=10)
+        if isinstance(response_values, dict):
+            self._log_mapping_snapshot("client2host_write_values", response_values)
+            parsed_values = self.profile.parse_values_status(response_values)
+            if parsed_values:
+                self._last_status = parsed_values
+                _LOGGER.warning(
+                    "Experimental REMKO SmartWeb value write for %r parsed response status: %s",
+                    self.device_name,
+                    _debug_value(parsed_values),
+                )
+                return
+        time.sleep(1.0)
+        try:
+            readback = self.read_status()
+            _LOGGER.warning(
+                "Experimental REMKO SmartWeb value write for %r readback status: %s",
+                self.device_name,
+                _debug_value(readback),
+            )
+        except Exception as err:
+            _LOGGER.warning("Readback after SmartWeb value write failed: %s", err)
 
     def close(self):
         if self._mqtt is not None:

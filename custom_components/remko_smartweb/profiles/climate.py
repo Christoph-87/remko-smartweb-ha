@@ -23,6 +23,37 @@ def _first_byte(hexstr: str | None):
         return None
 
 
+def _mode_from_value_id(value: int | None):
+    return {
+        0x03: "auto",
+        0x04: "cool",
+        0x05: "dry",
+        0x06: "heat",
+        0x07: "fan",
+    }.get(value)
+
+
+def _fan_from_value_id(value: int | None):
+    return {
+        0x02: "auto",
+        0x03: "low",
+        0x04: "medium",
+        0x05: "high",
+        0x06: "silent",
+        0x0D: "high",
+    }.get(value)
+
+
+def _swing_from_value_id(value: int | None):
+    return {
+        0x00: "off",
+        0x01: "vertical",
+        0x02: "horizontal",
+        0x03: "both",
+        0x04: "vertical",
+    }.get(value)
+
+
 class ClimateDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_CLIMATE
     supports_climate = True
@@ -108,7 +139,14 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         b1194 = _first_byte(values.get("1194"))
         b1190 = _first_byte(values.get("1190"))
         b5530 = _first_byte(values.get("5530"))
-        if b1194 is None and b1190 is None and b5530 is None:
+        b1192 = _first_byte(values.get("1192"))
+        b1191 = _first_byte(values.get("1191"))
+        b1193 = _first_byte(values.get("1193"))
+        has_climate_core = b1190 is not None or b5530 is not None or b1191 is not None or b1193 is not None
+        has_dhw_values = any(values.get(value_id) is not None for value_id in ("1333", "5032", "5943", "5944"))
+        if has_dhw_values and not has_climate_core:
+            return None
+        if b1194 is None and not has_climate_core and b1192 is None:
             return None
 
         status = {}
@@ -118,6 +156,24 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             status["setpoint"] = b1190 / 2
         if b5530 is not None:
             status["room"] = (b5530 - 40) / 2
+        mode = _mode_from_value_id(b1192)
+        if mode is not None:
+            status["mode"] = mode
+        fan = _fan_from_value_id(b1191)
+        if fan is not None:
+            status["fan"] = fan
+        swing = _swing_from_value_id(b1193)
+        if swing is not None:
+            status["swing"] = swing
+        for key, value_id in (
+            ("eco", "1046"),
+            ("turbo", "1218"),
+            ("sleep", "1228"),
+            ("bioclean", "1229"),
+        ):
+            value = _first_byte(values.get(value_id))
+            if value is not None:
+                status[key] = value == 0x01
         status["unit"] = "C"
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None

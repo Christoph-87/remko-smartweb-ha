@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -44,6 +44,8 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         if self._kind != "temperature":
+            if self._kind == "percentage":
+                return PERCENTAGE
             return None
         unit = self.coordinator.data.get("unit", "C")
         return UnitOfTemperature.FAHRENHEIT if unit == "F" else UnitOfTemperature.CELSIUS
@@ -52,4 +54,6 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
     def device_class(self):
         if self._kind == "temperature":
             return SensorDeviceClass.TEMPERATURE
+        if self._kind == "percentage":
+            return SensorDeviceClass.HUMIDITY
         return None
