@@ -2,9 +2,9 @@
 
 ## v0.3.8
 - Enable Home Assistant switch entities for REMKO SmartWeb climate extras
-- Add switches for Turbo, Silent Mode, Bioclean, Frost Protection, and experimental LED Display control when supported by the current data snapshot
+- Add switches for Turbo, Silent Mode, Bioclean, and Frost Protection when supported by the current data snapshot
 - Parse and write the climate frost protection state using REMKO value ID `1199` and the matching C0 payload bit
-- Add experimental LED Display support for MXW-style climate devices using REMKO value ID `1298`, with C0 `nightLight` parsing kept for status diagnostics
+- Keep LED Display / `nightLight` values as diagnostics only because the MXW SmartWeb frontend does not map value ID `1298` back into a generic AC write command
 - Query REMKO value ID `1298` so testers can verify whether SmartWeb exposes the indoor-unit display state
 - Hide unsupported extra switches for value-ID based devices when their profile cannot write the corresponding value
 - Expand portal type detection for additional REMKO device families found in the bundled frontend JavaScript

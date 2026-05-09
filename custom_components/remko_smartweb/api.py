@@ -776,13 +776,6 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
             b10 |= 0x02
         else:
             b10 &= ~0x02
-    display = overrides.get("display")
-    if display is not None:
-        if display:
-            b10 |= 0x10
-        else:
-            b10 &= ~0x10
-
     pwr = overrides.get("power")
     if pwr is not None:
         if pwr:

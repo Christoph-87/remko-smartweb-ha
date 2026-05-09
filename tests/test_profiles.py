@@ -190,17 +190,6 @@ class ProfileParsingTests(unittest.TestCase):
             },
         )
 
-    def test_climate_profile_builds_display_value_write(self):
-        self.assertEqual(
-            ClimateDeviceProfile().build_value_write({"display": True}),
-            {"1298": "01"},
-        )
-        self.assertEqual(
-            ClimateDeviceProfile().build_value_write({"display": False}),
-            {"1298": "00"},
-        )
-        self.assertIsNone(ClimateDeviceProfile().build_value_write({"turbo": True}))
-
     def test_dhw_values_status_parses_tenths_temperature_values(self):
         values = {
             "1152": "01",

@@ -16,7 +16,6 @@ SWITCHES = [
     ("turbo", "Turbo"),
     ("sleep", "Silent Mode"),
     ("bioclean", "Bioclean"),
-    ("display", "LED Display"),
 ]
 
 C0_CLIMATE_SWITCH_KEYS = {
@@ -26,7 +25,6 @@ C0_CLIMATE_SWITCH_KEYS = {
     "turbo",
     "sleep",
     "bioclean",
-    "display",
 }
 
 

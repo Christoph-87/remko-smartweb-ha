@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from ..const import DEVICE_KIND_CLIMATE
 from .base import SmartWebDeviceProfile
-from .value_mapping import ValueWriteSpec, build_value_write
 
 
 def _hex_to_bytes(hexstr: str):
@@ -58,9 +57,6 @@ def _first_reverse(mapping: dict[int, str]) -> dict[str, int]:
 MODE_VALUE_IDS = _first_reverse(MODE_BY_VALUE_ID)
 FAN_VALUE_IDS = _first_reverse(FAN_BY_VALUE_ID)
 SWING_VALUE_IDS = _first_reverse(SWING_BY_VALUE_ID)
-CLIMATE_EXTRA_VALUE_WRITE_SPECS = (
-    ValueWriteSpec("display", "1298", enum={True: 0x01, False: 0x00}),
-)
 
 
 def _mode_from_value_id(value: int | None):
@@ -208,9 +204,6 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None
         return status
-
-    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
-        return build_value_write(overrides, CLIMATE_EXTRA_VALUE_WRITE_SPECS)
 
 
 class ReadOnlyAcUartClimateDeviceProfile(ClimateDeviceProfile):
