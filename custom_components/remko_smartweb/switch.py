@@ -103,14 +103,17 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
                 data[self._key] = bool(state)
             self.coordinator.data = data
             self.async_write_ha_state()
-        value_write = self._profile.build_value_write(overrides)
-        if getattr(self._profile, "supports_value_write", False):
-            if not value_write:
-                return
-            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
-        else:
-            await self.hass.async_add_executor_job(self._client.set_values, overrides)
+
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()
 
+        value_write = self._profile.build_value_write(overrides)
+        if value_write:
+            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
+            async_call_later(self.hass, 2.0, _do_refresh)
+            return
+        if getattr(self._profile, "supports_value_write", False):
+            return
+        else:
+            await self.hass.async_add_executor_job(self._client.set_values, overrides)
         async_call_later(self.hass, 2.0, _do_refresh)
