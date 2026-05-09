@@ -28,6 +28,9 @@ requests.Session = object
 sys.modules.setdefault("requests", requests)
 
 from custom_components.remko_smartweb.api import (
+    _build_kwt_set_cmd,
+    _build_mqtt_topic,
+    _build_rbw_set_cmd,
     _extract_global_var,
     _extract_sid_sk_from_text,
     _extract_sid_sk_from_url,
@@ -83,6 +86,9 @@ class ProfileParsingTests(unittest.TestCase):
         )
         self.assertIsNone(_extract_sid_sk_from_text('global.SMT_ID="NaN";global.SMT_KEY="NaN";'))
         self.assertIsNone(_extract_sid_sk_from_url("https://example.invalid/?SID=&SK="))
+        self.assertEqual(_build_mqtt_topic("0123456789abcdef"), "V04P27/0123456789ABCDEF")
+        self.assertIsNone(_build_mqtt_topic(""))
+        self.assertIsNone(_build_mqtt_topic("NaN"))
 
     def test_value_query_list_includes_written_ids_with_status_ids(self):
         query_list = _value_query_list({"1333": "022B", "9999": "01"})
@@ -91,6 +97,22 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIn(9999, query_list)
         self.assertEqual(query_list.count(1333), 1)
         self.assertGreater(len(query_list), 2)
+
+    def test_build_rbw_set_cmd_uses_frontend_modbus_conversion(self):
+        self.assertEqual(_build_rbw_set_cmd("1333", "0226"), "631004500100AA")
+        self.assertEqual(_build_rbw_set_cmd("1333", "022B"), "631004500100AB")
+        self.assertEqual(_build_rbw_set_cmd("1194", "01"), "631003F3010001")
+        self.assertEqual(_build_rbw_set_cmd("1194", "02"), "631003F3010000")
+        self.assertEqual(_build_rbw_set_cmd("1192", "09"), "631003F4010002")
+        self.assertIsNone(_build_rbw_set_cmd("1192", "06"))
+
+    def test_build_kwt_set_cmd_uses_frontend_modbus_conversion(self):
+        self.assertEqual(_build_kwt_set_cmd("1190", "2B"), "0110271A00010200D7B336")
+        self.assertEqual(_build_kwt_set_cmd("1194", "01"), "0110271000010200013202")
+        self.assertEqual(_build_kwt_set_cmd("1194", "02"), "011027100001020000F3C2")
+        self.assertEqual(_build_kwt_set_cmd("1192", "06"), "01102711000102000133D3")
+        self.assertEqual(_build_kwt_set_cmd("1191", "04"), "01102712000102000273E1")
+        self.assertEqual(_build_kwt_set_cmd("1193", "04"), "0110272400010200013676")
 
     def test_climate_c0_status_parses_core_fields(self):
         status = ClimateDeviceProfile().parse_c0_status(CLIMATE_C0_RX)

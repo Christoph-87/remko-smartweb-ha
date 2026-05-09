@@ -157,10 +157,13 @@ from custom_components.remko_smartweb.api import (
     RemkoSmartWebClient,
     UnsupportedPayload,
     _MqttSession,
+    _build_kwt_set_cmd,
+    _build_rbw_set_cmd,
     _smartweb_value_matches,
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
+from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.water_heater import RemkoSmartWebWaterHeater
 
 
@@ -191,6 +194,9 @@ class FakeMqtt:
 
     def wait_values(self, timeout=10):
         return self.response_values
+
+    def wait_rx(self, timeout=10):
+        return '{"Rx":"631004500100AA"}'
 
     def last_smt_user(self):
         return None
@@ -306,6 +312,46 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
         self.assertIn("0123456789ABCDEF", payload["CLIENT_ID"])
 
+    def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_name = "DHW"
+        client.profile = DomesticHotWaterDeviceProfile()
+        client._mqtt = FakeMqtt()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client.read_status = lambda: {"dhw_setpoint": 55.0, "unit": "C"}
+
+        client.set_value_ids({"1333": "0226"})
+
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload, {"Tx": _build_rbw_set_cmd("1333", "0226"), "CLIENT_ID": "SMTACUARTTEST"})
+
+    def test_kwt_value_write_uses_esp_tx_before_client2host_fallback(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_name = "KWT"
+        client.profile = KwtDeviceProfile()
+        client._mqtt = FakeMqtt()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client.read_status = lambda: {"setpoint": 21.5, "unit": "C"}
+
+        client.set_value_ids({"1190": "2B"})
+
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload, {"Tx": _build_kwt_set_cmd("1190", "2B"), "CLIENT_ID": "SMTACUARTTEST"})
+
     def test_resolve_device_force_list_skips_stored_device_path(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "DHW"
@@ -340,6 +386,7 @@ class CoordinatorTests(unittest.TestCase):
         client._ensure_login = lambda: None
         client._ensure_device = lambda: None
         client._ensure_mqtt = lambda: None
+        client._mqtt_write_rbw_esp_values = lambda values, timeout=10: False
         client._mqtt_write_values = lambda values, timeout=10: {"1333": "0226"}
         client._log_mapping_snapshot = lambda *args, **kwargs: None
         client.read_status = lambda: {"dhw_setpoint": 55.0, "unit": "C"}

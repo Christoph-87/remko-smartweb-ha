@@ -74,6 +74,47 @@ VALUE_STATUS_QUERY_LIST = [
     5933,
     5982,
 ]
+RBW_VALUE_WRITE_REGISTERS = {
+    # SmartWeb value id: (Modbus register, converter)
+    # Matches docs/lib.ac.uart.js RBW_convertDataForImport + RBW_setStatus.
+    "1194": (1011, "power"),
+    "1192": (1012, "mode"),
+    "1333": (1104, "temp1"),
+}
+RBW_MODE_REGISTER_VALUES = {
+    0x03: 0,  # auto / intelligent
+    0x09: 2,  # eco / economic
+    0x0A: 3,  # hybrid
+    0x0B: 4,  # speed heating / high demand
+    0x0C: 7,  # vacation
+}
+KWT_VALUE_WRITE_REGISTERS = {
+    # SmartWeb value id: (Modbus register, converter)
+    # Matches docs/lib.ac.uart.js KWT_convertDataForImport + KWT_setStatus.
+    "1194": (10000, "power"),
+    "1192": (10001, "mode"),
+    "1191": (10002, "fan"),
+    "1190": (10010, "temp"),
+    "1193": (10020, "swing"),
+}
+KWT_MODE_REGISTER_VALUES = {
+    0x03: 0,  # auto / auto_changeover
+    0x04: 2,  # cool
+    0x05: 4,  # dry / dehumidify
+    0x06: 1,  # heat
+    0x07: 3,  # fan only
+}
+KWT_FAN_REGISTER_VALUES = {
+    0x02: 0,  # auto
+    0x03: 1,  # low
+    0x04: 2,  # medium
+    0x05: 3,  # high
+    0x0D: 4,  # boost
+}
+KWT_SWING_REGISTER_VALUES = {
+    0x00: 0,  # off / default
+    0x04: 1,  # swing on
+}
 
 
 def _value_query_list(extra_ids=()) -> list[int]:
@@ -330,6 +371,12 @@ def _valid_credential_part(value: str | None) -> bool:
     return re.fullmatch(r"[0-9A-Fa-f]{16}", text) is not None
 
 
+def _build_mqtt_topic(sid: str | None) -> str | None:
+    if not _valid_credential_part(sid):
+        return None
+    return f"{VERSION}/{sid.strip().upper()}"
+
+
 def _extract_sid_sk_from_text(text: str):
     m = re.search(r"SID=([0-9A-Fa-f]{16}).*?SK=([0-9A-Fa-f]{16})", text)
     if m:
@@ -487,6 +534,100 @@ def _build_status_cmd() -> str:
     packet[1] = len(packet)
     packet.append(_checksum(packet))
     return "".join(f"{b:02X}" for b in packet)
+
+
+def _build_rbw_set_cmd(value_id: str, value_hex: str) -> str | None:
+    """Build the RBW/KWT-style raw Modbus Tx used by the SmartWeb frontend."""
+    spec = RBW_VALUE_WRITE_REGISTERS.get(str(value_id))
+    if spec is None:
+        return None
+    try:
+        id_value = int(str(value_hex), 16)
+    except Exception:
+        return None
+    register, converter = spec
+    if converter == "temp1":
+        # SmartWeb ID 1333 is temperature in tenths, while RBW register R01 uses
+        # half-degree steps with an offset of 60: value2data_TEMP1(value).
+        temperature = id_value / 10
+        register_value = round((temperature / 0.5) + 60)
+    elif converter == "power":
+        register_value = 1 if id_value == 0x01 else 0 if id_value == 0x02 else None
+    elif converter == "mode":
+        register_value = RBW_MODE_REGISTER_VALUES.get(id_value)
+    else:
+        register_value = None
+    if register_value is None or not 0 <= register_value <= 0xFFFF:
+        return None
+    cmd = [
+        0x63,
+        0x10,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        0x01,
+        (register_value & 0xFF00) >> 8,
+        register_value & 0x00FF,
+    ]
+    return "".join(f"{b:02X}" for b in cmd)
+
+
+def _modbus_crc16(data: list[int]) -> int:
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x0001:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc >>= 1
+    return crc & 0xFFFF
+
+
+def _build_modbus_write_register_cmd(addr: int, register: int, value: int) -> str | None:
+    if not 0 <= value <= 0xFFFF:
+        return None
+    cmd = [
+        addr & 0xFF,
+        0x10,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        0x00,
+        0x01,
+        0x02,
+        (value & 0xFF00) >> 8,
+        value & 0x00FF,
+    ]
+    crc = _modbus_crc16(cmd)
+    cmd.extend([crc & 0x00FF, (crc & 0xFF00) >> 8])
+    return "".join(f"{b:02X}" for b in cmd)
+
+
+def _build_kwt_set_cmd(value_id: str, value_hex: str) -> str | None:
+    """Build the KWT raw Modbus Tx used by the SmartWeb frontend."""
+    spec = KWT_VALUE_WRITE_REGISTERS.get(str(value_id))
+    if spec is None:
+        return None
+    try:
+        id_value = int(str(value_hex), 16)
+    except Exception:
+        return None
+    register, converter = spec
+    if converter == "temp":
+        # SmartWeb ID 1190 is half-degree steps; KWT register TEMP_SET is tenths.
+        register_value = id_value * 5
+    elif converter == "power":
+        register_value = 1 if id_value == 0x01 else 0 if id_value == 0x02 else None
+    elif converter == "mode":
+        register_value = KWT_MODE_REGISTER_VALUES.get(id_value)
+    elif converter == "fan":
+        register_value = KWT_FAN_REGISTER_VALUES.get(id_value, 0)
+    elif converter == "swing":
+        register_value = KWT_SWING_REGISTER_VALUES.get(id_value, 0)
+    else:
+        register_value = None
+    if register_value is None:
+        return None
+    return _build_modbus_write_register_cmd(1, register, register_value)
 
 
 def _extract_values_from_payload(payload: str):
@@ -974,7 +1115,7 @@ class RemkoSmartWebClient:
 
     def _ensure_device(self) -> None:
         """Ensure SID/SK/topic are resolved from SmartWeb."""
-        if _valid_credential_part(self.sid) and _valid_credential_part(self.sk) and self.topic and not self.topic.endswith("/"):
+        if _valid_credential_part(self.sid) and _valid_credential_part(self.sk) and self.topic == _build_mqtt_topic(self.sid):
             return
         self.sid = None
         self.sk = None
@@ -985,7 +1126,7 @@ class RemkoSmartWebClient:
         self.resolve_device()
 
     def _ensure_mqtt(self) -> None:
-        if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or not self.topic or self.topic.endswith("/"):
+        if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or self.topic != _build_mqtt_topic(self.sid):
             raise DeviceResolveError("Device MQTT credentials are incomplete")
         if self._mqtt is None or not self._mqtt.ensure_connected():
             self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
@@ -1034,7 +1175,9 @@ class RemkoSmartWebClient:
             hit = _extract_sid_sk_from_url(redirect_url)
             if hit:
                 self.sid, self.sk = hit
-                self.topic = f"{VERSION}/{self.sid}"
+                self.topic = _build_mqtt_topic(self.sid)
+                if not self.topic:
+                    raise DeviceResolveError("SID/SK or SMT_ID/SMT_KEY not found")
                 self.smt_user = self.smt_user or _extract_smt_user_from_url(redirect_url)
                 try:
                     r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
@@ -1075,7 +1218,9 @@ class RemkoSmartWebClient:
         if not hit:
             raise DeviceResolveError("SID/SK or SMT_ID/SMT_KEY not found")
         self.sid, self.sk = hit
-        self.topic = f"{VERSION}/{self.sid}"
+        self.topic = _build_mqtt_topic(self.sid)
+        if not self.topic:
+            raise DeviceResolveError("SID/SK or SMT_ID/SMT_KEY not found")
         self.smt_user = (
             self.smt_user
             or _extract_smt_user_from_url(r1.url)
@@ -1219,6 +1364,51 @@ class RemkoSmartWebClient:
                 timeout,
             )
         return response_values
+
+    def _mqtt_write_rbw_esp_values(self, values: dict[str, str], timeout=10) -> bool:
+        """Write RBW/DHW value IDs through the ESP Tx path used by the frontend."""
+        if not self.sid or not self.sk or not self.topic:
+            raise DeviceResolveError("Device not resolved")
+        self._ensure_mqtt()
+        unsupported = []
+        for key, value in values.items():
+            tx = _build_rbw_set_cmd(str(key), str(value))
+            if not tx:
+                unsupported.append(str(key))
+                continue
+            _LOGGER.warning(
+                "Experimental REMKO RBW/DHW ESP value write for %r: value id %s via Tx %s",
+                self.device_name,
+                key,
+                tx,
+            )
+            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            # The frontend waits for RESP and then refreshes the value model.
+            self._mqtt.wait_rx(timeout=timeout)
+            time.sleep(1.0)
+        return not unsupported
+
+    def _mqtt_write_kwt_esp_values(self, values: dict[str, str], timeout=10) -> bool:
+        """Write KWT value IDs through the ESP Modbus Tx path used by the frontend."""
+        if not self.sid or not self.sk or not self.topic:
+            raise DeviceResolveError("Device not resolved")
+        self._ensure_mqtt()
+        unsupported = []
+        for key, value in values.items():
+            tx = _build_kwt_set_cmd(str(key), str(value))
+            if not tx:
+                unsupported.append(str(key))
+                continue
+            _LOGGER.warning(
+                "Experimental REMKO KWT ESP value write for %r: value id %s via Tx %s",
+                self.device_name,
+                key,
+                tx,
+            )
+            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._mqtt.wait_rx(timeout=timeout)
+            time.sleep(1.0)
+        return not unsupported
 
     def _mqtt_diagnostic_snapshot(self):
         if self._mqtt is None:
@@ -1445,6 +1635,54 @@ class RemkoSmartWebClient:
         self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
+        profile_name = type(self.profile).__name__
+        if profile_name == "DomesticHotWaterDeviceProfile":
+            if self._mqtt_write_rbw_esp_values(values, timeout=10):
+                time.sleep(1.0)
+                try:
+                    readback = self.read_status()
+                    mismatches = {
+                        str(key): {"expected": str(value), "actual": readback.get("dhw_setpoint")}
+                        for key, value in values.items()
+                        if str(key) == "1333"
+                        and readback.get("dhw_setpoint") is not None
+                        and abs((int(str(value), 16) / 10) - float(readback["dhw_setpoint"])) > 0.05
+                    }
+                    _LOGGER.warning(
+                        "Experimental REMKO RBW/DHW ESP value write for %r readback status: %s",
+                        self.device_name,
+                        _debug_value(readback),
+                    )
+                    if not mismatches:
+                        return
+                    _LOGGER.warning(
+                        "Experimental REMKO RBW/DHW ESP value write for %r was not confirmed by readback: %s",
+                        self.device_name,
+                        _debug_value(mismatches),
+                    )
+                except Exception as err:
+                    _LOGGER.warning("Readback after RBW/DHW ESP value write failed: %s", err)
+        elif profile_name == "KwtDeviceProfile":
+            if self._mqtt_write_kwt_esp_values(values, timeout=10):
+                time.sleep(1.0)
+                try:
+                    readback = self.read_status()
+                    parsed_mismatches = self._value_write_readback_mismatches(values, readback)
+                    _LOGGER.warning(
+                        "Experimental REMKO KWT ESP value write for %r readback status: %s",
+                        self.device_name,
+                        _debug_value(readback),
+                    )
+                    if not parsed_mismatches:
+                        return
+                    _LOGGER.warning(
+                        "Experimental REMKO KWT ESP value write for %r was not confirmed by readback: %s",
+                        self.device_name,
+                        _debug_value(parsed_mismatches),
+                    )
+                except Exception as err:
+                    _LOGGER.warning("Readback after KWT ESP value write failed: %s", err)
+
         response_values = self._mqtt_write_values(values, timeout=10)
         if isinstance(response_values, dict):
             self._log_mapping_snapshot("client2host_write_values", response_values)
@@ -1479,6 +1717,56 @@ class RemkoSmartWebClient:
         except Exception as err:
             _LOGGER.warning("Readback after SmartWeb value write failed: %s", err)
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
+
+    def _value_write_readback_mismatches(self, values: dict[str, str], readback: dict) -> dict:
+        mismatches = {}
+        for key, value in values.items():
+            key = str(key)
+            try:
+                id_value = int(str(value), 16)
+            except Exception:
+                continue
+            if key == "1190":
+                actual = readback.get("setpoint")
+                if actual is not None and abs((id_value / 2) - float(actual)) > 0.05:
+                    mismatches[key] = {"expected": id_value / 2, "actual": actual}
+            elif key == "1194":
+                actual = readback.get("power")
+                expected = "ON" if id_value == 0x01 else "OFF" if id_value == 0x02 else None
+                if expected is not None and actual is not None and actual != expected:
+                    mismatches[key] = {"expected": expected, "actual": actual}
+            elif key == "1192":
+                actual = readback.get("mode")
+                expected = {
+                    0x03: "auto",
+                    0x04: "cool",
+                    0x05: "dry",
+                    0x06: "heat",
+                    0x07: "fan",
+                }.get(id_value)
+                if expected is not None and actual is not None and actual != expected:
+                    mismatches[key] = {"expected": expected, "actual": actual}
+            elif key == "1191":
+                actual = readback.get("fan")
+                expected = {
+                    0x02: "auto",
+                    0x03: "low",
+                    0x04: "medium",
+                    0x05: "high",
+                    0x06: "silent",
+                    0x0D: "high",
+                }.get(id_value)
+                if expected is not None and actual is not None and actual != expected:
+                    mismatches[key] = {"expected": expected, "actual": actual}
+            elif key == "1193":
+                actual = readback.get("swing")
+                expected = {
+                    0x00: "off",
+                    0x04: "vertical",
+                }.get(id_value)
+                if expected is not None and actual is not None and actual != expected:
+                    mismatches[key] = {"expected": expected, "actual": actual}
+        return mismatches
 
     def close(self):
         if self._mqtt is not None:

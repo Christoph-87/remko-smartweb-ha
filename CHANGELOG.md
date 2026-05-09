@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.5
+- Reject incomplete SmartWeb MQTT topics so integrations no longer subscribe to `V04P27//...` when SID resolution fails
+- Write domestic hot water / RBW target temperature, power, and mode through the same ESP command path used by the REMKO frontend
+- Write KWT 180-300 DC setpoint, power, mode, fan, and swing commands through ESP Modbus frames with CRC validation
+- Keep CLIENT2HOST value writes as a fallback while preferring device-specific ESP writes for RBW/DHW and KWT devices
+- Add tests for MQTT topic validation and RBW/DHW and KWT ESP command generation
+
 ## v0.3.4
 - Retry device resolution through a fresh `/rest/liste` lookup when SmartWeb status/value responses stay empty or unparseable
 - Avoid reusing a stored device path during forced device-list refreshes so stale paths can recover automatically
