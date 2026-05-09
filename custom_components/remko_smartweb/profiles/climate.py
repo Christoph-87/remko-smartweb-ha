@@ -74,6 +74,9 @@ def _swing_from_value_id(value: int | None):
 class ClimateDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_CLIMATE
     supports_climate = True
+    supports_climate_write = True
+    profile_name = "Generic AC"
+    protocol_name = "default_ac_uart"
     sensor_descriptions = (
         ("room", "Room Temperature", "temperature"),
         ("outdoor", "Outdoor Temperature", "temperature"),
@@ -100,9 +103,11 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         eco = ((payload[9] & 0x10) >> 4) > 0
         turbo = ((payload[10] & 0x02) >> 1) > 0
         sleep = (payload[10] & 0x01) > 0
+        display = ((payload[10] & 0x10) >> 4) > 0
         indoor = (payload[11] - 50) / 2
         outdoor = (payload[12] - 50) / 2
         error = payload[16]
+        frost_protection = len(payload) > 21 and ((payload[21] & 0x80) >> 7) > 0
         temp_unit_f = ((payload[10] & 0x04) >> 2) > 0
 
         mode_map = {1: "auto", 2: "cool", 3: "dry", 4: "heat", 5: "fan"}
@@ -144,6 +149,8 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             "eco": eco,
             "turbo": turbo,
             "sleep": sleep,
+            "display": display,
+            "frost_protection": frost_protection,
             "outdoor": outdoor,
             "error": error,
             "unit": unit,
@@ -184,9 +191,11 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             status["swing"] = swing
         for key, value_id in (
             ("eco", "1046"),
+            ("frost_protection", "1199"),
             ("turbo", "1218"),
             ("sleep", "1228"),
             ("bioclean", "1229"),
+            ("display", "1298"),
         ):
             value = _first_byte(values.get(value_id))
             if value is not None:
@@ -195,3 +204,15 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None
         return status
+
+
+class ReadOnlyAcUartClimateDeviceProfile(ClimateDeviceProfile):
+    """Climate device using a protocol-specific AC UART path not yet implemented for writes."""
+
+    supports_climate_write = False
+    supports_climate_presets = False
+    protocol_name = "ac_uart_read_only"
+
+    def __init__(self, profile_name: str, protocol_name: str) -> None:
+        self.profile_name = profile_name
+        self.protocol_name = protocol_name

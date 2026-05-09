@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 
-OPERATION_MODES = ["off", "heat", "auto", "eco", "vacation"]
+OPERATION_MODES = ["off", "heat", "auto", "eco", "hybrid", "speed_heating", "vacation"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):

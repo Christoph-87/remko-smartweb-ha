@@ -1,6 +1,21 @@
 # Changelog
 
+## v0.3.7
+- Enable Home Assistant switch entities for REMKO SmartWeb climate extras
+- Add switches for Turbo, Silent Mode, Bioclean, Frost Protection, and experimental LED Display control when supported by the current data snapshot
+- Parse and write the climate frost protection state using REMKO value ID `1199` and the matching C0 payload bit
+- Add experimental LED Display support for MXW-style climate devices using REMKO value ID `1298` and the C0 `nightLight` bit
+- Query REMKO value ID `1298` so testers can verify whether SmartWeb exposes the indoor-unit display state
+- Hide unsupported extra switches for value-ID based devices when their profile cannot write the corresponding value
+- Expand portal type detection for additional REMKO device families found in the bundled frontend JavaScript
+- Distinguish RKL 495, RKL 355, and BL/AUX AC UART devices from MXW-style climate devices and keep them read-only until their protocol-specific write paths are implemented
+- Add diagnostic sensors for the selected profile class, protocol, and write-support status
+- Add tests for climate extras, device metadata extraction, and portal type based profile detection
+
 ## v0.3.5
+- Read SID, SK, SMT_USER, DEV, NAME, and TYPE from the SmartWeb `smt.html` portal URL when available
+- Prefer the portal `TYPE`/`NAME` metadata for early profile selection before MQTT value auto-detection
+- Add diagnostic sensors for detected profile, portal ID, portal name, portal type, portal DEV, and redacted MQTT topic
 - Reject incomplete SmartWeb MQTT topics so integrations no longer subscribe to `V04P27//...` when SID resolution fails
 - Write domestic hot water / RBW target temperature, power, and mode through the same ESP command path used by the REMKO frontend
 - Write KWT 180-300 DC setpoint, power, mode, fan, and swing commands through ESP Modbus frames with CRC validation

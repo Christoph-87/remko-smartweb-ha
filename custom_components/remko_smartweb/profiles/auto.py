@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from .base import SmartWebDeviceProfile
-from .climate import ClimateDeviceProfile
+from .climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
+from .diagnostics import DiagnosticsDeviceProfile
 from .domestic_hot_water import DomesticHotWaterDeviceProfile
 from .kwt import KwtDeviceProfile, looks_like_kwt_name
 from .lte import LteDeviceProfile, looks_like_lte_name
@@ -16,6 +17,54 @@ def looks_like_dhw_name(device_name: str | None) -> bool:
     return "brauchwasser" in name or "warmwasser" in name or "rbw" in name
 
 
+def looks_like_climate_name(device_name: str | None) -> bool:
+    name = _normalized_name(device_name)
+    return any(
+        token in name
+        for token in (
+            "mxw",
+            "klima",
+            "climate",
+            "air conditioner",
+            "rkl 495",
+            "rkl 355",
+            "bl 264",
+            "bl 353",
+            "aux",
+        )
+    )
+
+
+def get_ac_uart_climate_profile(device_name: str | None) -> SmartWebDeviceProfile | None:
+    name = _normalized_name(device_name)
+    if "rkl 495" in name:
+        return ReadOnlyAcUartClimateDeviceProfile("RKL 495 DC", "free_ac_uart")
+    if "rkl 355" in name:
+        return ReadOnlyAcUartClimateDeviceProfile("RKL 355 DC", "nwt_ac_uart")
+    if any(token in name for token in ("bl 264", "bl 353", "bl 354", "aux")):
+        return ReadOnlyAcUartClimateDeviceProfile("BL/AUX AC", "aux_ac_uart")
+    if any(token in name for token in ("mxw", "klima", "climate", "air conditioner")):
+        return ClimateDeviceProfile()
+    return None
+
+
+def looks_like_unsupported_heat_pump_name(device_name: str | None) -> bool:
+    name = _normalized_name(device_name)
+    return any(
+        token in name
+        for token in (
+            "wpm",
+            "wpk",
+            "wkm",
+            "sqw",
+            "waermepumpe",
+            "wärmepumpe",
+            "modulare_waermepumpe",
+            "modulare wärmepumpe",
+        )
+    )
+
+
 def get_specialized_profile(device_name: str | None, data: dict | None = None) -> SmartWebDeviceProfile | None:
     if looks_like_dhw_name(device_name):
         return DomesticHotWaterDeviceProfile()
@@ -23,6 +72,11 @@ def get_specialized_profile(device_name: str | None, data: dict | None = None) -
         return LteDeviceProfile()
     if looks_like_kwt_name(device_name):
         return KwtDeviceProfile()
+    climate_profile = get_ac_uart_climate_profile(device_name)
+    if climate_profile is not None:
+        return climate_profile
+    if looks_like_unsupported_heat_pump_name(device_name):
+        return DiagnosticsDeviceProfile()
     if isinstance(data, dict):
         if any(key in data for key in ("target_humidity", "internal_humidity", "internal_temperature")):
             return LteDeviceProfile()

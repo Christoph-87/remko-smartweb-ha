@@ -8,6 +8,8 @@ DHW_MODE_VALUE_IDS = {
     "auto": 0x03,
     "heat": 0x06,
     "eco": 0x09,
+    "hybrid": 0x0A,
+    "speed_heating": 0x0B,
     "vacation": 0x0C,
 }
 DHW_WRITE_SPECS = (
@@ -73,6 +75,8 @@ def _dhw_mode(hexstr: str | None):
         0x06: "heat",
         0x08: "timer",
         0x09: "eco",
+        0x0A: "hybrid",
+        0x0B: "speed_heating",
         0x0C: "vacation",
     }.get(value)
 
@@ -81,6 +85,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_DHW
     supports_water_heater = True
     supports_value_write = True
+    profile_name = "RBW 302 Pro"
+    protocol_name = "rbw_modbus"
     sensor_descriptions = (
         ("dhw_setpoint", "DHW Setpoint", "temperature"),
         ("dhw_top_temperature", "DHW Top Temperature", "temperature"),

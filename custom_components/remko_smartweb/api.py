@@ -8,7 +8,7 @@ import ssl
 import threading
 import time
 from collections import deque
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import requests
 import paho.mqtt.client as mqtt
@@ -39,6 +39,7 @@ VALUE_STATUS_QUERY_LIST = [
     1218,
     1228,
     1229,
+    1298,
     1451,
     3024,
     5000,
@@ -362,6 +363,26 @@ def _extract_sid_sk_from_url(url: str):
     return None
 
 
+def _extract_smartweb_portal_params_from_text(text: str) -> dict[str, str]:
+    if not text:
+        return {}
+    normalized = text.replace("&amp;", "&")
+    matches = re.findall(r"""['"]([^'"]*smt\.html\?[^'"]+)['"]""", normalized, flags=re.I)
+    for match in matches:
+        parsed = urlparse(unquote(match))
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        if not qs:
+            continue
+        params = {}
+        for key in ("SMT_ID", "SID", "SK", "us", "SMT_USER", "smt_user", "DEV", "NAME", "TYPE"):
+            value = (qs.get(key) or [None])[0]
+            if value not in (None, ""):
+                params[key] = value
+        if params:
+            return params
+    return {}
+
+
 def _valid_credential_part(value: str | None) -> bool:
     if not value:
         return False
@@ -389,11 +410,19 @@ def _extract_sid_sk_from_text(text: str):
 
 
 def _extract_smt_user_from_text(text: str):
+    portal_params = _extract_smartweb_portal_params_from_text(text)
+    for key in ("us", "SMT_USER", "smt_user"):
+        value = portal_params.get(key)
+        if str(value or "").isdigit():
+            return int(value)
     for pat in (
         r"SMT_USER\s*[:=]\s*(\d+)",
         r"\"SMT_USER\"\s*:\s*(\d+)",
         r"smt_user\s*[:=]\s*(\d+)",
         r"\"smt_user\"\s*:\s*(\d+)",
+        r"[?&]us=(\d+)(?:[&#\"']|$)",
+        r"[?&]SMT_USER=(\d+)(?:[&#\"']|$)",
+        r"[?&]smt_user=(\d+)(?:[&#\"']|$)",
     ):
         m = re.search(pat, text, flags=re.I)
         if m:
@@ -449,6 +478,21 @@ def _extract_smt_user_from_scripts(session: requests.Session, html: str):
             except Exception:
                 pass
     return None
+
+
+def _extract_device_metadata_from_text(text: str) -> dict[str, str]:
+    params = _extract_smartweb_portal_params_from_text(text)
+    metadata = {}
+    for source_key, target_key in (
+        ("SMT_ID", "device_portal_id"),
+        ("DEV", "device_dev"),
+        ("NAME", "device_portal_name"),
+        ("TYPE", "device_type"),
+    ):
+        value = params.get(source_key)
+        if value:
+            metadata[target_key] = value
+    return metadata
 
 
 def _extract_names_from_rest_list(html: str):
@@ -732,6 +776,12 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
             b10 |= 0x02
         else:
             b10 &= ~0x02
+    display = overrides.get("display")
+    if display is not None:
+        if display:
+            b10 |= 0x10
+        else:
+            b10 &= ~0x10
 
     pwr = overrides.get("power")
     if pwr is not None:
@@ -762,7 +812,13 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
     cmd[18] = 0x00
     cmd[19] = 0x00
     cmd[20] = 0x00
-    cmd[21] = payload[21] & 0x80
+    frost_protection = overrides.get("frost_protection")
+    if frost_protection is None:
+        cmd[21] = payload[21] & 0x80
+    elif frost_protection:
+        cmd[21] = 0x80
+    else:
+        cmd[21] = 0x00
     cmd[22] = 0x00
     cmd[23] = 0x00
     cmd[24] = 0x00
@@ -1096,6 +1152,10 @@ class RemkoSmartWebClient:
         self.sk = None
         self.topic = None
         self.smt_user = None
+        self.device_portal_id = None
+        self.device_dev = None
+        self.device_portal_name = None
+        self.device_type = None
         self._last_payload = None
         self._last_status = None
         self._last_mapping_values = None
@@ -1105,9 +1165,54 @@ class RemkoSmartWebClient:
 
     def initial_status_if_supported(self) -> dict | None:
         """Return a minimal state when setup can safely proceed before live values arrive."""
-        if self.device_kind != DEVICE_KIND_AUTO or get_specialized_profile(self.device_name) is not None:
+        if (
+            self.device_kind != DEVICE_KIND_AUTO
+            or get_specialized_profile(self._profile_hint_name()) is not None
+        ):
             return {"unit": "C", "_status_pending": True}
         return None
+
+    def _profile_hint_name(self) -> str:
+        return " ".join(
+            value
+            for value in (self.device_type, self.device_portal_name, self.device_name)
+            if value
+        )
+
+    def _apply_device_metadata(self, metadata: dict[str, str]) -> None:
+        if not metadata:
+            return
+        self.device_dev = metadata.get("device_dev") or self.device_dev
+        self.device_portal_id = metadata.get("device_portal_id") or self.device_portal_id
+        self.device_portal_name = metadata.get("device_portal_name") or self.device_portal_name
+        self.device_type = metadata.get("device_type") or self.device_type
+        if self.device_kind == DEVICE_KIND_AUTO:
+            profile = get_specialized_profile(self._profile_hint_name())
+            if profile is not None:
+                self.profile = profile
+
+    def diagnostic_metadata(self) -> dict[str, str]:
+        profile = self.profile
+        metadata = {
+            "Detected Profile": getattr(profile, "profile_name", type(profile).__name__),
+            "Profile Class": type(profile).__name__,
+            "Profile Protocol": getattr(profile, "protocol_name", ""),
+            "Profile Write Support": "yes" if (
+                getattr(profile, "supports_climate_write", False)
+                or getattr(profile, "supports_value_write", False)
+            ) else "no",
+        }
+        if self.device_portal_id:
+            metadata["Portal ID"] = self.device_portal_id
+        if self.device_portal_name:
+            metadata["Portal Name"] = self.device_portal_name
+        if self.device_type:
+            metadata["Portal Type"] = self.device_type
+        if self.device_dev:
+            metadata["Portal DEV"] = self.device_dev
+        if self.topic:
+            metadata["MQTT Topic"] = _redact_debug_text(self.topic)
+        return metadata
 
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
@@ -1182,6 +1287,7 @@ class RemkoSmartWebClient:
                 try:
                     r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
                     if r1.ok:
+                        self._apply_device_metadata(_extract_device_metadata_from_text(r1.text))
                         self.smt_user = (
                             self.smt_user
                             or _extract_smt_user_from_url(r1.url)
@@ -1201,6 +1307,7 @@ class RemkoSmartWebClient:
 
         r1 = self._account_request("get", url, allow_redirects=True, timeout=15)
         r1.raise_for_status()
+        self._apply_device_metadata(_extract_device_metadata_from_text(r1.text))
         hit = _extract_sid_sk_from_url(r1.url) or _extract_sid_sk_from_text(r1.text)
         if not hit:
             scripts = re.findall(r'<script[^>]+src="([^"]+)"', r1.text, flags=re.I)

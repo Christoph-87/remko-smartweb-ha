@@ -98,11 +98,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data={**entry.data, CONF_DEVICE_PATH: client.device_path},
         )
 
+    device_profile = get_device_profile(device_name, coordinator.data, device_kind)
+    if device_kind == DEVICE_KIND_AUTO and type(client.profile).__name__ != "AutoDetectDeviceProfile":
+        device_profile = client.profile
+
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "coordinator": coordinator,
         "device_name": device_name,
-        "device_profile": get_device_profile(device_name, coordinator.data, device_kind),
+        "device_profile": device_profile,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

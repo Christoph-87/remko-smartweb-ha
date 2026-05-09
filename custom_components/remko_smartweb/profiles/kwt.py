@@ -62,8 +62,11 @@ class KwtDeviceProfile(SmartWebDeviceProfile):
 
     kind = DEVICE_KIND_DIAGNOSTICS
     supports_climate = True
+    supports_climate_write = True
     supports_value_write = True
     supports_climate_presets = False
+    profile_name = "KWT 180 - 300 DC"
+    protocol_name = "kwt_modbus"
     sensor_descriptions = (
         ("room", "Room Temperature", "temperature"),
         ("setpoint", "Setpoint", "temperature"),

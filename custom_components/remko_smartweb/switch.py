@@ -12,10 +12,22 @@ from .const import DOMAIN
 SWITCHES = [
     ("power", "Power"),
     ("eco", "Eco"),
+    ("frost_protection", "Frost Protection"),
     ("turbo", "Turbo"),
-    ("sleep", "Sleep"),
+    ("sleep", "Silent Mode"),
     ("bioclean", "Bioclean"),
+    ("display", "LED Display"),
 ]
+
+C0_CLIMATE_SWITCH_KEYS = {
+    "power",
+    "eco",
+    "frost_protection",
+    "turbo",
+    "sleep",
+    "bioclean",
+    "display",
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
@@ -23,21 +35,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = data["coordinator"]
     client = data["client"]
     device_name = data["device_name"]
+    profile = data["device_profile"]
 
-    # Only add switches that are present in the latest data snapshot.
     present = set(coordinator.data.keys()) if coordinator.data else set()
     entities = []
     for (key, name) in SWITCHES:
-        if key == "power" or key in present:
-            entities.append(RemkoSmartWebSwitch(coordinator, client, device_name, key, name))
+        if _should_add_switch(profile, present, key):
+            entities.append(RemkoSmartWebSwitch(coordinator, client, device_name, key, name, profile))
     async_add_entities(entities)
 
 
+def _should_add_switch(profile, present: set[str], key: str) -> bool:
+    if getattr(profile, "supports_value_write", False):
+        if key != "power" and key not in present:
+            return False
+        return bool(profile.build_value_write({key: True}) or profile.build_value_write({key: False}))
+    if (
+        getattr(profile, "supports_climate_write", False)
+        and key in C0_CLIMATE_SWITCH_KEYS
+    ):
+        return True
+    return False
+
+
 class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
-    def __init__(self, coordinator, client, device_name: str, key: str, name: str):
+    def __init__(self, coordinator, client, device_name: str, key: str, name: str, profile):
         super().__init__(coordinator)
         self._client = client
         self._key = key
+        self._profile = profile
         self._attr_name = f"{device_name} {name}"
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_switch"
         self._attr_device_info = DeviceInfo(
@@ -60,6 +86,11 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         await self._async_set(False)
 
     async def _async_set(self, state: bool):
+        if (
+            not getattr(self._profile, "supports_value_write", False)
+            and not getattr(self._profile, "supports_climate_write", False)
+        ):
+            return
         overrides = {self._key: state}
         if self._key == "power":
             overrides = {"power": state}
@@ -72,7 +103,13 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
                 data[self._key] = bool(state)
             self.coordinator.data = data
             self.async_write_ha_state()
-        await self.hass.async_add_executor_job(self._client.set_values, overrides)
+        value_write = self._profile.build_value_write(overrides)
+        if getattr(self._profile, "supports_value_write", False):
+            if not value_write:
+                return
+            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
+        else:
+            await self.hass.async_add_executor_job(self._client.set_values, overrides)
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()
 

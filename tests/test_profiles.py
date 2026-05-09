@@ -31,6 +31,7 @@ from custom_components.remko_smartweb.api import (
     _build_kwt_set_cmd,
     _build_mqtt_topic,
     _build_rbw_set_cmd,
+    _extract_device_metadata_from_text,
     _extract_global_var,
     _extract_sid_sk_from_text,
     _extract_sid_sk_from_url,
@@ -38,9 +39,10 @@ from custom_components.remko_smartweb.api import (
     _extract_smt_user_from_url,
     _value_query_list,
 )
-from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW
+from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW, DEVICE_KIND_DIAGNOSTICS
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
-from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile
+from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
+from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDeviceProfile
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
@@ -73,6 +75,30 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_extract_smt_user_from_text("global.SMT_USER=12345;"), 12345)
         self.assertEqual(_extract_smt_user_from_text('"SMT_USER": 67890'), 67890)
         self.assertEqual(_extract_smt_user_from_url("https://example.invalid/?us=12345"), 12345)
+        self.assertEqual(
+            _extract_smt_user_from_text(
+                'appframe.location.href="/webportal/Wifi/smt.html?SID=0123456789ABCDEF&SK=FEDCBA9876543210&us=3946&DEV=256"'
+            ),
+            3946,
+        )
+
+    def test_extract_device_metadata_from_portal_url(self):
+        html = (
+            'appframe.location.href="/webportal/Wifi/sd-card/lighttpd/webpages/smt.html'
+            '?SMT_ID=70162fe655ec381ac6312ebf026aac54'
+            '&SID=0123456789ABCDEF&SK=FEDCBA9876543210&us=3946&DEV=256'
+            '&NAME=Klima_Erdgeschoss&TYPE=MXW%20204%20-%20524";'
+        )
+
+        self.assertEqual(
+            _extract_device_metadata_from_text(html),
+            {
+                "device_portal_id": "70162fe655ec381ac6312ebf026aac54",
+                "device_dev": "256",
+                "device_portal_name": "Klima_Erdgeschoss",
+                "device_type": "MXW 204 - 524",
+            },
+        )
 
     def test_extract_global_var_from_device_scripts(self):
         self.assertEqual(_extract_global_var('global.SMT_USER="12345";', "SMT_USER"), "12345")
@@ -125,6 +151,8 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["swing"], "off")
         self.assertEqual(status["room"], 25)
         self.assertEqual(status["outdoor"], 25)
+        self.assertFalse(status["display"])
+        self.assertFalse(status["frost_protection"])
         self.assertEqual(status["unit"], "C")
         self.assertEqual(status["_payload"][0], 0xC0)
 
@@ -138,7 +166,9 @@ class ProfileParsingTests(unittest.TestCase):
             "1191": "04",
             "1192": "04",
             "1193": "01",
+            "1199": "01",
             "1228": "01",
+            "1298": "01",
             "5530": "5A",
         }
 
@@ -153,7 +183,9 @@ class ProfileParsingTests(unittest.TestCase):
                 "mode": "cool",
                 "fan": "medium",
                 "swing": "vertical",
+                "frost_protection": True,
                 "sleep": True,
+                "display": True,
                 "unit": "C",
             },
         )
@@ -216,7 +248,7 @@ class ProfileParsingTests(unittest.TestCase):
 
     def test_dhw_values_status_parses_padded_state_bytes(self):
         values = {
-            "1192": "00000000000000000009",
+            "1192": "0000000000000000000A",
             "1194": "00000000000000000001",
             "1333": "0226",
             "5943": "0226",
@@ -224,7 +256,7 @@ class ProfileParsingTests(unittest.TestCase):
 
         status = DomesticHotWaterDeviceProfile().parse_values_status(values)
 
-        self.assertEqual(status["dhw_mode"], "eco")
+        self.assertEqual(status["dhw_mode"], "hybrid")
         self.assertEqual(status["dhw_power_state"], "on")
         self.assertEqual(status["power"], "ON")
 
@@ -255,6 +287,14 @@ class ProfileParsingTests(unittest.TestCase):
         )
 
         self.assertEqual(values, {"1333": "022B", "1194": "01", "1192": "09"})
+        self.assertEqual(
+            DomesticHotWaterDeviceProfile().build_value_write({"mode": "hybrid"}),
+            {"1192": "0A"},
+        )
+        self.assertEqual(
+            DomesticHotWaterDeviceProfile().build_value_write({"mode": "speed_heating"}),
+            {"1192": "0B"},
+        )
 
     def test_auto_profile_prefers_dhw_for_dhw_device_name(self):
         values = {
@@ -347,12 +387,43 @@ class ProfileParsingTests(unittest.TestCase):
 
     def test_get_device_profile_returns_specialized_profiles(self):
         self.assertIsInstance(
+            get_device_profile("MXW 204 - 524 Klima_Erdgeschoss", {"setpoint": 22}),
+            ClimateDeviceProfile,
+        )
+        self.assertIsInstance(
             get_device_profile("LTE", {"internal_humidity": 45}),
             LteDeviceProfile,
         )
         self.assertIsInstance(
             get_device_profile("KWT 180 - 300 DC", {"setpoint": 22}),
             KwtDeviceProfile,
+        )
+        self.assertIsInstance(
+            get_device_profile("RKL 355 DC", {"setpoint": 22}),
+            ReadOnlyAcUartClimateDeviceProfile,
+        )
+        self.assertIsInstance(
+            get_device_profile("BL 264 - 354 DC", {"setpoint": 22}),
+            ReadOnlyAcUartClimateDeviceProfile,
+        )
+        self.assertIsInstance(
+            get_device_profile("RKL 495 DC", {"setpoint": 22}),
+            ReadOnlyAcUartClimateDeviceProfile,
+        )
+        self.assertEqual(
+            get_device_profile("RKL 355 DC", {"setpoint": 22}).protocol_name,
+            "nwt_ac_uart",
+        )
+        self.assertFalse(
+            get_device_profile("BL 264 - 354 DC", {"setpoint": 22}).supports_climate_write
+        )
+        self.assertIsInstance(
+            get_device_profile("Luftentfeuchter", {"internal_humidity": 45}),
+            LteDeviceProfile,
+        )
+        self.assertIsInstance(
+            get_device_profile("WPM 400 A Pro", {"setpoint": 22}),
+            DiagnosticsDeviceProfile,
         )
 
     def test_auto_profile_uses_climate_values_for_climate_like_values(self):
@@ -372,6 +443,7 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(detect_device_kind("Basement", {"dhw_setpoint": 55.5}), DEVICE_KIND_DHW)
         self.assertEqual(detect_device_kind("Living room", {"fan": "auto"}), DEVICE_KIND_CLIMATE)
         self.assertEqual(detect_device_kind("Brauchwasserwaermepumpe", {}), DEVICE_KIND_DHW)
+        self.assertEqual(detect_device_kind("SQW 405 Pro", {}), DEVICE_KIND_DIAGNOSTICS)
 
 
 if __name__ == "__main__":

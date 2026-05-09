@@ -6,7 +6,7 @@ from .base import SmartWebDeviceProfile
 
 def looks_like_lte_name(device_name: str | None) -> bool:
     name = (device_name or "").casefold()
-    return "lte" in name
+    return "lte" in name or "luftentfeuchter" in name
 
 
 def _first_byte(hexstr: str | None):
@@ -61,6 +61,8 @@ class LteDeviceProfile(SmartWebDeviceProfile):
     """Read-only profile for LTE / dehumidifier-style Smart-Web devices."""
 
     kind = DEVICE_KIND_DIAGNOSTICS
+    profile_name = "LTE"
+    protocol_name = "lte_ac_uart"
     sensor_descriptions = (
         ("target_humidity", "Target Humidity", "percentage"),
         ("internal_humidity", "Internal Humidity", "percentage"),

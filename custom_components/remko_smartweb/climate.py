@@ -95,6 +95,11 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         if not getattr(profile, "supports_climate_presets", True):
             self._attr_supported_features = self._attr_supported_features & ~ClimateEntityFeature.PRESET_MODE
             self._attr_preset_modes = []
+        if not getattr(profile, "supports_climate_write", False):
+            self._attr_supported_features = 0
+            self._attr_preset_modes = []
+            self._attr_fan_modes = []
+            self._attr_swing_modes = []
         self._attr_name = device_name
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_climate"
         self._attr_device_info = DeviceInfo(
@@ -196,6 +201,8 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         await self._async_set(overrides)
 
     async def _async_set(self, overrides: dict):
+        if not getattr(self._profile, "supports_climate_write", False):
+            return
         value_write = self._profile.build_value_write(overrides)
         if getattr(self._profile, "supports_value_write", False) and not value_write:
             return

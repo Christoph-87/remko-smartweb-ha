@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from ..const import DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW, DEVICE_KIND_DIAGNOSTICS
-from .auto import AutoDetectDeviceProfile, get_specialized_profile, looks_like_dhw_name
+from .auto import (
+    AutoDetectDeviceProfile,
+    get_ac_uart_climate_profile,
+    get_specialized_profile,
+    looks_like_climate_name,
+    looks_like_dhw_name,
+    looks_like_unsupported_heat_pump_name,
+)
 from .base import SmartWebDeviceProfile, SensorDescription
-from .climate import ClimateDeviceProfile
+from .climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
 from .diagnostics import DiagnosticsDeviceProfile
 from .domestic_hot_water import DomesticHotWaterDeviceProfile
 from .kwt import KwtDeviceProfile, looks_like_kwt_name
@@ -20,6 +27,10 @@ def detect_device_kind(device_name: str | None, data: dict | None, configured_ki
             return DEVICE_KIND_CLIMATE
     if looks_like_dhw_name(device_name):
         return DEVICE_KIND_DHW
+    if looks_like_unsupported_heat_pump_name(device_name):
+        return DEVICE_KIND_DIAGNOSTICS
+    if looks_like_climate_name(device_name):
+        return DEVICE_KIND_CLIMATE
     return DEVICE_KIND_CLIMATE
 
 
@@ -57,13 +68,17 @@ __all__ = [
     "DomesticHotWaterDeviceProfile",
     "KwtDeviceProfile",
     "LteDeviceProfile",
+    "ReadOnlyAcUartClimateDeviceProfile",
     "SensorDescription",
     "SmartWebDeviceProfile",
     "detect_device_kind",
+    "get_ac_uart_climate_profile",
     "get_device_profile",
     "get_parser_profile",
     "get_specialized_profile",
+    "looks_like_climate_name",
     "looks_like_dhw_name",
     "looks_like_kwt_name",
     "looks_like_lte_name",
+    "looks_like_unsupported_heat_pump_name",
 ]
