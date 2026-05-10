@@ -422,6 +422,36 @@ class CoordinatorTests(unittest.TestCase):
         finally:
             api_module.time.sleep = original_sleep
 
+    def test_dhw_esp_write_does_not_fallback_on_cached_readback_mismatch(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "DHW"
+        client.profile = DomesticHotWaterDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_rbw_esp_values = lambda values, timeout=10, write_id=None: True
+        client._mqtt_write_values_called = False
+
+        def _mqtt_write_values(values, timeout=10, write_id=None):
+            client._mqtt_write_values_called = True
+            return {"1333": "0226"}
+
+        def _read_status():
+            client._last_status_source = "cached_last_status"
+            return {"dhw_setpoint": 55.0, "unit": "C"}
+
+        client._mqtt_write_values = _mqtt_write_values
+        client.read_status = _read_status
+
+        original_sleep = api_module.time.sleep
+        api_module.time.sleep = lambda _seconds: None
+        try:
+            client.set_value_ids({"1333": "0230"})
+        finally:
+            api_module.time.sleep = original_sleep
+
+        self.assertFalse(client._mqtt_write_values_called)
+
     def test_water_heater_rolls_back_optimistic_state_on_failed_write(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(

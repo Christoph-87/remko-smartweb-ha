@@ -96,7 +96,6 @@ sys.modules["homeassistant.const"].UnitOfTemperature = UnitOfTemperature
 
 from custom_components.remko_smartweb.const import DOMAIN
 from custom_components.remko_smartweb.sensor import (
-    DIAGNOSTIC_SENSORS,
     RemkoSmartWebDiagnosticSensor,
     async_setup_entry,
 )
@@ -121,7 +120,7 @@ class MutableDiagnosticClient:
 
 
 class SensorSetupTests(unittest.TestCase):
-    def test_setup_always_adds_diagnostic_sensors(self):
+    def test_setup_adds_single_diagnostic_sensor_with_dynamic_attributes(self):
         hass = HomeAssistant()
         entry = ConfigEntry()
         client = MutableDiagnosticClient()
@@ -143,13 +142,14 @@ class SensorSetupTests(unittest.TestCase):
         diagnostic_entities = [
             entity for entity in entities if isinstance(entity, RemkoSmartWebDiagnosticSensor)
         ]
-        self.assertEqual(len(diagnostic_entities), len(DIAGNOSTIC_SENSORS))
-        portal_type = next(entity for entity in diagnostic_entities if entity._metadata_name == "Portal Type")
-        self.assertIsNone(portal_type.native_value)
+        self.assertEqual(len(diagnostic_entities), 1)
+        diagnostics = diagnostic_entities[0]
+        self.assertEqual(diagnostics.native_value, "Diagnostics")
+        self.assertNotIn("portal_type", diagnostics.extra_state_attributes)
 
         client.metadata["Portal Type"] = "MXW 204 - 524"
 
-        self.assertEqual(portal_type.native_value, "MXW 204 - 524")
+        self.assertEqual(diagnostics.extra_state_attributes["portal_type"], "MXW 204 - 524")
 
 
 if __name__ == "__main__":

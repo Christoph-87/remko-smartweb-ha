@@ -28,7 +28,7 @@ https://my.home-assistant.io/redirect/config_flow_start/?domain=remko_smartweb
 
 ## Entities
 - Climate: HVAC mode, target temp, fan, swing, presets, on/off for supported air conditioners
-- Switches: power and supported device extras such as Turbo, Silent Mode, Bioclean, and Frost Protection
+- Switches: power and supported device extras such as Turbo, Sleep / Silent Mode, Bioclean, and Frost Protection
 - Water heater: target temperature and operation mode for domestic hot water / RBW-style devices
 - Sensors: temperatures, setpoints, mode/state values, errors, and device-specific diagnostics where mapped
 
@@ -37,7 +37,7 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 
 | Device family / model | Detected profile | Development status | Home Assistant support |
 | --- | --- | --- | --- |
-| MXW 204 / 264 / 354 / 524 and MXW-style SmartWeb climate devices | Generic AC (`default_ac_uart`) | Best supported climate path | Climate entity with power, target temperature, HVAC mode, fan mode, swing mode, presets, and switches for Turbo, Silent Mode, Bioclean, and Frost Protection |
+| MXW 204 / 264 / 354 / 524 and MXW-style SmartWeb climate devices | Generic AC (`default_ac_uart`) | Best supported climate path | Climate entity with power, target temperature, HVAC mode, fan mode, swing mode, presets, and switches for Turbo, Sleep / Silent Mode, Bioclean, and Frost Protection |
 | Generic air conditioner names such as `Klima`, `Climate`, `Air Conditioner` | Generic AC (`default_ac_uart`) | Supported when the device uses the same C0 AC UART protocol as MXW | Same as MXW, but device-specific extras still need real-device validation |
 | RBW 302 Pro / domestic hot water / `Brauchwasser` / `Warmwasser` | RBW/DHW (`rbw_modbus`) | Experimental write support | Water heater entity with target temperature, on/off, and modes `heat`, `auto`, `eco`, `hybrid`, `speed_heating`, and `vacation`; temperature sensors where exposed |
 | KWT 180 - 300 DC | KWT (`kwt_modbus`) | Partially supported | Climate entity with target temperature, power, mode, fan, and swing writes; read-only sensors for mapped diagnostic values |
@@ -69,7 +69,7 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 - New devices can be configured as auto-detect, air conditioner / climate, domestic hot water, or diagnostics only.
 - Existing entries without a stored device type continue to use auto-detection.
 - Auto-detection uses SmartWeb portal metadata, the device name, and the first value snapshot. It recognizes common MXW, climate, `Brauchwasser`, `Warmwasser`, `RBW`, `LTE`, `KWT`, RKL, BL/AUX, WPM, WPK, WKM, and SQW names. If it is wrong, change the device type in the integration options.
-- Diagnostic sensors show the detected profile, profile class, protocol, portal ID/name/type/DEV, write-support status, and the redacted MQTT topic when available.
+- The Diagnostics sensor shows the detected profile as its state and exposes profile class, protocol, portal ID/name/type/DEV, write-support status, and the redacted MQTT topic as attributes when available.
 - Debug mapping logs can still be used for partially supported or unknown devices when debug logging is enabled.
 - Diagnostics-only devices do not create control entities, but they can be set up to keep collecting mapping logs.
 
@@ -91,7 +91,7 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 - Entities go unavailable: check network access to `smartweb.remko.media:8083` and reduce polling.
 - Power toggle feels sluggish: SmartWeb cloud responses can be delayed; try a longer polling interval.
 - DHW/RBW target temperature or mode does not change: enable debug logging and share the `Experimental REMKO SmartWeb value write` log lines, plus whether the REMKO app changed.
-- Climate extra switch does not work: enable debug logging and share the command/readback lines. Include the diagnostic sensor values for Detected Profile, Profile Protocol, Profile Write Support, Portal Type, and Portal DEV.
+- Climate extra switch does not work: enable debug logging and share the command/readback lines. Include the Diagnostics sensor state and attributes for profile protocol, write support, portal type, and portal DEV.
 
 ## Request support for a new device
 This integration can connect to REMKO SmartWeb devices that are visible in your account, but each device family may expose different values and writable parameters. If your device is not supported yet, the integration can log diagnostic payloads that help map sensors and controls.

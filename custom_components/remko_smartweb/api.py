@@ -1174,6 +1174,7 @@ class RemkoSmartWebClient:
         self.device_type = None
         self._last_payload = None
         self._last_status = None
+        self._last_status_source = None
         self._last_mapping_values = None
         self._last_device_list_error = None
         self._last_device_list_empty = False
@@ -1736,6 +1737,7 @@ class RemkoSmartWebClient:
         if parsed:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
+            self._last_status_source = "esp_rx"
             self._log_poll_summary("esp_rx", parsed=parsed, duration=time.monotonic() - started)
             return parsed
         self._log_unsupported_payload(
@@ -1754,6 +1756,7 @@ class RemkoSmartWebClient:
                 merged = dict(self._last_status)
                 merged.update({k: v for k, v in parsed_values.items() if v is not None})
                 self._last_status = merged
+                self._last_status_source = "client2host_values"
                 self._log_poll_summary(
                     "client2host_values",
                     parsed=merged,
@@ -1762,6 +1765,7 @@ class RemkoSmartWebClient:
                 )
                 return merged
             self._last_status = parsed_values
+            self._last_status_source = "client2host_values"
             self._log_poll_summary(
                 "client2host_values",
                 parsed=parsed_values,
@@ -1792,6 +1796,7 @@ class RemkoSmartWebClient:
         if parsed:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
+            self._last_status_source = "esp_rx_retry"
             self._log_poll_summary("esp_rx_retry", parsed=parsed, duration=time.monotonic() - started)
             return parsed
         self._log_unsupported_payload(
@@ -1801,6 +1806,7 @@ class RemkoSmartWebClient:
         )
 
         if self._last_status:
+            self._last_status_source = "cached_last_status"
             self._log_support_snapshot_once(
                 "status_unparseable_using_last_status",
                 stage="read_status",
@@ -1816,6 +1822,7 @@ class RemkoSmartWebClient:
             return self._last_status
         if self.profile.diagnostics_only:
             self._last_status = {"_diagnostics_only": True}
+            self._last_status_source = "diagnostics_only"
             self._log_poll_summary(
                 "diagnostics_only",
                 parsed=self._last_status,
@@ -1913,6 +1920,7 @@ class RemkoSmartWebClient:
                 time.sleep(1.0)
                 try:
                     readback = self.read_status()
+                    readback_source = getattr(self, "_last_status_source", None)
                     mismatches = {
                         str(key): {"expected": str(value), "actual": readback.get("dhw_setpoint")}
                         for key, value in values.items()
@@ -1927,12 +1935,27 @@ class RemkoSmartWebClient:
                                 "write_id": write_id,
                                 "device": self.device_name,
                                 "path": "rbw_esp",
-                                "confirmed": not bool(mismatches),
+                                "confirmed": None if readback_source == "cached_last_status" else not bool(mismatches),
+                                "readback_source": readback_source,
                                 **_parsed_status_summary(readback),
                             }
                         ),
                     )
                     if not mismatches:
+                        return
+                    if readback_source == "cached_last_status":
+                        _LOGGER.warning(
+                            "REMKO SmartWeb write confirmation pending: %s",
+                            _debug_value(
+                                {
+                                    "write_id": write_id,
+                                    "device": self.device_name,
+                                    "path": "rbw_esp",
+                                    "reason": "fresh_readback_unavailable",
+                                    "mismatches_ignored": mismatches,
+                                }
+                            ),
+                        )
                         return
                     _LOGGER.warning(
                         "REMKO SmartWeb write fallback: %s",

@@ -14,7 +14,7 @@ SWITCHES = [
     ("eco", "Eco"),
     ("frost_protection", "Frost Protection"),
     ("turbo", "Turbo"),
-    ("sleep", "Silent Mode"),
+    ("sleep", "Sleep / Silent Mode"),
     ("bioclean", "Bioclean"),
 ]
 

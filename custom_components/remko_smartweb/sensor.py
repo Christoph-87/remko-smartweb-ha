@@ -9,19 +9,6 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 
 from .const import DOMAIN
 
-DIAGNOSTIC_SENSORS = (
-    ("Detected Profile", "detected_profile"),
-    ("Profile Class", "profile_class"),
-    ("Profile Protocol", "profile_protocol"),
-    ("Profile Write Support", "profile_write_support"),
-    ("Portal ID", "portal_id"),
-    ("Portal Name", "portal_name"),
-    ("Portal Type", "portal_type"),
-    ("Portal DEV", "portal_dev"),
-    ("MQTT Topic", "mqtt_topic"),
-)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -33,10 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         RemkoSmartWebSensor(coordinator, device_name, key, name, kind)
         for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
-    entities.extend(
-        RemkoSmartWebDiagnosticSensor(coordinator, client, device_name, key, name)
-        for name, key in DIAGNOSTIC_SENSORS
-    )
+    entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
     async_add_entities(entities)
 
 
@@ -84,12 +68,11 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
 
 
 class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, coordinator, client, device_name: str, key: str, name: str):
+    def __init__(self, coordinator, client, device_name: str):
         super().__init__(coordinator)
         self._client = client
-        self._metadata_name = name
-        self._attr_name = f"{device_name} {name}"
-        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}"
+        self._attr_name = f"{device_name} Diagnostics"
+        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_diagnostics"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},
@@ -100,7 +83,15 @@ class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        value = self._client.diagnostic_metadata().get(self._metadata_name)
+        value = self._client.diagnostic_metadata().get("Detected Profile")
         if value in (None, ""):
             return None
         return value
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            key.lower().replace(" ", "_"): value
+            for key, value in self._client.diagnostic_metadata().items()
+            if value not in (None, "")
+        }
