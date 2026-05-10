@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.9
+## v0.3.10
 - Replace the separate profile, portal, and MQTT diagnostic entities with one compact Diagnostics sensor whose attributes keep the same metadata
 - Keep Diagnostics sensor attributes dynamic so late-discovered portal metadata appears without recreating entities
 - Restore 0.5 °C target-temperature steps for domestic hot water / RBW water-heater entities
