@@ -16,6 +16,8 @@ SWITCHES = [
     ("turbo", "Turbo"),
     ("sleep", "Sleep / Silent Mode"),
     ("bioclean", "Bioclean"),
+    ("wpm_heat_cool_mode", "WPM Heat/Cool Mode"),
+    ("wpm_manual_defrost", "WPM Manual Defrost"),
 ]
 
 C0_CLIMATE_SWITCH_KEYS = {

@@ -20,6 +20,7 @@ HVAC_MAP = {
 }
 
 MODE_MAP = {v: k for k, v in HVAC_MAP.items()}
+HVAC_BY_PROFILE_MODE = {"off": HVACMode.OFF, **HVAC_MAP}
 
 FAN_MODES = ["auto", "silent", "low", "medium", "high"]
 SWING_MODES = ["off", "vertical", "horizontal", "both"]
@@ -95,6 +96,13 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         if not getattr(profile, "supports_climate_presets", True):
             self._attr_supported_features = self._attr_supported_features & ~ClimateEntityFeature.PRESET_MODE
             self._attr_preset_modes = []
+        supported_modes = getattr(profile, "supported_climate_modes", None)
+        if supported_modes:
+            self._attr_hvac_modes = [
+                HVAC_BY_PROFILE_MODE[mode]
+                for mode in supported_modes
+                if mode in HVAC_BY_PROFILE_MODE
+            ]
         if not getattr(profile, "supports_climate_write", False):
             self._attr_supported_features = 0
             self._attr_preset_modes = []

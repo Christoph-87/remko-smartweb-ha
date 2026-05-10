@@ -10,6 +10,8 @@ body:
 
         Please enable debug logging first and remove personal or sensitive data before sharing logs. Do not post your email address, password, cookies, session IDs, access keys, or full account details.
 
+        Also open the Home Assistant details view for the REMKO SmartWeb `Diagnostics` sensor and include a screenshot of its attributes, or copy the relevant attribute values from Developer Tools -> States. The most useful attributes are `detected_profile`, `profile_class`, `profile_protocol`, `profile_write_support`, `portal_type`, `portal_dev`, and `mqtt_topic`.
+
         ```yaml
         logger:
           default: warning
@@ -58,6 +60,23 @@ body:
         - Eco/boost mode
     validations:
       required: false
+
+  - type: textarea
+    id: diagnostics-sensor
+    attributes:
+      label: Diagnostics sensor details
+      description: Paste the REMKO SmartWeb Diagnostics sensor state and attributes, or attach a screenshot of the Details page.
+      placeholder: |
+        state: RBW 302 Pro
+        detected_profile: RBW 302 Pro
+        profile_class: DomesticHotWaterDeviceProfile
+        profile_protocol: rbw_modbus
+        profile_write_support: yes
+        portal_type: ...
+        portal_dev: ...
+        mqtt_topic: V04P27/[redacted]
+    validations:
+      required: true
 
   - type: textarea
     id: debug-logs

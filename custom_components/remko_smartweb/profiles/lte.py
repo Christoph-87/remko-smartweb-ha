@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..const import DEVICE_KIND_DIAGNOSTICS
 from .base import SmartWebDeviceProfile
+from .value_mapping import ValueWriteSpec, build_value_write
 
 
 def looks_like_lte_name(device_name: str | None) -> bool:
@@ -58,11 +59,12 @@ def _power(hexstr: str | None):
 
 
 class LteDeviceProfile(SmartWebDeviceProfile):
-    """Read-only profile for LTE / dehumidifier-style Smart-Web devices."""
+    """Experimental profile for LTE / dehumidifier-style Smart-Web devices."""
 
     kind = DEVICE_KIND_DIAGNOSTICS
     profile_name = "LTE"
     protocol_name = "lte_ac_uart"
+    supports_value_write = True
     sensor_descriptions = (
         ("target_humidity", "Target Humidity", "percentage"),
         ("internal_humidity", "Internal Humidity", "percentage"),
@@ -79,6 +81,18 @@ class LteDeviceProfile(SmartWebDeviceProfile):
         ("energy", "Energy", None),
         ("error", "Error Code", None),
     )
+    number_descriptions = (
+        ("target_humidity", "Target Humidity", 30, 70, 1, "percentage"),
+    )
+
+    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
+        return build_value_write(
+            overrides,
+            (
+                ValueWriteSpec("power", "1194", enum={True: 0x01, False: 0x02}),
+                ValueWriteSpec("target_humidity", "1302"),
+            ),
+        )
 
     def parse_values_status(self, values: dict) -> dict | None:
         if not isinstance(values, dict):

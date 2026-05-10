@@ -6,8 +6,22 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+
+LEGACY_DIAGNOSTIC_KEYS = (
+    "detected_profile",
+    "profile_class",
+    "profile_protocol",
+    "profile_write_support",
+    "portal_id",
+    "portal_name",
+    "portal_type",
+    "portal_dev",
+    "mqtt_topic",
+)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
@@ -15,6 +29,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     client = data["client"]
     device_name = data["device_name"]
     profile = data["device_profile"]
+
+    _remove_legacy_diagnostic_entities(hass, device_name)
 
     entities = [
         RemkoSmartWebSensor(coordinator, device_name, key, name, kind)
@@ -29,6 +45,15 @@ def _diagnostic_sensor_values(client):
         if value in (None, ""):
             continue
         yield name.lower().replace(" ", "_"), name, value
+
+
+def _remove_legacy_diagnostic_entities(hass: HomeAssistant, device_name: str) -> None:
+    registry = er.async_get(hass)
+    slug = device_name.lower().replace(" ", "_")
+    for key in LEGACY_DIAGNOSTIC_KEYS:
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{slug}_{key}")
+        if entity_id:
+            registry.async_remove(entity_id)
 
 
 class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):

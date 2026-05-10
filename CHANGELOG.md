@@ -2,13 +2,19 @@
 
 ## v0.3.10
 - Replace the separate profile, portal, and MQTT diagnostic entities with one compact Diagnostics sensor whose attributes keep the same metadata
+- Remove legacy individual diagnostic entities from Home Assistant's entity registry when setting up the compact Diagnostics sensor
 - Keep Diagnostics sensor attributes dynamic so late-discovered portal metadata appears without recreating entities
 - Restore 0.5 °C target-temperature steps for domestic hot water / RBW water-heater entities
+- Update RBW 302 Pro documentation to reflect user-validated target temperature writes and status updates
 - Parse double-encoded MQTT `Rx` payloads to improve automatic polling for devices that return wrapped JSON responses
 - Replace large warning-level write payloads with structured write logs that include a shared `write_id`, compact response summaries, readback status, fallback reasons, and mismatches
 - Add compact debug poll summaries and one-shot support snapshots for unparseable status responses
 - Rename the climate `sleep` extra switch to `Sleep / Silent Mode` so it is easier to find in Home Assistant
 - Treat RBW/DHW ESP write confirmation as pending when only cached status is available, avoiding slow fallback attempts and false service-call failures
+- Add a first experimental ESP `Tx` write implementation for RKL, BL/AUX, and NWT-style AC UART devices based on the frontend `Free_set`, `Aux_set`, and `NWT_set` frame builders
+- Add experimental LTE power / target humidity writes using the frontend `LTE_set` ESP `Tx` frame
+- Add experimental WPM/WPK/WKM/SQW write mappings for selected value IDs (`4110`, `4113`, `5774`, `1352`, `2179`) using the frontend Modbus ESP `Tx` path and poll these IDs plus read-only unit state `5734`
+- Add number entities for writable target humidity and mapped WPM setpoint values
 - Add regression tests for diagnostic sensor creation, double-encoded MQTT responses, and RBW/DHW half-degree temperature steps
 
 ## v0.3.8

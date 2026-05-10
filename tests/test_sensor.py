@@ -24,6 +24,7 @@ ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
 ha_helpers = types.ModuleType("homeassistant.helpers")
 ha_entity = types.ModuleType("homeassistant.helpers.entity")
+ha_entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
 ha_update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 ha_const = types.ModuleType("homeassistant.const")
 
@@ -64,12 +65,31 @@ class UnitOfTemperature:
     FAHRENHEIT = "F"
 
 
+class EntityRegistry:
+    def __init__(self):
+        self.entities = {}
+        self.removed = []
+
+    def async_get_entity_id(self, domain, platform, unique_id):
+        return self.entities.get((domain, platform, unique_id))
+
+    def async_remove(self, entity_id):
+        self.removed.append(entity_id)
+
+
+def async_get_entity_registry(hass):
+    if not hasattr(hass, "entity_registry"):
+        hass.entity_registry = EntityRegistry()
+    return hass.entity_registry
+
+
 ha_sensor.SensorEntity = SensorEntity
 ha_sensor.SensorDeviceClass = SensorDeviceClass
 ha_core.HomeAssistant = HomeAssistant
 ha_config_entries.ConfigEntry = ConfigEntry
 ha_entity.DeviceInfo = DeviceInfo
 ha_entity.EntityCategory = EntityCategory
+ha_entity_registry.async_get = async_get_entity_registry
 ha_update_coordinator.CoordinatorEntity = CoordinatorEntity
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfTemperature = UnitOfTemperature
@@ -81,6 +101,7 @@ sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
 sys.modules.setdefault("homeassistant.helpers", ha_helpers)
 sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
+sys.modules.setdefault("homeassistant.helpers.entity_registry", ha_entity_registry)
 sys.modules.setdefault("homeassistant.helpers.update_coordinator", ha_update_coordinator)
 sys.modules.setdefault("homeassistant.const", ha_const)
 
@@ -90,12 +111,14 @@ sys.modules["homeassistant.core"].HomeAssistant = HomeAssistant
 sys.modules["homeassistant.config_entries"].ConfigEntry = ConfigEntry
 sys.modules["homeassistant.helpers.entity"].DeviceInfo = DeviceInfo
 sys.modules["homeassistant.helpers.entity"].EntityCategory = EntityCategory
+sys.modules["homeassistant.helpers.entity_registry"].async_get = async_get_entity_registry
 sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = CoordinatorEntity
 sys.modules["homeassistant.const"].PERCENTAGE = "%"
 sys.modules["homeassistant.const"].UnitOfTemperature = UnitOfTemperature
 
 from custom_components.remko_smartweb.const import DOMAIN
 from custom_components.remko_smartweb.sensor import (
+    LEGACY_DIAGNOSTIC_KEYS,
     RemkoSmartWebDiagnosticSensor,
     async_setup_entry,
 )
@@ -125,6 +148,10 @@ class SensorSetupTests(unittest.TestCase):
         entry = ConfigEntry()
         client = MutableDiagnosticClient()
         coordinator = types.SimpleNamespace(hass=hass, data={})
+        hass.entity_registry = EntityRegistry()
+        hass.entity_registry.entities[
+            ("sensor", DOMAIN, "smartweb_portal_type")
+        ] = "sensor.smartweb_portal_type"
         hass.data = {
             DOMAIN: {
                 entry.entry_id: {
@@ -146,10 +173,12 @@ class SensorSetupTests(unittest.TestCase):
         diagnostics = diagnostic_entities[0]
         self.assertEqual(diagnostics.native_value, "Diagnostics")
         self.assertNotIn("portal_type", diagnostics.extra_state_attributes)
+        self.assertEqual(hass.entity_registry.removed, ["sensor.smartweb_portal_type"])
 
         client.metadata["Portal Type"] = "MXW 204 - 524"
 
         self.assertEqual(diagnostics.extra_state_attributes["portal_type"], "MXW 204 - 524")
+        self.assertIn("portal_type", LEGACY_DIAGNOSTIC_KEYS)
 
 
 if __name__ == "__main__":

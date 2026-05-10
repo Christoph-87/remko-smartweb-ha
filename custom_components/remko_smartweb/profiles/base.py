@@ -3,11 +3,13 @@ from __future__ import annotations
 from ..const import DEVICE_KIND_DIAGNOSTICS
 
 SensorDescription = tuple[str, str, str | None]
+NumberDescription = tuple[str, str, float, float, float, str | None]
 
 
 class SmartWebDeviceProfile:
     kind = DEVICE_KIND_DIAGNOSTICS
     sensor_descriptions: tuple[SensorDescription, ...] = ()
+    number_descriptions: tuple[NumberDescription, ...] = ()
     supports_climate = False
     supports_climate_write = False
     supports_water_heater = False

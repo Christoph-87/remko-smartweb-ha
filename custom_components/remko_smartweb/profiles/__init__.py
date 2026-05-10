@@ -9,12 +9,13 @@ from .auto import (
     looks_like_dhw_name,
     looks_like_unsupported_heat_pump_name,
 )
-from .base import SmartWebDeviceProfile, SensorDescription
+from .base import NumberDescription, SmartWebDeviceProfile, SensorDescription
 from .climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
 from .diagnostics import DiagnosticsDeviceProfile
 from .domestic_hot_water import DomesticHotWaterDeviceProfile
 from .kwt import KwtDeviceProfile, looks_like_kwt_name
 from .lte import LteDeviceProfile, looks_like_lte_name
+from .wpm import WpmDeviceProfile, looks_like_wpm_name
 
 
 def detect_device_kind(device_name: str | None, data: dict | None, configured_kind: str = DEVICE_KIND_AUTO) -> str:
@@ -68,9 +69,11 @@ __all__ = [
     "DomesticHotWaterDeviceProfile",
     "KwtDeviceProfile",
     "LteDeviceProfile",
+    "NumberDescription",
     "ReadOnlyAcUartClimateDeviceProfile",
     "SensorDescription",
     "SmartWebDeviceProfile",
+    "WpmDeviceProfile",
     "detect_device_kind",
     "get_ac_uart_climate_profile",
     "get_device_profile",
@@ -81,4 +84,5 @@ __all__ = [
     "looks_like_kwt_name",
     "looks_like_lte_name",
     "looks_like_unsupported_heat_pump_name",
+    "looks_like_wpm_name",
 ]

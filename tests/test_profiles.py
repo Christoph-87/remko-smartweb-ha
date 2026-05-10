@@ -28,9 +28,12 @@ requests.Session = object
 sys.modules.setdefault("requests", requests)
 
 from custom_components.remko_smartweb.api import (
+    _build_ac_uart_set_cmds,
     _build_kwt_set_cmd,
+    _build_lte_set_cmd,
     _build_mqtt_topic,
     _build_rbw_set_cmd,
+    _build_wpm_set_cmd,
     _extract_device_metadata_from_text,
     _extract_global_var,
     _extract_sid_sk_from_text,
@@ -46,6 +49,7 @@ from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDev
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
+from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
 from custom_components.remko_smartweb.profiles.value_mapping import ValueWriteSpec, build_value_write
 
 
@@ -121,6 +125,8 @@ class ProfileParsingTests(unittest.TestCase):
 
         self.assertIn(1333, query_list)
         self.assertIn(9999, query_list)
+        self.assertIn(4110, query_list)
+        self.assertIn(1352, query_list)
         self.assertEqual(query_list.count(1333), 1)
         self.assertGreater(len(query_list), 2)
 
@@ -139,6 +145,45 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_build_kwt_set_cmd("1192", "06"), "01102711000102000133D3")
         self.assertEqual(_build_kwt_set_cmd("1191", "04"), "01102712000102000273E1")
         self.assertEqual(_build_kwt_set_cmd("1193", "04"), "0110272400010200013676")
+
+    def test_build_ac_uart_set_cmds_use_frontend_esp_protocols(self):
+        current = {
+            "power": "ON",
+            "setpoint": 22,
+            "room": 25,
+            "mode": "cool",
+            "fan": "medium",
+            "swing": "off",
+        }
+
+        self.assertEqual(
+            _build_ac_uart_set_cmds("free_ac_uart", current, {"setpoint": 23, "fan": "high"}),
+            ["FC010117190102000000000000CF"],
+        )
+        self.assertEqual(
+            _build_ac_uart_set_cmds("aux_ac_uart", current, {"power": False, "mode": "heat"}),
+            ["BB00068000000F000101776000400080190000000000009D5D"],
+        )
+        self.assertEqual(
+            _build_ac_uart_set_cmds("nwt_ac_uart", current, {"setpoint": 23, "power": True}),
+            ["55AA0006000802020004000000172C", "55AA0006000501010001010E"],
+        )
+        self.assertEqual(_build_ac_uart_set_cmds("free_ac_uart", current, {"mode": "heat"}), [])
+        self.assertEqual(_build_ac_uart_set_cmds("nwt_ac_uart", current, {"mode": "heat"}), [])
+
+    def test_build_lte_set_cmd_uses_frontend_protocol(self):
+        self.assertEqual(
+            _build_lte_set_cmd({"power": "OFF", "target_humidity": 45}, {"1194": "01", "1302": "32"}),
+            "FCD001010132FF",
+        )
+        self.assertIsNone(_build_lte_set_cmd({}, {"1302": "64"}))
+
+    def test_build_wpm_set_cmd_uses_frontend_modbus_conversion(self):
+        self.assertEqual(_build_wpm_set_cmd("4110", "01"), "01050049FF005DEC")
+        self.assertEqual(_build_wpm_set_cmd("4113", "00"), "0105005800004C19")
+        self.assertEqual(_build_wpm_set_cmd("1352", "002D"), "0110019F000102002D6B22")
+        self.assertEqual(_build_wpm_set_cmd("2179", "0028"), "011001A00001020028AE2E")
+        self.assertIsNone(_build_wpm_set_cmd("9999", "01"))
 
     def test_climate_c0_status_parses_core_fields(self):
         status = ClimateDeviceProfile().parse_c0_status(CLIMATE_C0_RX)
@@ -342,6 +387,32 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["external_temperature"], 21.0)
         self.assertEqual(status["error"], 0)
 
+    def test_lte_profile_builds_value_writes(self):
+        self.assertEqual(
+            LteDeviceProfile().build_value_write({"power": True, "target_humidity": 55}),
+            {"1194": "01", "1302": "37"},
+        )
+
+    def test_wpm_profile_parses_and_builds_experimental_values(self):
+        profile = WpmDeviceProfile()
+        status = profile.parse_values_status(
+            {
+                "4110": "01",
+                "1352": "002D",
+                "2179": "0028",
+                "5774": "001E",
+            }
+        )
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 1)
+        self.assertEqual(status["wpm_setpoint_ch"], 45)
+        self.assertEqual(status["wpm_setpoint_hp"], 40)
+        self.assertEqual(status["wpm_target_temperature"], 30)
+        self.assertEqual(
+            profile.build_value_write({"wpm_setpoint_ch": 45, "wpm_heat_cool_mode": 1}),
+            {"4110": "01", "1352": "002D"},
+        )
+
     def test_kwt_profile_parses_readonly_climate_values(self):
         values = {
             "1194": "01",
@@ -415,7 +486,10 @@ class ProfileParsingTests(unittest.TestCase):
             "nwt_ac_uart",
         )
         self.assertFalse(
-            get_device_profile("BL 264 - 354 DC", {"setpoint": 22}).supports_climate_write
+            get_device_profile("BL 264 - 354 DC", {"setpoint": 22}).supports_value_write
+        )
+        self.assertTrue(
+            get_device_profile("RKL 495 DC", {"setpoint": 22}).supports_climate_write
         )
         self.assertIsInstance(
             get_device_profile("Luftentfeuchter", {"internal_humidity": 45}),
@@ -423,7 +497,7 @@ class ProfileParsingTests(unittest.TestCase):
         )
         self.assertIsInstance(
             get_device_profile("WPM 400 A Pro", {"setpoint": 22}),
-            DiagnosticsDeviceProfile,
+            WpmDeviceProfile,
         )
 
     def test_auto_profile_uses_climate_values_for_climate_like_values(self):

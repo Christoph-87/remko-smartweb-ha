@@ -207,12 +207,18 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
 
 
 class ReadOnlyAcUartClimateDeviceProfile(ClimateDeviceProfile):
-    """Climate device using a protocol-specific AC UART path not yet implemented for writes."""
+    """Experimental ESP-Tx profile for non-MXW AC UART devices."""
 
-    supports_climate_write = False
+    supports_climate_write = True
+    supports_value_write = False
     supports_climate_presets = False
     protocol_name = "ac_uart_read_only"
 
     def __init__(self, profile_name: str, protocol_name: str) -> None:
         self.profile_name = profile_name
         self.protocol_name = protocol_name
+        self.supported_climate_modes = {
+            "free_ac_uart": ("off", "cool", "dry", "fan"),
+            "nwt_ac_uart": ("off", "cool", "dry", "fan"),
+            "aux_ac_uart": ("off", "auto", "cool", "heat", "dry", "fan"),
+        }.get(protocol_name, ("off", "auto", "cool", "heat", "dry", "fan"))

@@ -27,7 +27,7 @@ DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
 DEBUG_PAYLOAD_LIMIT = 2000
 DEBUG_VALUES_LIMIT = 200000
-REDACTED = "<redacted>"
+REDACTED = "[redacted]"
 VALUE_STATUS_QUERY_LIST = [
     # Common AC / KWT values observed in the REMKO Smart-Web frontend.
     1046,
@@ -74,6 +74,13 @@ VALUE_STATUS_QUERY_LIST = [
     5932,
     5933,
     5982,
+    # WPM / WPK / WKM / SQW heat-pump values with explicit frontend mappings.
+    4110,
+    4113,
+    5734,
+    5774,
+    1352,
+    2179,
 ]
 RBW_VALUE_WRITE_REGISTERS = {
     # SmartWeb value id: (Modbus register, converter)
@@ -709,6 +716,257 @@ def _build_kwt_set_cmd(value_id: str, value_hex: str) -> str | None:
     if register_value is None:
         return None
     return _build_modbus_write_register_cmd(1, register, register_value)
+
+
+def _clamp_int(value, low: int, high: int, default: int) -> int:
+    try:
+        number = int(round(float(value)))
+    except Exception:
+        return default
+    return max(low, min(high, number))
+
+
+def _bool_state(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.upper() == "ON"
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _high_level_status(current_status: dict | None, overrides: dict) -> dict:
+    status = dict(current_status or {})
+    status.update({key: value for key, value in overrides.items() if value is not None})
+    return status
+
+
+def _free_checksum(data: list[int]) -> int:
+    return (256 - (sum(data) % 256)) & 0xFF
+
+
+def _build_free_ac_uart_set_cmd(current_status: dict | None, overrides: dict) -> str | None:
+    """Build the RKL 495 / Freecom ESP Tx frame used by Free_setStatus()."""
+    status = _high_level_status(current_status, overrides)
+    mode_map = {"fan": 0, "cool": 1, "dry": 2}
+    fan_map = {"medium": 0, "low": 1, "high": 2, "auto": 3, "silent": 1}
+    if "mode" in overrides and overrides.get("mode") not in mode_map:
+        return None
+    if "fan" in overrides and overrides.get("fan") not in fan_map:
+        return None
+    mode = mode_map.get(status.get("mode"), 1)
+    fan = fan_map.get(status.get("fan"), 3)
+    swing = 1 if status.get("swing") in ("vertical", "both") else 0
+    cmd = [
+        0xFC,
+        0x01,
+        0x01 if _bool_state(status.get("power"), True) else 0x00,
+        _clamp_int(status.get("setpoint"), 16, 30, 24),
+        _clamp_int(status.get("room"), 0, 60, 25),
+        mode,
+        fan,
+        swing,
+        0x00,
+        0x00,
+        _clamp_int(status.get("compressor_rpm"), 0, 255, 0),
+        _clamp_int(status.get("tank"), 0, 255, 0),
+        _clamp_int(status.get("error"), 0, 255, 0),
+    ]
+    cmd.append(_free_checksum(cmd))
+    return "".join(f"{byte & 0xFF:02X}" for byte in cmd)
+
+
+def _aux_checksum(data: list[int]) -> int:
+    cksum = 0
+    length = len(data) - 2
+    i = 0
+    while i < length:
+        if i + 2 > length:
+            cksum += data[i]
+        else:
+            cksum += (data[i + 1] << 8) | data[i]
+        i += 2
+    cksum = (cksum >> 16) + (cksum & 0xFFFF)
+    cksum += cksum >> 16
+    cksum ^= 0xFFFF
+    return ((cksum >> 8) | ((cksum & 0xFF) << 8)) & 0xFFFF
+
+
+def _build_aux_ac_uart_set_cmd(current_status: dict | None, overrides: dict) -> str | None:
+    """Build the BL/AUX ESP Tx frame used by Aux_setStatus()."""
+    status = _high_level_status(current_status, overrides)
+    setpoint = _clamp_int(status.get("setpoint"), 8, 39, 24)
+    aux_set_temp = max(0, min(31, setpoint - 8))
+    aux_set_temp_dec = 0
+    fan_map = {"high": 1, "medium": 2, "low": 3, "auto": 5, "silent": 3}
+    mode_map = {"auto": 0, "cool": 1, "dry": 2, "heat": 4, "fan": 6}
+    if "mode" in overrides and overrides.get("mode") not in mode_map:
+        return None
+    if "fan" in overrides and overrides.get("fan") not in fan_map:
+        return None
+    fan = fan_map.get(status.get("fan"), 5)
+    mode = mode_map.get(status.get("mode"), 0)
+    swing = status.get("swing")
+    if swing == "vertical":
+        swing_up_down, swing_left_right = 0, 3
+    elif swing == "horizontal":
+        swing_up_down, swing_left_right = 7, 0
+    elif swing == "both":
+        swing_up_down, swing_left_right = 0, 0
+    else:
+        swing_up_down, swing_left_right = 7, 3
+    power = 1 if _bool_state(status.get("power"), True) else 0
+    cmd = [0] * 25
+    cmd[0] = 0xBB
+    cmd[1] = 0x00
+    cmd[2] = 0x06
+    cmd[3] = 0x80
+    cmd[4] = 0x00
+    cmd[5] = 0x00
+    cmd[6] = 0x0F
+    cmd[7] = 0x00
+    cmd[8] = 0x01
+    cmd[9] = 0x01
+    cmd[10] = (aux_set_temp << 3) | swing_up_down
+    cmd[11] = (swing_left_right << 5)
+    cmd[12] = 0x00
+    cmd[13] = (fan << 5)
+    cmd[14] = (int(bool(status.get("sleep"))) << 7) | (int(bool(status.get("turbo"))) << 6)
+    cmd[15] = (mode << 5)
+    cmd[16] = _clamp_int(status.get("room"), 0, 63, 0)
+    cmd[17] = 0x00
+    cmd[18] = (
+        (power << 5)
+        | (int(bool(status.get("eco"))) << 3)
+        | (int(bool(status.get("bioclean"))) << 1)
+    )
+    cmd[19] = 0x00
+    cmd[20] = 0x00
+    cmd[21] = 0x00
+    cmd[22] = aux_set_temp_dec
+    fcc = _aux_checksum(cmd)
+    cmd[23] = (fcc >> 8) & 0xFF
+    cmd[24] = fcc & 0xFF
+    return "".join(f"{byte & 0xFF:02X}" for byte in cmd)
+
+
+def _nwt_checksum(data: list[int]) -> int:
+    return sum(data) % 256
+
+
+def _nwt_frame(dp: int, payload: list[int]) -> str:
+    if len(payload) == 1:
+        cmd = [0x55, 0xAA, 0x00, 0x06, 0x00, 0x05, dp, 0x01 if dp in (0x01, 0x10, 0x11, 0x12) else 0x04, 0x00, 0x01, payload[0]]
+    else:
+        cmd = [0x55, 0xAA, 0x00, 0x06, 0x00, 0x08, dp, 0x02, 0x00, 0x04, *payload]
+    cmd.append(_nwt_checksum(cmd))
+    return "".join(f"{byte & 0xFF:02X}" for byte in cmd)
+
+
+def _build_nwt_ac_uart_set_cmds(current_status: dict | None, overrides: dict) -> list[str]:
+    """Build the RKL 355 / NWT ESP Tx frames used by NWT_setStatus()."""
+    cmds: list[str] = []
+    fan_map = {"low": 0x00, "medium": 0x01, "high": 0x02, "silent": 0x00}
+    mode_map = {"cool": 0x00, "dry": 0x01, "fan": 0x02}
+    if "fan" in overrides and overrides.get("fan") not in fan_map:
+        return []
+    if "mode" in overrides and overrides.get("mode") not in mode_map:
+        return []
+    if "setpoint" in overrides:
+        temp = _clamp_int(overrides.get("setpoint"), 16, 32, 24)
+        cmds.append(_nwt_frame(0x02, [0x00, 0x00, 0x00, temp]))
+    if "fan" in overrides:
+        cmds.append(_nwt_frame(0x05, [fan_map[overrides.get("fan")]]))
+    if "mode" in overrides:
+        cmds.append(_nwt_frame(0x04, [mode_map[overrides.get("mode")]]))
+    if "swing" in overrides:
+        swing = 0x01 if overrides.get("swing") in ("vertical", "both") else 0x00
+        cmds.append(_nwt_frame(0x11, [swing]))
+    if "power" in overrides:
+        cmds.append(_nwt_frame(0x01, [0x01 if bool(overrides.get("power")) else 0x00]))
+    return cmds
+
+
+def _build_ac_uart_set_cmds(protocol_name: str, current_status: dict | None, overrides: dict) -> list[str]:
+    if protocol_name == "free_ac_uart":
+        tx = _build_free_ac_uart_set_cmd(current_status, overrides)
+        return [tx] if tx else []
+    if protocol_name == "aux_ac_uart":
+        tx = _build_aux_ac_uart_set_cmd(current_status, overrides)
+        return [tx] if tx else []
+    if protocol_name == "nwt_ac_uart":
+        return _build_nwt_ac_uart_set_cmds(current_status, overrides)
+    return []
+
+
+def _build_lte_set_cmd(current_status: dict | None, values: dict[str, str]) -> str | None:
+    """Build the LTE ESP Tx frame used by LTE_setStatus()."""
+    status = dict(current_status or {})
+    power = 0x01 if status.get("power") == "ON" else 0x00
+    humidity = _clamp_int(status.get("target_humidity"), 30, 70, 50)
+    if "1194" in values:
+        try:
+            value = int(str(values["1194"]), 16)
+        except Exception:
+            return None
+        if value not in (0x01, 0x02):
+            return None
+        power = 0x01 if value == 0x01 else 0x00
+    if "1302" in values:
+        try:
+            humidity = int(str(values["1302"]), 16)
+        except Exception:
+            return None
+        if humidity != 0 and not 30 <= humidity <= 70:
+            return None
+    cmd = [0xFC, 0xD0, 0x01, 0x01, power, humidity]
+    cmd.append(_free_checksum(cmd))
+    return "".join(f"{byte & 0xFF:02X}" for byte in cmd)
+
+
+WPM_VALUE_WRITE_REGISTERS = {
+    # SmartWeb value id: (Modbus register, register type)
+    # Matches docs/lib.ac.uart.js WPM_convertDataForImport + WPM_setStatus.
+    "4110": (73, "COIL"),
+    "4113": (88, "COIL"),
+    "5774": (50, "HOLDING"),
+    "1352": (415, "HOLDING"),
+    "2179": (416, "HOLDING"),
+}
+
+
+def _build_modbus_write_coil_cmd(addr: int, register: int, value: int) -> str | None:
+    if value not in (0, 1):
+        return None
+    register_value = 0xFF00 if value else 0x0000
+    cmd = [
+        addr & 0xFF,
+        0x05,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        (register_value & 0xFF00) >> 8,
+        register_value & 0x00FF,
+    ]
+    crc = _modbus_crc16(cmd)
+    cmd.extend([crc & 0x00FF, (crc & 0xFF00) >> 8])
+    return "".join(f"{byte & 0xFF:02X}" for byte in cmd)
+
+
+def _build_wpm_set_cmd(value_id: str, value_hex: str) -> str | None:
+    spec = WPM_VALUE_WRITE_REGISTERS.get(str(value_id))
+    if spec is None:
+        return None
+    try:
+        value = int(str(value_hex), 16)
+    except Exception:
+        return None
+    register, register_type = spec
+    if register_type == "COIL":
+        return _build_modbus_write_coil_cmd(1, register, value)
+    if register_type == "HOLDING":
+        return _build_modbus_write_register_cmd(1, register, value)
+    return None
 
 
 def _extract_values_from_payload(payload: str):
@@ -1578,6 +1836,78 @@ class RemkoSmartWebClient:
             time.sleep(1.0)
         return not unsupported
 
+    def _mqtt_write_ac_uart_frames(self, tx_frames: list[str], protocol_name: str, write_id: str, timeout=10) -> bool:
+        """Write experimental AC UART Tx frames through the ESP path used by the frontend."""
+        if not self.sid or not self.sk or not self.topic:
+            raise DeviceResolveError("Device not resolved")
+        self._ensure_mqtt()
+        for index, tx in enumerate(tx_frames, start=1):
+            _LOGGER.warning(
+                "REMKO SmartWeb write start: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": protocol_name,
+                        "frame": index,
+                        "frame_count": len(tx_frames),
+                        "tx": tx,
+                    }
+                ),
+            )
+            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._mqtt.wait_rx(timeout=timeout)
+            time.sleep(0.5)
+        return True
+
+    def _mqtt_write_lte_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
+        current_status = self._last_status if isinstance(self._last_status, dict) else None
+        tx = _build_lte_set_cmd(current_status, values)
+        if not tx:
+            return False
+        write_id = write_id or f"{random.getrandbits(24):06x}"
+        _LOGGER.warning(
+            "REMKO SmartWeb experimental LTE write start: %s",
+            _debug_value(
+                {
+                    "write_id": write_id,
+                    "device": self.device_name,
+                    "path": "lte_ac_uart",
+                    "value_ids": sorted(str(key) for key in values),
+                    "tx": tx,
+                }
+            ),
+        )
+        self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+        self._mqtt.wait_rx(timeout=timeout)
+        return True
+
+    def _mqtt_write_wpm_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
+        write_id = write_id or f"{random.getrandbits(24):06x}"
+        unsupported = []
+        for key, value in values.items():
+            tx = _build_wpm_set_cmd(str(key), str(value))
+            if not tx:
+                unsupported.append(str(key))
+                continue
+            _LOGGER.warning(
+                "REMKO SmartWeb experimental WPM write start: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "wpm_modbus",
+                        "value_id": str(key),
+                        "expected_hex": str(value),
+                        "tx": tx,
+                    }
+                ),
+            )
+            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._mqtt.wait_rx(timeout=timeout)
+            time.sleep(0.5)
+        return not unsupported
+
     def _mqtt_diagnostic_snapshot(self):
         if self._mqtt is None:
             return None
@@ -1880,6 +2210,58 @@ class RemkoSmartWebClient:
         self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
+        protocol_name = getattr(self.profile, "protocol_name", "")
+        if protocol_name in ("free_ac_uart", "aux_ac_uart", "nwt_ac_uart"):
+            write_id = f"{random.getrandbits(24):06x}"
+            current_status = self._last_status if isinstance(self._last_status, dict) else None
+            if current_status is None or current_status.get("_status_pending"):
+                values = self._mqtt_poll_values(timeout=10)
+                current_status = self.profile.parse_values_status(values) if values else None
+            tx_frames = _build_ac_uart_set_cmds(protocol_name, current_status, overrides)
+            if not tx_frames:
+                raise UnsupportedPayload(f"No experimental AC UART Tx frame for {protocol_name} overrides")
+            _LOGGER.warning(
+                "REMKO SmartWeb experimental AC UART write: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": protocol_name,
+                        "overrides": overrides,
+                        "current_status_keys": sorted(current_status.keys()) if isinstance(current_status, dict) else [],
+                        "frame_count": len(tx_frames),
+                    }
+                ),
+            )
+            self._mqtt_write_ac_uart_frames(tx_frames, protocol_name, write_id, timeout=10)
+            time.sleep(1.0)
+            try:
+                readback = self.read_status()
+                _LOGGER.warning(
+                    "REMKO SmartWeb experimental AC UART write readback: %s",
+                    _debug_value(
+                        {
+                            "write_id": write_id,
+                            "device": self.device_name,
+                            "path": protocol_name,
+                            "readback_source": getattr(self, "_last_status_source", None),
+                            **_parsed_status_summary(readback),
+                        }
+                    ),
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "REMKO SmartWeb experimental AC UART write readback failed: %s",
+                    _debug_value(
+                        {
+                            "write_id": write_id,
+                            "device": self.device_name,
+                            "path": protocol_name,
+                            "error": str(err),
+                        }
+                    ),
+                )
+            return
         payload = None
         last_err = None
         for _ in range(2):
@@ -2031,6 +2413,66 @@ class RemkoSmartWebClient:
                             }
                         ),
                     )
+        elif profile_name == "LteDeviceProfile":
+            if self._mqtt_write_lte_esp_values(values, timeout=10, write_id=write_id):
+                time.sleep(1.0)
+                try:
+                    readback = self.read_status()
+                    _LOGGER.warning(
+                        "REMKO SmartWeb experimental LTE write readback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "lte_ac_uart",
+                                "readback_source": getattr(self, "_last_status_source", None),
+                                **_parsed_status_summary(readback),
+                            }
+                        ),
+                    )
+                except Exception as err:
+                    _LOGGER.warning(
+                        "REMKO SmartWeb experimental LTE write readback failed: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "lte_ac_uart",
+                                "error": str(err),
+                            }
+                        ),
+                    )
+                return
+        elif profile_name == "WpmDeviceProfile":
+            if self._mqtt_write_wpm_esp_values(values, timeout=10, write_id=write_id):
+                time.sleep(1.0)
+                try:
+                    readback = self.read_status()
+                    _LOGGER.warning(
+                        "REMKO SmartWeb experimental WPM write readback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "wpm_modbus",
+                                "readback_source": getattr(self, "_last_status_source", None),
+                                **_parsed_status_summary(readback),
+                            }
+                        ),
+                    )
+                except Exception as err:
+                    _LOGGER.warning(
+                        "REMKO SmartWeb experimental WPM write readback failed: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "wpm_modbus",
+                                "error": str(err),
+                            }
+                        ),
+                    )
+                return
 
         response_values = self._mqtt_write_values(values, timeout=10, write_id=write_id)
         if isinstance(response_values, dict):

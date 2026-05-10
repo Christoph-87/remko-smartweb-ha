@@ -6,6 +6,7 @@ from .diagnostics import DiagnosticsDeviceProfile
 from .domestic_hot_water import DomesticHotWaterDeviceProfile
 from .kwt import KwtDeviceProfile, looks_like_kwt_name
 from .lte import LteDeviceProfile, looks_like_lte_name
+from .wpm import WpmDeviceProfile, looks_like_wpm_name
 
 
 def _normalized_name(name: str | None) -> str:
@@ -49,20 +50,7 @@ def get_ac_uart_climate_profile(device_name: str | None) -> SmartWebDeviceProfil
 
 
 def looks_like_unsupported_heat_pump_name(device_name: str | None) -> bool:
-    name = _normalized_name(device_name)
-    return any(
-        token in name
-        for token in (
-            "wpm",
-            "wpk",
-            "wkm",
-            "sqw",
-            "waermepumpe",
-            "wärmepumpe",
-            "modulare_waermepumpe",
-            "modulare wärmepumpe",
-        )
-    )
+    return looks_like_wpm_name(device_name)
 
 
 def get_specialized_profile(device_name: str | None, data: dict | None = None) -> SmartWebDeviceProfile | None:
@@ -76,12 +64,14 @@ def get_specialized_profile(device_name: str | None, data: dict | None = None) -
     if climate_profile is not None:
         return climate_profile
     if looks_like_unsupported_heat_pump_name(device_name):
-        return DiagnosticsDeviceProfile()
+        return WpmDeviceProfile()
     if isinstance(data, dict):
         if any(key in data for key in ("target_humidity", "internal_humidity", "internal_temperature")):
             return LteDeviceProfile()
         if any(key in data for key in ("dhw_setpoint", "dhw_top_temperature", "dhw_ambient_temperature", "dhw_mode")):
             return DomesticHotWaterDeviceProfile()
+        if any(key in data for key in ("wpm_setpoint_ch", "wpm_target_temperature", "wpm_heat_cool_mode")):
+            return WpmDeviceProfile()
     return None
 
 
@@ -92,6 +82,7 @@ class AutoDetectDeviceProfile(SmartWebDeviceProfile):
         self._dhw = DomesticHotWaterDeviceProfile()
         self._kwt = KwtDeviceProfile()
         self._lte = LteDeviceProfile()
+        self._wpm = WpmDeviceProfile()
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:
         return self._climate.parse_c0_status(rx_hex)
@@ -103,9 +94,14 @@ class AutoDetectDeviceProfile(SmartWebDeviceProfile):
             return self._lte.parse_values_status(values)
         if looks_like_kwt_name(self.device_name):
             return self._kwt.parse_values_status(values) or self._climate.parse_values_status(values)
+        if looks_like_wpm_name(self.device_name):
+            return self._wpm.parse_values_status(values)
         lte_status = self._lte.parse_values_status(values)
         if lte_status:
             return lte_status
+        wpm_status = self._wpm.parse_values_status(values)
+        if wpm_status:
+            return wpm_status
         climate_status = self._climate.parse_values_status(values)
         if climate_status:
             return climate_status
