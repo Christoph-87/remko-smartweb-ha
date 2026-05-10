@@ -34,7 +34,7 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     _attr_operation_list = OPERATION_MODES
     _attr_min_temp = 30
     _attr_max_temp = 65
-    _attr_target_temperature_step = 1.0
+    _attr_target_temperature_step = 0.5
 
     def __init__(self, coordinator, client, device_name: str, profile):
         super().__init__(coordinator)

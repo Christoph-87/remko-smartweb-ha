@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.9
+- Always create diagnostic sensor entities for profile, portal, and MQTT metadata so existing installations receive them after reloading the integration
+- Keep diagnostic sensor values dynamic so late-discovered portal metadata appears without recreating entities
+- Restore 0.5 °C target-temperature steps for domestic hot water / RBW water-heater entities
+- Parse double-encoded MQTT `Rx` payloads to improve automatic polling for devices that return wrapped JSON responses
+- Replace large warning-level write payloads with structured write logs that include a shared `write_id`, compact response summaries, readback status, fallback reasons, and mismatches
+- Add compact debug poll summaries and one-shot support snapshots for unparseable status responses
+- Add regression tests for diagnostic sensor creation, double-encoded MQTT responses, and RBW/DHW half-degree temperature steps
+
 ## v0.3.8
 - Enable Home Assistant switch entities for REMKO SmartWeb climate extras
 - Add switches for Turbo, Silent Mode, Bioclean, and Frost Protection when supported by the current data snapshot

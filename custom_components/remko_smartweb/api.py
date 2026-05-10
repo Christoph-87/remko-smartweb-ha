@@ -239,6 +239,30 @@ def _debug_values(values: dict | None, limit: int = DEBUG_VALUES_LIMIT):
     return _debug_value({"count": len(sorted_values), "values": sorted_values}, limit=limit)
 
 
+def _value_response_summary(values: dict | None, expected: dict | None = None) -> dict:
+    summary = {"values_count": len(values) if isinstance(values, dict) else 0}
+    if isinstance(values, dict) and expected:
+        summary["written_values"] = {
+            str(key): values.get(str(key))
+            for key in expected
+        }
+    return summary
+
+
+def _parsed_status_summary(status: dict | None) -> dict:
+    if not isinstance(status, dict):
+        return {"parsed": False}
+    visible_keys = sorted(str(key) for key in status if not str(key).startswith("_"))
+    summary = {
+        "parsed": True,
+        "parsed_keys": visible_keys,
+    }
+    for key in ("setpoint", "dhw_setpoint", "room", "dhw_top_temperature", "mode", "dhw_mode", "power"):
+        if key in status:
+            summary[key] = status.get(key)
+    return summary
+
+
 def _normalize_smartweb_hex_value(value) -> str | None:
     text = str(value or "").strip()
     if not text or re.fullmatch(r"[0-9A-Fa-f]+", text) is None:
@@ -352,6 +376,19 @@ def _mqtt_message_summary(topic: str, payload: str) -> dict:
                 summary["kind"] = "json"
                 summary["payload"] = _debug_value(obj)
     return summary
+
+
+def _json_loads_maybe_wrapped(payload: str):
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return None
+    if isinstance(data, str):
+        try:
+            return json.loads(data)
+        except Exception:
+            return data
+    return data
 
 
 def _extract_sid_sk_from_url(url: str):
@@ -675,20 +712,9 @@ def _build_kwt_set_cmd(value_id: str, value_hex: str) -> str | None:
 
 
 def _extract_values_from_payload(payload: str):
-    try:
-        data = json.loads(payload)
-    except Exception:
-        return None
+    data = _json_loads_maybe_wrapped(payload)
     if isinstance(data, dict) and "values" in data:
         return data.get("values")
-    # Some responses wrap JSON as string
-    if isinstance(data, str):
-        try:
-            data2 = json.loads(data)
-            if isinstance(data2, dict) and "values" in data2:
-                return data2.get("values")
-        except Exception:
-            return None
     return None
 
 
@@ -892,17 +918,14 @@ class _MqttSession:
                 self._received_non_tx_count += 1
                 self._recent_messages.append(summary)
             # Rx hex for ESP status
-            try:
-                obj = json.loads(text)
-                if isinstance(obj, dict):
-                    if obj.get("Rx"):
-                        self._last_rx = text
-                        self._cond.notify_all()
-                    smt_user = obj.get("SMT_USER")
-                    if str(smt_user or "").isdigit():
-                        self._last_smt_user = int(smt_user)
-            except Exception:
-                pass
+            obj = _json_loads_maybe_wrapped(text)
+            if isinstance(obj, dict):
+                if obj.get("Rx"):
+                    self._last_rx = json.dumps(obj)
+                    self._cond.notify_all()
+                smt_user = obj.get("SMT_USER")
+                if str(smt_user or "").isdigit():
+                    self._last_smt_user = int(smt_user)
             values = _extract_values_from_payload(text)
             if isinstance(values, dict) and str(msg.topic).endswith("/HOST2CLIENT"):
                 self._last_values = values
@@ -1154,6 +1177,7 @@ class RemkoSmartWebClient:
         self._last_mapping_values = None
         self._last_device_list_error = None
         self._last_device_list_empty = False
+        self._last_support_snapshot_signature = None
         self._mqtt = None
 
     def initial_status_if_supported(self) -> dict | None:
@@ -1425,7 +1449,7 @@ class RemkoSmartWebClient:
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
 
-    def _mqtt_write_values(self, values: dict[str, str], timeout=10) -> dict | None:
+    def _mqtt_write_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> dict | None:
         """Write Smart-Web value IDs via CLIENT2HOST and wait for a values update."""
         if not self.sid or not self.sk or not self.topic:
             raise DeviceResolveError("Device not resolved")
@@ -1442,30 +1466,59 @@ class RemkoSmartWebClient:
         smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
         if smt_user is not None:
             payload["SMT_USER"] = smt_user
+        write_id = write_id or f"{random.getrandbits(24):06x}"
         _LOGGER.warning(
-            "Experimental REMKO SmartWeb value write for %r. No confirmed write capture is bundled; "
-            "please verify in the REMKO app and share the following payload plus the response logs if it fails: %s",
-            self.device_name,
-            _debug_value(payload),
+            "REMKO SmartWeb write start: %s",
+            _debug_value(
+                {
+                    "write_id": write_id,
+                    "device": self.device_name,
+                    "path": "client2host",
+                    "profile": getattr(getattr(self, "profile", None), "profile_name", "unknown"),
+                    "value_ids": sorted(str(key) for key in values),
+                    "smt_user_present": "SMT_USER" in payload,
+                    "topic_present": bool(self.topic),
+                }
+            ),
+        )
+        _LOGGER.debug(
+            "REMKO SmartWeb write payload: %s",
+            _debug_value({"write_id": write_id, "payload": payload}, limit=DEBUG_VALUES_LIMIT),
         )
         self._mqtt.clear_values()
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", payload)
         response_values = self._mqtt.wait_values(timeout=timeout)
         if isinstance(response_values, dict):
             _LOGGER.warning(
-                "Experimental REMKO SmartWeb value write for %r received values response: %s",
-                self.device_name,
-                _debug_values(response_values),
+                "REMKO SmartWeb write response: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        **_value_response_summary(response_values, values),
+                    }
+                ),
+            )
+            _LOGGER.debug(
+                "REMKO SmartWeb write response values: %s",
+                _debug_value({"write_id": write_id, "values": response_values}, limit=DEBUG_VALUES_LIMIT),
             )
         else:
             _LOGGER.warning(
-                "Experimental REMKO SmartWeb value write for %r did not receive a values response within %s seconds",
-                self.device_name,
-                timeout,
+                "REMKO SmartWeb write response timeout: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        "timeout_sec": timeout,
+                    }
+                ),
             )
         return response_values
 
-    def _mqtt_write_rbw_esp_values(self, values: dict[str, str], timeout=10) -> bool:
+    def _mqtt_write_rbw_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
         """Write RBW/DHW value IDs through the ESP Tx path used by the frontend."""
         if not self.sid or not self.sk or not self.topic:
             raise DeviceResolveError("Device not resolved")
@@ -1477,10 +1530,17 @@ class RemkoSmartWebClient:
                 unsupported.append(str(key))
                 continue
             _LOGGER.warning(
-                "Experimental REMKO RBW/DHW ESP value write for %r: value id %s via Tx %s",
-                self.device_name,
-                key,
-                tx,
+                "REMKO SmartWeb write start: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "rbw_esp",
+                        "value_id": str(key),
+                        "expected_hex": str(value),
+                        "tx": tx,
+                    }
+                ),
             )
             self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             # The frontend waits for RESP and then refreshes the value model.
@@ -1488,7 +1548,7 @@ class RemkoSmartWebClient:
             time.sleep(1.0)
         return not unsupported
 
-    def _mqtt_write_kwt_esp_values(self, values: dict[str, str], timeout=10) -> bool:
+    def _mqtt_write_kwt_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
         """Write KWT value IDs through the ESP Modbus Tx path used by the frontend."""
         if not self.sid or not self.sk or not self.topic:
             raise DeviceResolveError("Device not resolved")
@@ -1500,10 +1560,17 @@ class RemkoSmartWebClient:
                 unsupported.append(str(key))
                 continue
             _LOGGER.warning(
-                "Experimental REMKO KWT ESP value write for %r: value id %s via Tx %s",
-                self.device_name,
-                key,
-                tx,
+                "REMKO SmartWeb write start: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "kwt_esp",
+                        "value_id": str(key),
+                        "expected_hex": str(value),
+                        "tx": tx,
+                    }
+                ),
             )
             self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             self._mqtt.wait_rx(timeout=timeout)
@@ -1514,6 +1581,75 @@ class RemkoSmartWebClient:
         if self._mqtt is None:
             return None
         return self._mqtt.diagnostic_snapshot()
+
+    def _log_poll_summary(
+        self,
+        source: str,
+        *,
+        parsed: dict | None = None,
+        values: dict | None = None,
+        duration: float | None = None,
+    ) -> None:
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        summary = {
+            "device": self.device_name,
+            "source": source,
+            "profile": getattr(self.profile, "profile_name", type(self.profile).__name__),
+            "profile_class": type(self.profile).__name__,
+            "protocol": getattr(self.profile, "protocol_name", ""),
+            "topic_present": bool(self.topic),
+            "smt_user_present": self.smt_user is not None,
+            "values_count": len(values) if isinstance(values, dict) else None,
+        }
+        if duration is not None:
+            summary["duration_sec"] = round(duration, 3)
+        summary.update(_parsed_status_summary(parsed))
+        _LOGGER.debug("REMKO SmartWeb poll summary: %s", _debug_value(summary))
+
+    def _log_support_snapshot_once(
+        self,
+        reason: str,
+        *,
+        stage: str,
+        values: dict | None = None,
+        error: str | None = None,
+    ) -> None:
+        mqtt_diagnostics = self._mqtt_diagnostic_snapshot()
+        signature = (
+            reason,
+            stage,
+            type(self.profile).__name__,
+            bool(self.topic),
+            self.smt_user is not None,
+            len(values) if isinstance(values, dict) else None,
+            error,
+        )
+        if signature == self._last_support_snapshot_signature:
+            return
+        self._last_support_snapshot_signature = signature
+        metadata = self.diagnostic_metadata()
+        snapshot = {
+            "device": self.device_name,
+            "reason": reason,
+            "stage": stage,
+            "profile": metadata.get("Detected Profile"),
+            "profile_class": metadata.get("Profile Class"),
+            "protocol": metadata.get("Profile Protocol"),
+            "portal_type": metadata.get("Portal Type"),
+            "portal_dev": metadata.get("Portal DEV"),
+            "mqtt_topic_present": bool(self.topic),
+            "smt_user_present": self.smt_user is not None,
+            "values_count": len(values) if isinstance(values, dict) else None,
+            "last_values_count": (
+                len(mqtt_diagnostics["last_values"])
+                if isinstance(mqtt_diagnostics, dict)
+                and isinstance(mqtt_diagnostics.get("last_values"), dict)
+                else None
+            ),
+            "last_error": error,
+        }
+        _LOGGER.warning("REMKO SmartWeb support snapshot: %s", _debug_value(snapshot))
 
     def _log_mapping_snapshot(self, stage: str, values: dict) -> None:
         if not _LOGGER.isEnabledFor(logging.DEBUG):
@@ -1576,6 +1712,7 @@ class RemkoSmartWebClient:
         )
 
     def read_status(self) -> dict:
+        started = time.monotonic()
         self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
@@ -1586,21 +1723,20 @@ class RemkoSmartWebClient:
         def _parse(resp_text: str | None) -> dict | None:
             if not resp_text:
                 return None
-            try:
-                obj = json.loads(resp_text)
+            obj = _json_loads_maybe_wrapped(resp_text)
+            if isinstance(obj, dict):
                 rx_hex = obj.get("Rx")
                 if rx_hex:
                     parsed = self.profile.parse_c0_status(rx_hex)
                     if parsed:
                         return parsed
-            except Exception:
-                return None
             return None
 
         parsed = _parse(resp)
         if parsed:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
+            self._log_poll_summary("esp_rx", parsed=parsed, duration=time.monotonic() - started)
             return parsed
         self._log_unsupported_payload(
             "esp_status",
@@ -1618,8 +1754,20 @@ class RemkoSmartWebClient:
                 merged = dict(self._last_status)
                 merged.update({k: v for k, v in parsed_values.items() if v is not None})
                 self._last_status = merged
+                self._log_poll_summary(
+                    "client2host_values",
+                    parsed=merged,
+                    values=values,
+                    duration=time.monotonic() - started,
+                )
                 return merged
             self._last_status = parsed_values
+            self._log_poll_summary(
+                "client2host_values",
+                parsed=parsed_values,
+                values=values,
+                duration=time.monotonic() - started,
+            )
             return parsed_values
         self._log_unsupported_payload(
             "client2host_values",
@@ -1644,6 +1792,7 @@ class RemkoSmartWebClient:
         if parsed:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
+            self._log_poll_summary("esp_rx_retry", parsed=parsed, duration=time.monotonic() - started)
             return parsed
         self._log_unsupported_payload(
             "esp_status_retry",
@@ -1652,10 +1801,34 @@ class RemkoSmartWebClient:
         )
 
         if self._last_status:
+            self._log_support_snapshot_once(
+                "status_unparseable_using_last_status",
+                stage="read_status",
+                values=values,
+                error="Unable to parse status",
+            )
+            self._log_poll_summary(
+                "cached_last_status",
+                parsed=self._last_status,
+                values=values,
+                duration=time.monotonic() - started,
+            )
             return self._last_status
         if self.profile.diagnostics_only:
             self._last_status = {"_diagnostics_only": True}
+            self._log_poll_summary(
+                "diagnostics_only",
+                parsed=self._last_status,
+                values=values,
+                duration=time.monotonic() - started,
+            )
             return self._last_status
+        self._log_support_snapshot_once(
+            "status_unparseable",
+            stage="read_status",
+            values=values,
+            error="Unable to parse status",
+        )
         raise UnsupportedPayload("Unable to parse status")
 
     def _read_status_c0(self, retries: int = 2) -> dict:
@@ -1669,15 +1842,13 @@ class RemkoSmartWebClient:
         def _parse(resp_text: str | None) -> dict | None:
             if not resp_text:
                 return None
-            try:
-                obj = json.loads(resp_text)
+            obj = _json_loads_maybe_wrapped(resp_text)
+            if isinstance(obj, dict):
                 rx_hex = obj.get("Rx")
                 if rx_hex:
                     parsed = self.profile.parse_c0_status(rx_hex)
                     if parsed:
                         return parsed
-            except Exception:
-                return None
             return None
 
         last_err = None
@@ -1735,9 +1906,10 @@ class RemkoSmartWebClient:
         self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
+        write_id = f"{random.getrandbits(24):06x}"
         profile_name = type(self.profile).__name__
         if profile_name == "DomesticHotWaterDeviceProfile":
-            if self._mqtt_write_rbw_esp_values(values, timeout=10):
+            if self._mqtt_write_rbw_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:
                     readback = self.read_status()
@@ -1749,41 +1921,95 @@ class RemkoSmartWebClient:
                         and abs((int(str(value), 16) / 10) - float(readback["dhw_setpoint"])) > 0.05
                     }
                     _LOGGER.warning(
-                        "Experimental REMKO RBW/DHW ESP value write for %r readback status: %s",
-                        self.device_name,
-                        _debug_value(readback),
+                        "REMKO SmartWeb write readback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "rbw_esp",
+                                "confirmed": not bool(mismatches),
+                                **_parsed_status_summary(readback),
+                            }
+                        ),
                     )
                     if not mismatches:
                         return
                     _LOGGER.warning(
-                        "Experimental REMKO RBW/DHW ESP value write for %r was not confirmed by readback: %s",
-                        self.device_name,
-                        _debug_value(mismatches),
+                        "REMKO SmartWeb write fallback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "from_path": "rbw_esp",
+                                "to_path": "client2host",
+                                "reason": "readback_mismatch",
+                                "mismatches": mismatches,
+                            }
+                        ),
                     )
                 except Exception as err:
-                    _LOGGER.warning("Readback after RBW/DHW ESP value write failed: %s", err)
+                    _LOGGER.warning(
+                        "REMKO SmartWeb write fallback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "from_path": "rbw_esp",
+                                "to_path": "client2host",
+                                "reason": "readback_failed",
+                                "error": str(err),
+                            }
+                        ),
+                    )
         elif profile_name == "KwtDeviceProfile":
-            if self._mqtt_write_kwt_esp_values(values, timeout=10):
+            if self._mqtt_write_kwt_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:
                     readback = self.read_status()
                     parsed_mismatches = self._value_write_readback_mismatches(values, readback)
                     _LOGGER.warning(
-                        "Experimental REMKO KWT ESP value write for %r readback status: %s",
-                        self.device_name,
-                        _debug_value(readback),
+                        "REMKO SmartWeb write readback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "path": "kwt_esp",
+                                "confirmed": not bool(parsed_mismatches),
+                                **_parsed_status_summary(readback),
+                            }
+                        ),
                     )
                     if not parsed_mismatches:
                         return
                     _LOGGER.warning(
-                        "Experimental REMKO KWT ESP value write for %r was not confirmed by readback: %s",
-                        self.device_name,
-                        _debug_value(parsed_mismatches),
+                        "REMKO SmartWeb write fallback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "from_path": "kwt_esp",
+                                "to_path": "client2host",
+                                "reason": "readback_mismatch",
+                                "mismatches": parsed_mismatches,
+                            }
+                        ),
                     )
                 except Exception as err:
-                    _LOGGER.warning("Readback after KWT ESP value write failed: %s", err)
+                    _LOGGER.warning(
+                        "REMKO SmartWeb write fallback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "from_path": "kwt_esp",
+                                "to_path": "client2host",
+                                "reason": "readback_failed",
+                                "error": str(err),
+                            }
+                        ),
+                    )
 
-        response_values = self._mqtt_write_values(values, timeout=10)
+        response_values = self._mqtt_write_values(values, timeout=10, write_id=write_id)
         if isinstance(response_values, dict):
             self._log_mapping_snapshot("client2host_write_values", response_values)
             mismatches = {
@@ -1795,27 +2021,56 @@ class RemkoSmartWebClient:
             if parsed_values:
                 self._last_status = parsed_values
                 _LOGGER.warning(
-                    "Experimental REMKO SmartWeb value write for %r parsed response status: %s",
-                    self.device_name,
-                    _debug_value(parsed_values),
+                    "REMKO SmartWeb write parsed response: %s",
+                    _debug_value(
+                        {
+                            "write_id": write_id,
+                            "device": self.device_name,
+                            "path": "client2host",
+                            **_parsed_status_summary(parsed_values),
+                        }
+                    ),
                 )
             if not mismatches:
                 return
             _LOGGER.warning(
-                "Experimental REMKO SmartWeb value write for %r was not confirmed by HOST2CLIENT values: %s",
-                self.device_name,
-                _debug_value(mismatches),
+                "REMKO SmartWeb write response mismatch: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        "mismatches": mismatches,
+                    }
+                ),
             )
         time.sleep(1.0)
         try:
             readback = self.read_status()
             _LOGGER.warning(
-                "Experimental REMKO SmartWeb value write for %r readback status: %s",
-                self.device_name,
-                _debug_value(readback),
+                "REMKO SmartWeb write readback: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        "confirmed": False,
+                        **_parsed_status_summary(readback),
+                    }
+                ),
             )
         except Exception as err:
-            _LOGGER.warning("Readback after SmartWeb value write failed: %s", err)
+            _LOGGER.warning(
+                "REMKO SmartWeb write readback failed: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        "error": str(err),
+                    }
+                ),
+            )
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
 
     def _value_write_readback_mismatches(self, values: dict[str, str], readback: dict) -> dict:

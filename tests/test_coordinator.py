@@ -282,6 +282,29 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
 
+    def test_mqtt_session_handles_double_encoded_rx_payload(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/RESP",
+                payload=b'"{\\"Rx\\":\\"63100450000108aa\\"}"',
+            ),
+        )
+
+        self.assertEqual(session._last_rx, '{"Rx": "63100450000108aa"}')
+
     def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
         self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
         self.assertTrue(_smartweb_value_matches("01", "00000000000000000001"))
@@ -386,8 +409,8 @@ class CoordinatorTests(unittest.TestCase):
         client._ensure_login = lambda: None
         client._ensure_device = lambda: None
         client._ensure_mqtt = lambda: None
-        client._mqtt_write_rbw_esp_values = lambda values, timeout=10: False
-        client._mqtt_write_values = lambda values, timeout=10: {"1333": "0226"}
+        client._mqtt_write_rbw_esp_values = lambda values, timeout=10, write_id=None: False
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: {"1333": "0226"}
         client._log_mapping_snapshot = lambda *args, **kwargs: None
         client.read_status = lambda: {"dhw_setpoint": 55.0, "unit": "C"}
 
@@ -420,7 +443,7 @@ class CoordinatorTests(unittest.TestCase):
             DomesticHotWaterDeviceProfile(),
         )
 
-        self.assertEqual(entity._attr_target_temperature_step, 1.0)
+        self.assertEqual(entity._attr_target_temperature_step, 0.5)
 
         with self.assertRaises(HomeAssistantError):
             asyncio.run(entity.async_set_temperature(temperature=55.5))
