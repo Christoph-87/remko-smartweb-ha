@@ -1,11 +1,13 @@
 # Changelog
 
-## v0.3.10
+## v0.4.1
 - Replace the separate profile, portal, and MQTT diagnostic entities with one compact Diagnostics sensor whose attributes keep the same metadata
 - Remove legacy individual diagnostic entities from Home Assistant's entity registry when setting up the compact Diagnostics sensor
 - Keep Diagnostics sensor attributes dynamic so late-discovered portal metadata appears without recreating entities
 - Restore 0.5 °C target-temperature steps for domestic hot water / RBW water-heater entities
 - Update RBW 302 Pro documentation to reflect user-validated target temperature writes and status updates
+- Poll RBW 302 Pro status through the frontend's direct ESP/Modbus read ranges (`1001`, `1091`, `2001`) instead of relying on app-triggered `HOST2CLIENT` values
+- Add direct ESP/Modbus status polling for KWT and the exposed WPM values, derived from the frontend read chains
 - Parse double-encoded MQTT `Rx` payloads to improve automatic polling for devices that return wrapped JSON responses
 - Replace large warning-level write payloads with structured write logs that include a shared `write_id`, compact response summaries, readback status, fallback reasons, and mismatches
 - Add compact debug poll summaries and one-shot support snapshots for unparseable status responses

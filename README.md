@@ -40,13 +40,13 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 | --- | --- | --- | --- |
 | MXW 204 / 264 / 354 / 524 and MXW-style SmartWeb climate devices | Generic AC (`default_ac_uart`) | Best supported climate path | Climate entity with power, target temperature, HVAC mode, fan mode, swing mode, presets, and switches for Turbo, Sleep / Silent Mode, Bioclean, and Frost Protection |
 | Generic air conditioner names such as `Klima`, `Climate`, `Air Conditioner` | Generic AC (`default_ac_uart`) | Supported when the device uses the same C0 AC UART protocol as MXW | Same as MXW, but device-specific extras still need real-device validation |
-| RBW 302 Pro / domestic hot water / `Brauchwasser` / `Warmwasser` | RBW/DHW (`rbw_modbus`) | User-validated, improving | Water heater entity with 0.5 °C target temperature steps, on/off, and modes `heat`, `auto`, `eco`, `hybrid`, `speed_heating`, and `vacation`; temperature sensors where exposed |
-| KWT 180 - 300 DC | KWT (`kwt_modbus`) | Partially supported | Climate entity with target temperature, power, mode, fan, and swing writes; read-only sensors for mapped diagnostic values |
+| RBW 302 Pro / domestic hot water / `Brauchwasser` / `Warmwasser` | RBW/DHW (`rbw_modbus`) | User-validated, improving | Water heater entity with 0.5 °C target temperature steps, on/off, and modes `heat`, `auto`, `eco`, `hybrid`, `speed_heating`, and `vacation`; direct ESP/Modbus status polling for automatic updates; temperature sensors where exposed |
+| KWT 180 - 300 DC | KWT (`kwt_modbus`) | Partially supported | Climate entity with target temperature, power, mode, fan, and swing writes; direct ESP/Modbus status polling for mapped climate and diagnostic values |
 | LTE / `Luftentfeuchter` dehumidifier devices | LTE (`lte_ac_uart`) | Experimental ESP write support | Sensors for humidity, temperatures, tank/filter/defrost/compressor states, runtime, energy, and errors where exposed; experimental power switch and target humidity number |
 | RKL 495 DC | RKL 495 (`free_ac_uart`) | Experimental ESP write support | Climate entity with experimental ESP `Free_set` UART-frame writes for target temperature, power, supported HVAC modes, fan mode, and swing mode; presets/extras remain disabled |
 | RKL 355 DC | RKL 355 (`nwt_ac_uart`) | Experimental ESP write support | Climate entity with experimental ESP `NWT_set` UART-frame writes for target temperature, power, supported HVAC modes, fan mode, and swing mode; presets/extras remain disabled |
 | BL 264 - 354 DC / BL 353 DC / AUX | BL/AUX AC (`aux_ac_uart`) | Experimental ESP write support | Climate entity with experimental ESP `Aux_set` UART-frame writes for target temperature, power, HVAC mode, fan mode, and swing mode; presets/extras remain disabled |
-| WPM / WPK / WKM / SQW / modular heat pump devices | WPM Heat Pump (`wpm_modbus`) | Experimental diagnostics and ESP write support | Diagnostics sensors plus experimental number/switch entities for mapped setpoints and selected coil values; limited writes for mapped WPM value IDs only |
+| WPM / WPK / WKM / SQW / modular heat pump devices | WPM Heat Pump (`wpm_modbus`) | Experimental diagnostics and ESP read/write support | Diagnostics sensors plus experimental number/switch entities for mapped setpoints and selected coil values; direct ESP/Modbus polling for the exposed mapped values; limited writes for mapped WPM value IDs only |
 | Unknown SmartWeb devices | Diagnostics (`unsupported_or_unknown`) | Needs mapping | Diagnostics-only setup for collecting payloads and value IDs |
 
 ### Development status notes
@@ -55,6 +55,7 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 - RKL, BL/AUX, and NWT-style devices do not use the generic `CLIENT2HOST` value-write path for control in the REMKO frontend. This integration includes a first experimental implementation of the protocol-specific ESP `Tx` UART frames used by `Free_set`, `Aux_set`, and `NWT_set`; real-device validation is still needed.
 - LTE devices use the frontend `LTE_set` ESP `Tx` frame for power and target humidity writes.
 - WPM/WPK/WKM/SQW heat pump devices expose many writable coils/registers in the frontend JavaScript. This integration only exposes a small experimental subset with known SmartWeb value IDs (`4110`, `4113`, `5774`, `1352`, `2179`) and logs every write frame for feedback. Value ID `5734` is currently parsed as read-only unit state because the frontend map does not use it for writes.
+- KWT and WPM status polling uses direct ESP/Modbus read commands derived from the frontend JavaScript. LTE, RKL, BL/AUX, and NWT still use the generic SmartWeb value/status read path unless device-specific logs show that they need the same direct-read treatment.
 
 ## Options
 - Polling interval (seconds)
@@ -84,7 +85,7 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 
 ## Behavior notes
 - Commands are applied **optimistically** to keep the UI responsive; a follow-up status read corrects the state if needed.
-- Domestic hot water / RBW 302 Pro support has been user-validated for target temperature changes and status updates. REMKO cloud readback can still lag behind the physical device by a few seconds, so write confirmation may be reported as pending when only cached status is available.
+- Domestic hot water / RBW 302 Pro support has been user-validated for target temperature changes. Status reads use the same direct ESP/Modbus read ranges as the REMKO frontend (`1001`, `1091`, `2001`) so automatic updates do not depend on opening the REMKO app. REMKO cloud readback can still lag behind the physical device by a few seconds, so write confirmation may be reported as pending when only cached status is available.
 - MXW-style climate extra switches are experimental. Turbo has been validated by users; LED Display is intentionally not exposed as a switch because the SmartWeb frontend does not map it back into the generic MXW write command.
 - DHW/RBW writes use structured log lines with a shared `write_id`, compact response summaries, readback status, fallback reasons, and mismatches so testers can report useful feedback without a separate MQTT capture.
 - RKL / BL / AUX / NWT climate writes are experimental and use protocol-specific ESP `Tx` UART frames instead of generic `CLIENT2HOST` value writes. If a command fails or behaves differently than the REMKO app, share the `REMKO SmartWeb experimental AC UART write` log lines with the shared `write_id` and the Diagnostics sensor attributes.

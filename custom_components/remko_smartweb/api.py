@@ -96,6 +96,18 @@ RBW_MODE_REGISTER_VALUES = {
     0x0B: 4,  # speed heating / high demand
     0x0C: 7,  # vacation
 }
+RBW_REGISTER_MODE_VALUES = {
+    0: "auto",
+    2: "eco",
+    3: "hybrid",
+    4: "speed_heating",
+    7: "vacation",
+}
+RBW_READ_RANGES = (
+    (1001, 90),
+    (1091, 90),
+    (2001, 90),
+)
 KWT_VALUE_WRITE_REGISTERS = {
     # SmartWeb value id: (Modbus register, converter)
     # Matches docs/lib.ac.uart.js KWT_convertDataForImport + KWT_setStatus.
@@ -123,6 +135,40 @@ KWT_SWING_REGISTER_VALUES = {
     0x00: 0,  # off / default
     0x04: 1,  # swing on
 }
+KWT_REGISTER_MODE_VALUES = {
+    0: 0x03,  # auto
+    1: 0x06,  # heat
+    2: 0x04,  # cool
+    3: 0x07,  # fan only
+    4: 0x05,  # dry
+}
+KWT_REGISTER_FAN_VALUES = {
+    0: 0x02,  # auto
+    1: 0x03,  # low
+    2: 0x04,  # medium
+    3: 0x05,  # high
+    4: 0x0D,  # boost
+}
+KWT_READ_RANGES = (
+    (10000, 3),
+    (10010, 1),
+    (10015, 2),
+    (10020, 1),
+    (13000, 1),
+    (11000, 1),
+    (11001, 1),
+    (11004, 1),
+    (11010, 1),
+    (200, 1),
+    (198, 1),
+    (199, 1),
+)
+WPM_READ_RANGES = (
+    (1, 1, 62),
+    (1, 71, 171),
+    (3, 1, 100),
+    (3, 401, 16),
+)
 
 
 def _value_query_list(extra_ids=()) -> list[int]:
@@ -624,6 +670,88 @@ def _build_status_cmd() -> str:
     return "".join(f"{b:02X}" for b in packet)
 
 
+def _build_rbw_get_status_cmd(register: int, quantity: int = 90) -> str | None:
+    """Build the RBW raw Modbus read Tx used by RBW_query_* in the frontend."""
+    if not 0 <= register <= 0xFFFF or not 1 <= quantity <= 0xFF:
+        return None
+    cmd = [
+        0x63,
+        0x03,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        quantity & 0xFF,
+    ]
+    return "".join(f"{b:02X}" for b in cmd)
+
+
+def _parse_rbw_registers_rx(rx_hex: str | None) -> dict[int, int] | None:
+    if not rx_hex:
+        return None
+    text = str(rx_hex).strip()
+    if len(text) < 10 or len(text) % 2:
+        return None
+    try:
+        data = [int(text[index : index + 2], 16) for index in range(0, len(text), 2)]
+    except Exception:
+        return None
+    if len(data) < 5 or data[0] != 0x63 or data[1] != 0x03:
+        return None
+    start_register = (data[2] << 8) | data[3]
+    quantity = data[4]
+    values = {}
+    for offset in range(quantity):
+        value_index = 5 + (offset * 2)
+        if value_index + 1 >= len(data):
+            break
+        values[start_register + offset] = (data[value_index] << 8) | data[value_index + 1]
+    return values or None
+
+
+def _rbw_temp1(value: int | None) -> float | None:
+    if value is None or value == 0:
+        return None
+    temperature = (value - 60) * 0.5
+    if -50 <= temperature <= 120:
+        return temperature
+    return None
+
+
+def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
+    if not registers:
+        return None
+    dhw_setpoint = _rbw_temp1(registers.get(1104))
+    dhw_top = _rbw_temp1(registers.get(2021))
+    dhw_bottom = _rbw_temp1(registers.get(2020))
+    dhw_ambient = _rbw_temp1(registers.get(2019))
+    dhw_mode = RBW_REGISTER_MODE_VALUES.get(registers.get(1012))
+    power_register = registers.get(1011)
+
+    status = {}
+    if dhw_setpoint is not None:
+        status["dhw_setpoint"] = dhw_setpoint
+        status["setpoint"] = dhw_setpoint
+        status["mode"] = "heat"
+    if dhw_top is not None:
+        status["dhw_top_temperature"] = dhw_top
+        status["room"] = dhw_top
+    if dhw_bottom is not None:
+        status["dhw_bottom_temperature"] = dhw_bottom
+    if dhw_ambient is not None:
+        status["dhw_ambient_temperature"] = dhw_ambient
+    if dhw_mode is not None:
+        status["dhw_mode"] = dhw_mode
+        status["mode"] = dhw_mode
+    if power_register is not None:
+        status["dhw_power_state"] = "on" if power_register == 1 else "off"
+        status["power"] = "ON" if power_register == 1 else "OFF"
+    if status.get("power") is None and status:
+        status["power"] = "ON"
+    if status:
+        status["unit"] = "C"
+        return status
+    return None
+
+
 def _build_rbw_set_cmd(value_id: str, value_hex: str) -> str | None:
     """Build the RBW/KWT-style raw Modbus Tx used by the SmartWeb frontend."""
     spec = RBW_VALUE_WRITE_REGISTERS.get(str(value_id))
@@ -688,6 +816,139 @@ def _build_modbus_write_register_cmd(addr: int, register: int, value: int) -> st
     crc = _modbus_crc16(cmd)
     cmd.extend([crc & 0x00FF, (crc & 0xFF00) >> 8])
     return "".join(f"{b:02X}" for b in cmd)
+
+
+def _build_modbus_read_cmd(addr: int, function_code: int, register: int, quantity: int) -> str | None:
+    if function_code not in (1, 3):
+        return None
+    if not 0 <= register <= 0xFFFF or not 1 <= quantity <= 0xFFFF:
+        return None
+    cmd = [
+        addr & 0xFF,
+        function_code & 0xFF,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        (quantity & 0xFF00) >> 8,
+        quantity & 0x00FF,
+    ]
+    crc = _modbus_crc16(cmd)
+    cmd.extend([crc & 0x00FF, (crc & 0xFF00) >> 8])
+    return "".join(f"{b:02X}" for b in cmd)
+
+
+def _parse_modbus_holding_rx(rx_hex: str | None, start_register: int) -> dict[int, int] | None:
+    if not rx_hex:
+        return None
+    text = str(rx_hex).strip()
+    if len(text) < 10 or len(text) % 2:
+        return None
+    try:
+        data = [int(text[index : index + 2], 16) for index in range(0, len(text), 2)]
+    except Exception:
+        return None
+    if len(data) < 5 or data[1] != 0x03:
+        return None
+    byte_count = data[2]
+    if byte_count <= 0:
+        return None
+    values = {}
+    for offset in range(byte_count // 2):
+        value_index = 3 + (offset * 2)
+        if value_index + 1 >= len(data) - 2:
+            break
+        raw = (data[value_index] << 8) | data[value_index + 1]
+        if raw > 0x7FFF:
+            raw -= 0x10000
+        values[start_register + offset] = raw
+    return values or None
+
+
+def _parse_modbus_coils_rx(rx_hex: str | None, start_register: int, quantity: int) -> dict[int, int] | None:
+    if not rx_hex:
+        return None
+    text = str(rx_hex).strip()
+    if len(text) < 8 or len(text) % 2:
+        return None
+    try:
+        data = [int(text[index : index + 2], 16) for index in range(0, len(text), 2)]
+    except Exception:
+        return None
+    if len(data) < 5 or data[1] != 0x01:
+        return None
+    byte_count = data[2]
+    values = {}
+    for offset in range(quantity):
+        byte_index = 3 + (offset // 8)
+        if byte_index >= 3 + byte_count or byte_index >= len(data) - 2:
+            break
+        values[start_register + offset] = 1 if data[byte_index] & (1 << (offset % 8)) else 0
+    return values or None
+
+
+def _hex_byte(value: int | None) -> str | None:
+    if value is None:
+        return None
+    return f"{max(0, min(0xFF, int(value))):02X}"
+
+
+def _hex_word(value: int | None) -> str | None:
+    if value is None:
+        return None
+    return f"{int(value) & 0xFFFF:04X}"
+
+
+def _parse_kwt_register_status(registers: dict[int, int]) -> dict[str, str] | None:
+    if not registers:
+        return None
+    values = {}
+    power = registers.get(10000)
+    if power is not None:
+        values["1194"] = "01" if power == 1 else "02"
+    mode = KWT_REGISTER_MODE_VALUES.get(registers.get(10001))
+    if mode is not None:
+        values["1192"] = f"{mode:02X}"
+    fan = KWT_REGISTER_FAN_VALUES.get(registers.get(10002))
+    if fan is not None:
+        values["1191"] = f"{fan:02X}"
+    setpoint = registers.get(10010)
+    if setpoint is not None:
+        values["1190"] = f"{round((setpoint / 10) * 2):02X}"
+    swing = registers.get(10020)
+    if swing is not None:
+        values["1193"] = "04" if swing else "00"
+    room = registers.get(11010)
+    if room is not None:
+        values["5530"] = f"{round((room / 10) * 2 + 40):02X}"
+    for value_id, register in (
+        ("5000", 11000),
+        ("5315", 198),
+        ("5534", 199),
+    ):
+        encoded = _hex_word(registers.get(register))
+        if encoded is not None:
+            values[value_id] = encoded
+    return values or None
+
+
+def _parse_wpm_register_status(coils: dict[int, int], holding: dict[int, int]) -> dict[str, str] | None:
+    values = {}
+    for value_id, register in (
+        ("5734", 47),
+        ("4110", 73),
+        ("4113", 82),
+    ):
+        encoded = _hex_byte(coils.get(register))
+        if encoded is not None:
+            values[value_id] = encoded
+    for value_id, register in (
+        ("5774", 50),
+        ("1352", 415),
+        ("2179", 416),
+    ):
+        encoded = _hex_word(holding.get(register))
+        if encoded is not None:
+            values[value_id] = encoded
+    return values or None
 
 
 def _build_kwt_set_cmd(value_id: str, value_hex: str) -> str | None:
@@ -2042,11 +2303,143 @@ class RemkoSmartWebClient:
             safe_diagnostics,
         )
 
+    def _read_status_rbw_modbus(self, started: float) -> dict | None:
+        """Read RBW 302 Pro status through the frontend's direct ESP Modbus path."""
+        registers: dict[int, int] = {}
+        responses = {}
+        for register, quantity in RBW_READ_RANGES:
+            tx = _build_rbw_get_status_cmd(register, quantity)
+            if tx is None:
+                continue
+            payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
+            resp = self._mqtt_roundtrip_esp(payload, timeout=10)
+            responses[str(register)] = resp
+            obj = _json_loads_maybe_wrapped(resp) if resp else None
+            rx_hex = obj.get("Rx") if isinstance(obj, dict) else None
+            parsed_registers = _parse_rbw_registers_rx(rx_hex)
+            if parsed_registers:
+                registers.update(parsed_registers)
+                continue
+            self._log_unsupported_payload(
+                f"rbw_esp_{register}",
+                esp_response=resp,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+
+        parsed = _parse_rbw_register_status(registers)
+        if not parsed:
+            self._log_unsupported_payload(
+                "rbw_esp_status",
+                esp_responses=responses,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+            return None
+        self._last_status = parsed
+        self._last_status_source = "rbw_esp"
+        self._log_poll_summary("rbw_esp", parsed=parsed, duration=time.monotonic() - started)
+        return parsed
+
+    def _read_status_kwt_modbus(self, started: float) -> dict | None:
+        """Read KWT status through the frontend's direct ESP Modbus path."""
+        registers: dict[int, int] = {}
+        responses = {}
+        for register, quantity in KWT_READ_RANGES:
+            tx = _build_modbus_read_cmd(1, 3, register, quantity)
+            if tx is None:
+                continue
+            payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
+            resp = self._mqtt_roundtrip_esp(payload, timeout=10)
+            responses[str(register)] = resp
+            obj = _json_loads_maybe_wrapped(resp) if resp else None
+            rx_hex = obj.get("Rx") if isinstance(obj, dict) else None
+            parsed_registers = _parse_modbus_holding_rx(rx_hex, register)
+            if parsed_registers:
+                registers.update(parsed_registers)
+                continue
+            self._log_unsupported_payload(
+                f"kwt_esp_{register}",
+                esp_response=resp,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+
+        values = _parse_kwt_register_status(registers)
+        parsed = self.profile.parse_values_status(values) if values else None
+        if not parsed:
+            self._log_unsupported_payload(
+                "kwt_esp_status",
+                esp_responses=responses,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+            return None
+        self._last_status = parsed
+        self._last_status_source = "kwt_esp"
+        self._log_poll_summary("kwt_esp", parsed=parsed, values=values, duration=time.monotonic() - started)
+        return parsed
+
+    def _read_status_wpm_modbus(self, started: float) -> dict | None:
+        """Read WPM status through the frontend's direct ESP Modbus path."""
+        coils: dict[int, int] = {}
+        holding: dict[int, int] = {}
+        responses = {}
+        for function_code, register, quantity in WPM_READ_RANGES:
+            tx = _build_modbus_read_cmd(1, function_code, register, quantity)
+            if tx is None:
+                continue
+            payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
+            resp = self._mqtt_roundtrip_esp(payload, timeout=10)
+            responses[f"{function_code}:{register}"] = resp
+            obj = _json_loads_maybe_wrapped(resp) if resp else None
+            rx_hex = obj.get("Rx") if isinstance(obj, dict) else None
+            parsed_values = (
+                _parse_modbus_coils_rx(rx_hex, register, quantity)
+                if function_code == 1
+                else _parse_modbus_holding_rx(rx_hex, register)
+            )
+            if parsed_values:
+                if function_code == 1:
+                    coils.update(parsed_values)
+                else:
+                    holding.update(parsed_values)
+                continue
+            self._log_unsupported_payload(
+                f"wpm_esp_{function_code}_{register}",
+                esp_response=resp,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+
+        values = _parse_wpm_register_status(coils, holding)
+        parsed = self.profile.parse_values_status(values) if values else None
+        if not parsed:
+            self._log_unsupported_payload(
+                "wpm_esp_status",
+                esp_responses=responses,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+            return None
+        self._last_status = parsed
+        self._last_status_source = "wpm_esp"
+        self._log_poll_summary("wpm_esp", parsed=parsed, values=values, duration=time.monotonic() - started)
+        return parsed
+
     def read_status(self) -> dict:
         started = time.monotonic()
         self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
+        protocol_name = getattr(self.profile, "protocol_name", "")
+        if protocol_name == "rbw_modbus":
+            parsed_rbw = self._read_status_rbw_modbus(started)
+            if parsed_rbw:
+                return parsed_rbw
+        elif protocol_name == "kwt_modbus":
+            parsed_kwt = self._read_status_kwt_modbus(started)
+            if parsed_kwt:
+                return parsed_kwt
+        elif protocol_name == "wpm_modbus":
+            parsed_wpm = self._read_status_wpm_modbus(started)
+            if parsed_wpm:
+                return parsed_wpm
+
         tx = _build_status_cmd()
         payload = {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"}
         resp = self._mqtt_roundtrip_esp(payload, timeout=10)

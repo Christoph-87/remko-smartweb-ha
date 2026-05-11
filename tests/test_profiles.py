@@ -31,7 +31,9 @@ from custom_components.remko_smartweb.api import (
     _build_ac_uart_set_cmds,
     _build_kwt_set_cmd,
     _build_lte_set_cmd,
+    _build_modbus_read_cmd,
     _build_mqtt_topic,
+    _build_rbw_get_status_cmd,
     _build_rbw_set_cmd,
     _build_wpm_set_cmd,
     _extract_device_metadata_from_text,
@@ -40,6 +42,12 @@ from custom_components.remko_smartweb.api import (
     _extract_sid_sk_from_url,
     _extract_smt_user_from_text,
     _extract_smt_user_from_url,
+    _parse_rbw_register_status,
+    _parse_rbw_registers_rx,
+    _parse_kwt_register_status,
+    _parse_modbus_coils_rx,
+    _parse_modbus_holding_rx,
+    _parse_wpm_register_status,
     _value_query_list,
 )
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW, DEVICE_KIND_DIAGNOSTICS
@@ -56,6 +64,33 @@ from custom_components.remko_smartweb.profiles.value_mapping import ValueWriteSp
 CLIMATE_C0_RX = (
     "aa000000000000000000c00146667f7f0030000000646400000000000000000000"
 )
+
+
+def _rbw_rx(start: int, quantity: int, values: dict[int, int]) -> str:
+    data = [0x63, 0x03, (start & 0xFF00) >> 8, start & 0x00FF, quantity & 0xFF]
+    for offset in range(quantity):
+        value = values.get(start + offset, 0)
+        data.extend([(value & 0xFF00) >> 8, value & 0x00FF])
+    return "".join(f"{byte:02X}" for byte in data)
+
+
+def _modbus_holding_rx(start: int, quantity: int, values: dict[int, int]) -> str:
+    payload = []
+    for offset in range(quantity):
+        value = values.get(start + offset, 0) & 0xFFFF
+        payload.extend([(value & 0xFF00) >> 8, value & 0x00FF])
+    data = [0x01, 0x03, len(payload), *payload]
+    return "".join(f"{byte:02X}" for byte in data) + "0000"
+
+
+def _modbus_coils_rx(start: int, quantity: int, values: dict[int, int]) -> str:
+    payload = [0] * ((quantity + 7) // 8)
+    for register, value in values.items():
+        offset = register - start
+        if 0 <= offset < quantity and value:
+            payload[offset // 8] |= 1 << (offset % 8)
+    data = [0x01, 0x01, len(payload), *payload]
+    return "".join(f"{byte:02X}" for byte in data) + "0000"
 
 
 class ProfileParsingTests(unittest.TestCase):
@@ -138,6 +173,33 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_build_rbw_set_cmd("1192", "09"), "631003F4010002")
         self.assertIsNone(_build_rbw_set_cmd("1192", "06"))
 
+    def test_build_rbw_get_status_cmd_uses_frontend_read_ranges(self):
+        self.assertEqual(_build_rbw_get_status_cmd(1001), "630303E95A")
+        self.assertEqual(_build_rbw_get_status_cmd(1091), "630304435A")
+        self.assertEqual(_build_rbw_get_status_cmd(2001), "630307D15A")
+
+    def test_rbw_direct_modbus_status_parses_frontend_read_ranges(self):
+        registers = {}
+        for rx in (
+            _rbw_rx(1001, 90, {1011: 1, 1012: 2}),
+            _rbw_rx(1091, 90, {1104: 170}),
+            _rbw_rx(2001, 90, {2019: 102, 2020: 160, 2021: 166}),
+        ):
+            registers.update(_parse_rbw_registers_rx(rx))
+
+        status = _parse_rbw_register_status(registers)
+
+        self.assertEqual(status["dhw_power_state"], "on")
+        self.assertEqual(status["power"], "ON")
+        self.assertEqual(status["dhw_mode"], "eco")
+        self.assertEqual(status["mode"], "eco")
+        self.assertEqual(status["dhw_setpoint"], 55.0)
+        self.assertEqual(status["setpoint"], 55.0)
+        self.assertEqual(status["dhw_ambient_temperature"], 21.0)
+        self.assertEqual(status["dhw_bottom_temperature"], 50.0)
+        self.assertEqual(status["dhw_top_temperature"], 53.0)
+        self.assertEqual(status["room"], 53.0)
+
     def test_build_kwt_set_cmd_uses_frontend_modbus_conversion(self):
         self.assertEqual(_build_kwt_set_cmd("1190", "2B"), "0110271A00010200D7B336")
         self.assertEqual(_build_kwt_set_cmd("1194", "01"), "0110271000010200013202")
@@ -145,6 +207,57 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_build_kwt_set_cmd("1192", "06"), "01102711000102000133D3")
         self.assertEqual(_build_kwt_set_cmd("1191", "04"), "01102712000102000273E1")
         self.assertEqual(_build_kwt_set_cmd("1193", "04"), "0110272400010200013676")
+
+    def test_build_modbus_read_cmd_uses_frontend_modbus_read_format(self):
+        self.assertEqual(_build_modbus_read_cmd(1, 3, 10000, 3), "0103271000030EBA")
+        self.assertEqual(_build_modbus_read_cmd(1, 3, 10010, 1), "0103271A0001AF79")
+        self.assertEqual(_build_modbus_read_cmd(1, 1, 1, 62), "01010001003EEC1A")
+
+    def test_kwt_direct_modbus_status_converts_to_smartweb_values(self):
+        registers = {}
+        registers.update(_parse_modbus_holding_rx(_modbus_holding_rx(10000, 3, {10000: 1, 10001: 2, 10002: 2}), 10000))
+        registers.update(_parse_modbus_holding_rx(_modbus_holding_rx(10010, 1, {10010: 215}), 10010))
+        registers.update(_parse_modbus_holding_rx(_modbus_holding_rx(10020, 1, {10020: 1}), 10020))
+        registers.update(_parse_modbus_holding_rx(_modbus_holding_rx(11010, 1, {11010: 255}), 11010))
+
+        values = _parse_kwt_register_status(registers)
+        status = KwtDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(values["1194"], "01")
+        self.assertEqual(values["1192"], "04")
+        self.assertEqual(values["1191"], "04")
+        self.assertEqual(values["1190"], "2B")
+        self.assertEqual(values["1193"], "04")
+        self.assertEqual(values["5530"], "5B")
+        self.assertEqual(status["power"], "ON")
+        self.assertEqual(status["mode"], "cool")
+        self.assertEqual(status["fan"], "medium")
+        self.assertEqual(status["setpoint"], 21.5)
+        self.assertEqual(status["room"], 25.5)
+
+    def test_wpm_direct_modbus_status_converts_to_smartweb_values(self):
+        coils = {}
+        holding = {}
+        coils.update(_parse_modbus_coils_rx(_modbus_coils_rx(1, 62, {47: 1}), 1, 62))
+        coils.update(_parse_modbus_coils_rx(_modbus_coils_rx(71, 171, {73: 1, 82: 1}), 71, 171))
+        holding.update(_parse_modbus_holding_rx(_modbus_holding_rx(1, 100, {50: 42}), 1))
+        holding.update(_parse_modbus_holding_rx(_modbus_holding_rx(401, 16, {415: 45, 416: 48}), 401))
+
+        values = _parse_wpm_register_status(coils, holding)
+        status = WpmDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(values["5734"], "01")
+        self.assertEqual(values["4110"], "01")
+        self.assertEqual(values["4113"], "01")
+        self.assertEqual(values["5774"], "002A")
+        self.assertEqual(values["1352"], "002D")
+        self.assertEqual(values["2179"], "0030")
+        self.assertEqual(status["wpm_unit_on"], 1)
+        self.assertEqual(status["wpm_heat_cool_mode"], 1)
+        self.assertEqual(status["wpm_manual_defrost"], 1)
+        self.assertEqual(status["wpm_target_temperature"], 42)
+        self.assertEqual(status["wpm_setpoint_ch"], 45)
+        self.assertEqual(status["wpm_setpoint_hp"], 48)
 
     def test_build_ac_uart_set_cmds_use_frontend_esp_protocols(self):
         current = {
