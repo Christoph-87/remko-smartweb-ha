@@ -38,6 +38,10 @@ class SensorDeviceClass:
     HUMIDITY = "humidity"
 
 
+class SensorStateClass:
+    MEASUREMENT = "measurement"
+
+
 class CoordinatorEntity:
     def __init__(self, coordinator):
         self.coordinator = coordinator
@@ -85,6 +89,7 @@ def async_get_entity_registry(hass):
 
 ha_sensor.SensorEntity = SensorEntity
 ha_sensor.SensorDeviceClass = SensorDeviceClass
+ha_sensor.SensorStateClass = SensorStateClass
 ha_core.HomeAssistant = HomeAssistant
 ha_config_entries.ConfigEntry = ConfigEntry
 ha_entity.DeviceInfo = DeviceInfo
@@ -107,6 +112,7 @@ sys.modules.setdefault("homeassistant.const", ha_const)
 
 sys.modules["homeassistant.components.sensor"].SensorEntity = SensorEntity
 sys.modules["homeassistant.components.sensor"].SensorDeviceClass = SensorDeviceClass
+sys.modules["homeassistant.components.sensor"].SensorStateClass = SensorStateClass
 sys.modules["homeassistant.core"].HomeAssistant = HomeAssistant
 sys.modules["homeassistant.config_entries"].ConfigEntry = ConfigEntry
 sys.modules["homeassistant.helpers.entity"].DeviceInfo = DeviceInfo
