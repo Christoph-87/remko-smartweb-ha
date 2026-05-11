@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 from homeassistant import config_entries
 
@@ -24,6 +26,8 @@ from .const import (
 )
 from .api import RemkoSmartWebClient
 from .profiles import looks_like_dhw_name
+
+_LOGGER = logging.getLogger(__name__)
 
 DEVICE_KIND_OPTIONS = {
     DEVICE_KIND_AUTO: "Auto-detect",
@@ -158,7 +162,8 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             return await self.hass.async_add_executor_job(_check)
-        except Exception:
+        except Exception as err:
+            _LOGGER.warning("Credential validation failed: %s", err)
             return False
 
     async def _async_fetch_devices(self, data):
@@ -177,7 +182,8 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             device_map = await self.hass.async_add_executor_job(_fetch)
             return True, device_map
-        except Exception:
+        except Exception as err:
+            _LOGGER.warning("Device list fetch failed: %s", err)
             return False, {}
 
     def _get_entries(self):

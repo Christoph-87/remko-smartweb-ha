@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
@@ -39,12 +39,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
     async_add_entities(entities)
 
-
-def _diagnostic_sensor_values(client):
-    for name, value in client.diagnostic_metadata().items():
-        if value in (None, ""):
-            continue
-        yield name.lower().replace(" ", "_"), name, value
 
 
 def _remove_legacy_diagnostic_entities(hass: HomeAssistant, device_name: str) -> None:
@@ -89,6 +83,12 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.TEMPERATURE
         if self._kind == "percentage":
             return SensorDeviceClass.HUMIDITY
+        return None
+
+    @property
+    def state_class(self):
+        if self._kind in ("temperature", "percentage"):
+            return SensorStateClass.MEASUREMENT
         return None
 
     @property

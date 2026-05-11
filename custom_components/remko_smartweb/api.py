@@ -14,7 +14,14 @@ import requests
 import paho.mqtt.client as mqtt
 
 from .const import DEVICE_KIND_AUTO
-from .profiles import get_parser_profile, get_specialized_profile
+from .profiles import (
+    DomesticHotWaterDeviceProfile,
+    KwtDeviceProfile,
+    LteDeviceProfile,
+    WpmDeviceProfile,
+    get_parser_profile,
+    get_specialized_profile,
+)
 
 BASE = "https://smartweb.remko.media"
 LOGIN_URL = f"{BASE}/rest/login_do"
@@ -1426,30 +1433,33 @@ class _MqttSession:
 
     def _on_message(self, client, userdata, msg):
         try:
-            text = msg.payload.decode("utf-8", errors="replace")
-        except Exception:
-            text = repr(msg.payload)
-        summary = _mqtt_message_summary(msg.topic, text)
-        with self._cond:
-            if summary.get("kind") == "tx_echo":
-                self._last_tx_echo = summary
-            else:
-                self._received_non_tx_count += 1
-                self._recent_messages.append(summary)
-            # Rx hex for ESP status
-            obj = _json_loads_maybe_wrapped(text)
-            if isinstance(obj, dict):
-                if obj.get("Rx"):
-                    self._last_rx = json.dumps(obj)
+            try:
+                text = msg.payload.decode("utf-8", errors="replace")
+            except Exception:
+                text = repr(msg.payload)
+            summary = _mqtt_message_summary(msg.topic, text)
+            with self._cond:
+                if summary.get("kind") == "tx_echo":
+                    self._last_tx_echo = summary
+                else:
+                    self._received_non_tx_count += 1
+                    self._recent_messages.append(summary)
+                # Rx hex for ESP status
+                obj = _json_loads_maybe_wrapped(text)
+                if isinstance(obj, dict):
+                    if obj.get("Rx"):
+                        self._last_rx = json.dumps(obj)
+                        self._cond.notify_all()
+                    smt_user = obj.get("SMT_USER")
+                    if str(smt_user or "").isdigit():
+                        self._last_smt_user = int(smt_user)
+                values = _extract_values_from_payload(text)
+                if isinstance(values, dict) and str(msg.topic).endswith("/HOST2CLIENT"):
+                    self._last_values = values
+                    self._last_seen_values = values
                     self._cond.notify_all()
-                smt_user = obj.get("SMT_USER")
-                if str(smt_user or "").isdigit():
-                    self._last_smt_user = int(smt_user)
-            values = _extract_values_from_payload(text)
-            if isinstance(values, dict) and str(msg.topic).endswith("/HOST2CLIENT"):
-                self._last_values = values
-                self._last_seen_values = values
-                self._cond.notify_all()
+        except Exception:
+            _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
         self._connected.wait(timeout=timeout)
@@ -2689,8 +2699,7 @@ class RemkoSmartWebClient:
         self._ensure_device()
         self._ensure_mqtt()
         write_id = f"{random.getrandbits(24):06x}"
-        profile_name = type(self.profile).__name__
-        if profile_name == "DomesticHotWaterDeviceProfile":
+        if isinstance(self.profile, DomesticHotWaterDeviceProfile):
             if self._mqtt_write_rbw_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:
@@ -2759,7 +2768,7 @@ class RemkoSmartWebClient:
                             }
                         ),
                     )
-        elif profile_name == "KwtDeviceProfile":
+        elif isinstance(self.profile, KwtDeviceProfile):
             if self._mqtt_write_kwt_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:
@@ -2806,7 +2815,7 @@ class RemkoSmartWebClient:
                             }
                         ),
                     )
-        elif profile_name == "LteDeviceProfile":
+        elif isinstance(self.profile, LteDeviceProfile):
             if self._mqtt_write_lte_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:
@@ -2836,7 +2845,7 @@ class RemkoSmartWebClient:
                         ),
                     )
                 return
-        elif profile_name == "WpmDeviceProfile":
+        elif isinstance(self.profile, WpmDeviceProfile):
             if self._mqtt_write_wpm_esp_values(values, timeout=10, write_id=write_id):
                 time.sleep(1.0)
                 try:

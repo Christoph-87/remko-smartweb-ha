@@ -19,7 +19,7 @@ from .const import (
     PLATFORMS,
 )
 from .coordinator import RemkoSmartWebCoordinator
-from .profiles import get_device_profile
+from .profiles import AutoDetectDeviceProfile, get_device_profile
 
 _LOGGER = logging.getLogger(__name__)
 ACCOUNT_DATA = "accounts"
@@ -99,7 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     device_profile = get_device_profile(device_name, coordinator.data, device_kind)
-    if device_kind == DEVICE_KIND_AUTO and type(client.profile).__name__ != "AutoDetectDeviceProfile":
+    if device_kind == DEVICE_KIND_AUTO and not isinstance(client.profile, AutoDetectDeviceProfile):
         device_profile = client.profile
 
     hass.data[DOMAIN][entry.entry_id] = {
