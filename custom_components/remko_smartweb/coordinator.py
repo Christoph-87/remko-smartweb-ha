@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from datetime import timedelta
 import logging
 
@@ -30,6 +31,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         self._failure_count = 0
         self._store = Store(hass, CACHE_VERSION, f"{DOMAIN}_{entry_id}_last_state")
         self._last_saved_data = None
+        self._field_value_update_times: dict[str, str] = {}
         super().__init__(
             hass,
             _LOGGER,
@@ -70,9 +72,37 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
             )
         self.update_interval = timedelta(seconds=interval)
 
+    def _merge_with_last_valid_data(self, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+        if not isinstance(self.data, dict):
+            return data
+        merged = dict(self.data)
+        for key, value in data.items():
+            if value is None and key in merged:
+                continue
+            merged[key] = value
+        return merged
+
+    def _update_value_timestamps(self, data: dict) -> None:
+        if not isinstance(data, dict):
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        old_data = self.data if isinstance(self.data, dict) else {}
+        for key, value in data.items():
+            if key.startswith("_") or value is None:
+                continue
+            if key not in self._field_value_update_times or old_data.get(key) != value:
+                self._field_value_update_times[key] = now
+
+    def last_value_update_time(self, key: str) -> str | None:
+        return self._field_value_update_times.get(key)
+
     async def _async_update_data(self) -> dict:
         try:
             data = await self.hass.async_add_executor_job(self.client.read_status)
+            data = self._merge_with_last_valid_data(data)
+            self._update_value_timestamps(data)
             self._reset_backoff()
             await self._async_save_last_known_data(data)
             return data

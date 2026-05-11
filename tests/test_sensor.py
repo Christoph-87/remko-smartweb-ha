@@ -120,6 +120,7 @@ from custom_components.remko_smartweb.const import DOMAIN
 from custom_components.remko_smartweb.sensor import (
     LEGACY_DIAGNOSTIC_KEYS,
     RemkoSmartWebDiagnosticSensor,
+    RemkoSmartWebSensor,
     async_setup_entry,
 )
 
@@ -143,6 +144,32 @@ class MutableDiagnosticClient:
 
 
 class SensorSetupTests(unittest.TestCase):
+    def test_regular_sensor_exposes_last_successful_value_update_attribute(self):
+        hass = HomeAssistant()
+
+        class Coordinator:
+            data = {"room": 21.5, "unit": "C"}
+
+            def __init__(self):
+                self.hass = hass
+
+            def last_value_update_time(self, key):
+                return "2026-05-11T10:00:00+00:00" if key == "room" else None
+
+        sensor = RemkoSmartWebSensor(
+            Coordinator(),
+            "SmartWeb",
+            "room",
+            "Room Temperature",
+            "temperature",
+        )
+
+        self.assertEqual(sensor.native_value, 21.5)
+        self.assertEqual(
+            sensor.extra_state_attributes,
+            {"last_successful_value_update": "2026-05-11T10:00:00+00:00"},
+        )
+
     def test_setup_adds_single_diagnostic_sensor_with_dynamic_attributes(self):
         hass = HomeAssistant()
         entry = ConfigEntry()

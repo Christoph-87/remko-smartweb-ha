@@ -85,6 +85,8 @@ Support depends on the SmartWeb device type and the protocol used by the REMKO f
 
 ## Behavior notes
 - Commands are applied **optimistically** to keep the UI responsive; a follow-up status read corrects the state if needed.
+- Partial status reads are merged with the previous state: missing or `null` fields keep their last valid value.
+- Regular sensors expose a `last_successful_value_update` attribute that records when this specific field last received a valid new value.
 - Domestic hot water / RBW 302 Pro support has been user-validated for target temperature changes. Status reads use the same direct ESP/Modbus read ranges as the REMKO frontend (`1001`, `1091`, `2001`) so automatic updates do not depend on opening the REMKO app. REMKO cloud readback can still lag behind the physical device by a few seconds, so write confirmation may be reported as pending when only cached status is available.
 - MXW-style climate extra switches are experimental. Turbo has been validated by users; LED Display is intentionally not exposed as a switch because the SmartWeb frontend does not map it back into the generic MXW write command.
 - DHW/RBW writes use structured log lines with a shared `write_id`, compact response summaries, readback status, fallback reasons, and mismatches so testers can report useful feedback without a separate MQTT capture.

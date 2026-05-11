@@ -91,6 +91,16 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.HUMIDITY
         return None
 
+    @property
+    def extra_state_attributes(self):
+        getter = getattr(self.coordinator, "last_value_update_time", None)
+        if not callable(getter):
+            return None
+        updated_at = getter(self._key)
+        if not updated_at:
+            return None
+        return {"last_successful_value_update": updated_at}
+
 
 class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, client, device_name: str):

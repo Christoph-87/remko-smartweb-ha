@@ -180,6 +180,20 @@ class BootstrapClient(FailingClient):
         return {"unit": "C", "_status_pending": True}
 
 
+class SequencedClient:
+    def __init__(self, responses):
+        self.responses = deque(responses)
+
+    def read_status(self):
+        response = self.responses.popleft()
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    def initial_status_if_supported(self):
+        return None
+
+
 class FakeMqtt:
     def __init__(self, response_values=None):
         self.response_values = response_values
@@ -247,6 +261,66 @@ class CoordinatorTests(unittest.TestCase):
         data = asyncio.run(coordinator._async_update_data())
 
         self.assertEqual(data, {"unit": "C", "_status_pending": True})
+
+    def test_tracks_last_successful_value_update_per_changed_field(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            SequencedClient(
+                [
+                    {"room": 21.0, "setpoint": 22.0, "unit": "C"},
+                    {"room": 21.0, "setpoint": 23.0, "unit": "C"},
+                    {"room": None, "setpoint": 23.0, "unit": "C"},
+                ]
+            ),
+            entry_id="entry",
+            scan_interval=30,
+        )
+
+        first = asyncio.run(coordinator._async_update_data())
+        coordinator.async_set_updated_data(first)
+        first_room_update = coordinator.last_value_update_time("room")
+        first_setpoint_update = coordinator.last_value_update_time("setpoint")
+
+        second = asyncio.run(coordinator._async_update_data())
+        coordinator.async_set_updated_data(second)
+        second_room_update = coordinator.last_value_update_time("room")
+        second_setpoint_update = coordinator.last_value_update_time("setpoint")
+
+        third = asyncio.run(coordinator._async_update_data())
+        coordinator.async_set_updated_data(third)
+
+        self.assertIsNotNone(first_room_update)
+        self.assertEqual(second_room_update, first_room_update)
+        self.assertNotEqual(second_setpoint_update, first_setpoint_update)
+        self.assertEqual(third["room"], 21.0)
+        self.assertEqual(coordinator.last_value_update_time("room"), first_room_update)
+        self.assertEqual(coordinator.last_value_update_time("setpoint"), second_setpoint_update)
+
+    def test_partial_status_keeps_missing_previous_values(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            SequencedClient(
+                [
+                    {"room": 21.0, "setpoint": 22.0, "mode": "heat", "unit": "C"},
+                    {"setpoint": 23.0, "room": None, "unit": "C"},
+                ]
+            ),
+            entry_id="entry",
+            scan_interval=30,
+        )
+
+        first = asyncio.run(coordinator._async_update_data())
+        coordinator.async_set_updated_data(first)
+        room_update = coordinator.last_value_update_time("room")
+
+        second = asyncio.run(coordinator._async_update_data())
+        coordinator.async_set_updated_data(second)
+
+        self.assertEqual(
+            second,
+            {"room": 21.0, "setpoint": 23.0, "mode": "heat", "unit": "C"},
+        )
+        self.assertEqual(coordinator.last_value_update_time("room"), room_update)
 
     def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
         session = _MqttSession.__new__(_MqttSession)
