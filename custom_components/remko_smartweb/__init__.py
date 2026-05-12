@@ -141,11 +141,15 @@ async def _async_register_static_path(hass: HomeAssistant) -> None:
     register = getattr(http, "async_register_static_paths", None)
     if not callable(register):
         return
+    hass.data[DOMAIN]["frontend_registered"] = True
     from homeassistant.components.http import StaticPathConfig
 
     card_path = Path(__file__).parent / "www" / "remko-mxw-timer-card.js"
-    await register([StaticPathConfig(FRONTEND_PATH, str(card_path), False)])
-    hass.data[DOMAIN]["frontend_registered"] = True
+    try:
+        await register([StaticPathConfig(FRONTEND_PATH, str(card_path), False)])
+    except Exception:
+        hass.data[DOMAIN].pop("frontend_registered", None)
+        raise
 
 
 def _async_register_services(hass: HomeAssistant) -> None:

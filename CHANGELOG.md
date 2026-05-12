@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.7
+- Register the MXW timer Lovelace card route only once per Home Assistant instance
+- Fix startup failures when multiple REMKO SmartWeb devices are configured and set up in parallel
+
 ## v0.4.6
 - Add the Home Assistant `http` component to the integration manifest dependencies
 - Fix hassfest validation for the static Lovelace card registration used by the MXW timer card
