@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.6
+- Add the Home Assistant `http` component to the integration manifest dependencies
+- Fix hassfest validation for the static Lovelace card registration used by the MXW timer card
+
 ## v0.4.5
 - Fix RBW/DHW Vacation end-date writes by sending the year as the two-digit value expected by the REMKO frontend mapping
 - Allow today's date for the DHW vacation end date while rejecting dates in the past
