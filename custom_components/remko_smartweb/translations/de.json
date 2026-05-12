@@ -102,6 +102,7 @@
       "outdoor": { "name": "Außentemperatur" },
       "setpoint": { "name": "Solltemperatur" },
       "error": { "name": "Fehlercode" },
+      "mxw_timer_schedule": { "name": "MXW Timer-Zeitprogramm" },
       "mode": {
         "name": "Modus",
         "state": {
@@ -192,7 +193,6 @@
         "name": "Warmwasserbereiter",
         "state": {
           "off": "Aus",
-          "heat": "Heizen",
           "auto": "Automatik",
           "eco": "Eco",
           "hybrid": "Hybrid",
@@ -203,7 +203,6 @@
           "operation_list": {
             "state": {
               "off": "Aus",
-              "heat": "Heizen",
               "auto": "Automatik",
               "eco": "Eco",
               "hybrid": "Hybrid",
@@ -214,7 +213,6 @@
           "operation_mode": {
             "state": {
               "off": "Aus",
-              "heat": "Heizen",
               "auto": "Automatik",
               "eco": "Eco",
               "hybrid": "Hybrid",

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.5
+- Fix RBW/DHW Vacation end-date writes by sending the year as the two-digit value expected by the REMKO frontend mapping
+- Allow today's date for the DHW vacation end date while rejecting dates in the past
+- Remove the unsupported DHW `heat` operation from the Home Assistant water-heater mode list
+- Add experimental MXW timer schedule parsing for the six SmartWeb timer slots (`1195`, `1196`, `1197`, `1198`, `1210`, `1211`)
+- Add a compact custom Lovelace card and service for editing MXW timer slots with day range, time, active state, and raw mode value
+- Keep MXW timer mode values conservative until validated raw values are available for per-timer temperature mapping
+- Add regression tests for Vacation date encoding, date validation, DHW operation modes, and MXW timer slot mapping
+
 ## v0.4.4
 - Add Home Assistant entity translations for climate, domestic hot water, dehumidifier, heat-pump, sensor, switch, number, and date entities
 - Add German translations for DHW operation modes, climate fan/swing/preset modes, diagnostic entities, and mapped LTE/KWT/WPM values

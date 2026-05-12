@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 
-OPERATION_MODES = ["off", "heat", "auto", "eco", "hybrid", "speed_heating", "vacation"]
+OPERATION_MODES = ["off", "auto", "eco", "hybrid", "speed_heating", "vacation"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
@@ -72,7 +72,7 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         mode = self.coordinator.data.get("dhw_mode")
         if mode in OPERATION_MODES:
             return mode
-        return "heat"
+        return "auto"
 
     async def async_set_temperature(self, **kwargs):
         temperature = kwargs.get(ATTR_TEMPERATURE)
@@ -94,11 +94,15 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
                     "Set the DHW vacation end date before enabling vacation mode"
                 )
             try:
-                date.fromisoformat(str(vacation_end_date))
+                parsed_vacation_end_date = date.fromisoformat(str(vacation_end_date))
             except ValueError as err:
                 raise HomeAssistantError(
                     "DHW vacation end date is invalid"
                 ) from err
+            if parsed_vacation_end_date < date.today():
+                raise HomeAssistantError(
+                    "DHW vacation end date must not be in the past"
+                )
             overrides["vacation_end_date"] = vacation_end_date
         await self._async_set_dhw(overrides)
 

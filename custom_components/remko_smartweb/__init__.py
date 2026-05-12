@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from .api import RemkoSmartWebAccount, RemkoSmartWebClient
 from .const import (
@@ -20,9 +22,12 @@ from .const import (
 )
 from .coordinator import RemkoSmartWebCoordinator
 from .profiles import AutoDetectDeviceProfile, get_device_profile
+from .profiles.climate import build_mxw_timer_value_write
 
 _LOGGER = logging.getLogger(__name__)
 ACCOUNT_DATA = "accounts"
+SERVICE_SET_MXW_TIMER_SLOTS = "set_mxw_timer_slots"
+FRONTEND_PATH = "/remko_smartweb/remko-mxw-timer-card.js"
 
 
 def _account_key(email: str, password: str) -> tuple[str, str]:
@@ -58,6 +63,8 @@ def _release_account(hass: HomeAssistant, email: str, password: str) -> RemkoSma
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
+    await _async_register_static_path(hass)
+    _async_register_services(hass)
 
     email = entry.data[CONF_EMAIL]
     password = entry.data[CONF_PASSWORD]
@@ -125,3 +132,52 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if account is not None:
             await hass.async_add_executor_job(account.close)
     return unload_ok
+
+
+async def _async_register_static_path(hass: HomeAssistant) -> None:
+    if hass.data[DOMAIN].get("frontend_registered"):
+        return
+    http = getattr(hass, "http", None)
+    register = getattr(http, "async_register_static_paths", None)
+    if not callable(register):
+        return
+    from homeassistant.components.http import StaticPathConfig
+
+    card_path = Path(__file__).parent / "www" / "remko-mxw-timer-card.js"
+    await register([StaticPathConfig(FRONTEND_PATH, str(card_path), False)])
+    hass.data[DOMAIN]["frontend_registered"] = True
+
+
+def _async_register_services(hass: HomeAssistant) -> None:
+    services = getattr(hass, "services", None)
+    if services is None or not hasattr(services, "async_register"):
+        return
+    if hass.data[DOMAIN].get("services_registered"):
+        return
+
+    async def async_set_mxw_timer_slots(call):
+        device_name = call.data.get("device_name")
+        slots = call.data.get("slots")
+        if not isinstance(slots, list):
+            raise HomeAssistantError("slots must be a list")
+        matches = [
+            data
+            for data in hass.data.get(DOMAIN, {}).values()
+            if isinstance(data, dict)
+            and data.get("client")
+            and (not device_name or data.get("device_name") == device_name)
+        ]
+        if not matches:
+            raise HomeAssistantError("No matching REMKO SmartWeb device found")
+        if len(matches) > 1:
+            raise HomeAssistantError("device_name is required when multiple REMKO devices are configured")
+        data = matches[0]
+        try:
+            values = build_mxw_timer_value_write(slots)
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
+        await hass.async_add_executor_job(data["client"].set_value_ids, values)
+        await data["coordinator"].async_request_refresh()
+
+    services.async_register(DOMAIN, SERVICE_SET_MXW_TIMER_SLOTS, async_set_mxw_timer_slots)
+    hass.data[DOMAIN]["services_registered"] = True

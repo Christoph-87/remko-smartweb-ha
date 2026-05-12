@@ -57,6 +57,9 @@ def _first_reverse(mapping: dict[int, str]) -> dict[str, int]:
 MODE_VALUE_IDS = _first_reverse(MODE_BY_VALUE_ID)
 FAN_VALUE_IDS = _first_reverse(FAN_BY_VALUE_ID)
 SWING_VALUE_IDS = _first_reverse(SWING_BY_VALUE_ID)
+MXW_TIMER_VALUE_IDS = ("1195", "1196", "1197", "1198", "1210", "1211")
+MXW_TIMER_MODE_VALUES = {"on": 0x01, "off": 0x02}
+MXW_TIMER_MODE_BY_VALUE = {value: key for key, value in MXW_TIMER_MODE_VALUES.items()}
 
 
 def _mode_from_value_id(value: int | None):
@@ -71,6 +74,100 @@ def _swing_from_value_id(value: int | None):
     return SWING_BY_VALUE_ID.get(value)
 
 
+def _hex_to_u8_values(hexstr: str | None) -> list[int]:
+    if not hexstr:
+        return []
+    text = str(hexstr).strip()
+    if len(text) % 2:
+        return []
+    try:
+        return [int(text[index : index + 2], 16) for index in range(0, len(text), 2)]
+    except Exception:
+        return []
+
+
+def _mxw_timer_time(value: int) -> str:
+    value %= 96
+    return f"{value // 4:02d}:{(value % 4) * 15:02d}"
+
+
+def _mxw_timer_time_value(value: str) -> int:
+    hour, minute = str(value).split(":", 1)
+    hour_value = int(hour)
+    minute_value = int(minute)
+    if not 0 <= hour_value <= 23 or minute_value not in (0, 15, 30, 45):
+        raise ValueError("MXW timer time must use 15 minute steps")
+    return hour_value * 4 + minute_value // 15
+
+
+def _parse_mxw_timer_slot(value_id: str, value: str | None, active: bool) -> dict | None:
+    data = _hex_to_u8_values(value)
+    if len(data) < 3:
+        return None
+    day_range, time_value, mode_value = data[:3]
+    start_day = (day_range >> 4) & 0x0F
+    end_day = day_range & 0x0F
+    if not 1 <= start_day <= 7 or not 1 <= end_day <= 7:
+        return None
+    mode = MXW_TIMER_MODE_BY_VALUE.get(mode_value, f"value_{mode_value}")
+    return {
+        "id": value_id,
+        "active": active,
+        "start_day": start_day,
+        "end_day": end_day,
+        "time": _mxw_timer_time(time_value),
+        "mode": mode,
+        "mode_value": mode_value,
+        "status_value": mode_value,
+    }
+
+
+def parse_mxw_timer_slots(values: dict) -> list[dict]:
+    active_count = _first_byte(values.get("1200")) or 0
+    slots = []
+    for index, value_id in enumerate(MXW_TIMER_VALUE_IDS):
+        slot = _parse_mxw_timer_slot(value_id, values.get(value_id), index < active_count)
+        if slot is not None:
+            slots.append(slot)
+    return slots
+
+
+def build_mxw_timer_value_write(slots: list[dict]) -> dict[str, str]:
+    if len(slots) > len(MXW_TIMER_VALUE_IDS):
+        raise ValueError("MXW supports at most six timer slots")
+    values = {}
+    active_count = 0
+    for index, slot in enumerate(slots):
+        value_id = str(slot.get("id") or MXW_TIMER_VALUE_IDS[index])
+        if value_id not in MXW_TIMER_VALUE_IDS:
+            raise ValueError(f"Unsupported MXW timer slot id: {value_id}")
+        start_day = int(slot["start_day"])
+        end_day = int(slot["end_day"])
+        if not 1 <= start_day <= 7 or not 1 <= end_day <= 7:
+            raise ValueError("MXW timer days must be in range 1..7")
+        mode_value = slot.get("mode_value", slot.get("status_value"))
+        if mode_value is not None:
+            mode_value = int(mode_value)
+        else:
+            mode = str(slot.get("mode", slot.get("status", slot.get("action", "on"))))
+            if mode not in MXW_TIMER_MODE_VALUES:
+                raise ValueError("MXW timer mode must be 'on', 'off', or an explicit mode_value")
+            mode_value = MXW_TIMER_MODE_VALUES[mode]
+        if not 0 <= mode_value <= 255:
+            raise ValueError("MXW timer mode_value must be in range 0..255")
+        if slot.get("active", True):
+            if active_count != index:
+                raise ValueError("MXW timer active slots must be contiguous from the first slot")
+            active_count += 1
+        values[value_id] = (
+            f"{((start_day << 4) | end_day):02X}"
+            f"{_mxw_timer_time_value(str(slot['time'])):02X}"
+            f"{mode_value:02X}"
+        )
+    values["1200"] = f"{active_count:02X}"
+    return values
+
+
 class ClimateDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_CLIMATE
     supports_climate = True
@@ -82,6 +179,7 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         ("outdoor", "Outdoor Temperature", "temperature"),
         ("setpoint", "Setpoint", "temperature"),
         ("error", "Error Code", None),
+        ("mxw_timer_schedule", "MXW Timer Schedule", None),
     )
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:
@@ -200,6 +298,10 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             value = _first_byte(values.get(value_id))
             if value is not None:
                 status[key] = value == 0x01
+        timer_slots = parse_mxw_timer_slots(values)
+        if timer_slots:
+            status["mxw_timer_schedule"] = sum(1 for slot in timer_slots if slot["active"])
+            status["mxw_timer_slots"] = timer_slots
         status["unit"] = "C"
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None

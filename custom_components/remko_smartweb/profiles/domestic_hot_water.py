@@ -8,7 +8,6 @@ from .value_mapping import ValueWriteSpec, build_value_write
 
 DHW_MODE_VALUE_IDS = {
     "auto": 0x03,
-    "heat": 0x06,
     "eco": 0x09,
     "hybrid": 0x0A,
     "speed_heating": 0x0B,
@@ -162,7 +161,7 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             values.update(
                 {
                     VACATION_END_DATE_REGISTER_SPECS["enabled"]: "0001",
-                    VACATION_END_DATE_REGISTER_SPECS["year"]: f"{parsed_date.year:04X}",
+                    VACATION_END_DATE_REGISTER_SPECS["year"]: f"{parsed_date.year % 100:04X}",
                     VACATION_END_DATE_REGISTER_SPECS["month"]: f"{parsed_date.month:04X}",
                     VACATION_END_DATE_REGISTER_SPECS["day"]: f"{parsed_date.day:04X}",
                 }

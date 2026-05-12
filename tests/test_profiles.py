@@ -55,7 +55,11 @@ from custom_components.remko_smartweb.api import (
 )
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW, DEVICE_KIND_DIAGNOSTICS
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
-from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
+from custom_components.remko_smartweb.profiles.climate import (
+    ClimateDeviceProfile,
+    ReadOnlyAcUartClimateDeviceProfile,
+    build_mxw_timer_value_write,
+)
 from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDeviceProfile
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DHW_MODE_VALUE_IDS, DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
@@ -209,7 +213,7 @@ class ProfileParsingTests(unittest.TestCase):
         registers = {}
         registers.update(
             _parse_rbw_registers_rx(
-                _rbw_rx(1091, 90, {1129: 1, 1130: 2026, 1131: 5, 1132: 27})
+                _rbw_rx(1091, 90, {1129: 1, 1130: 26, 1131: 5, 1132: 27})
             )
         )
 
@@ -366,6 +370,93 @@ class ProfileParsingTests(unittest.TestCase):
             },
         )
 
+    def test_climate_values_status_parses_mxw_timer_slots(self):
+        values = {
+            "1194": "01",
+            "1200": "02",
+            "1195": "152015",
+            "1196": "154802",
+            "1197": "672015",
+        }
+
+        status = ClimateDeviceProfile().parse_values_status(values)
+
+        self.assertEqual(status["mxw_timer_schedule"], 2)
+        self.assertEqual(
+            status["mxw_timer_slots"],
+            [
+                {
+                    "id": "1195",
+                    "active": True,
+                    "start_day": 1,
+                    "end_day": 5,
+                    "time": "08:00",
+                    "mode": "value_21",
+                    "mode_value": 21,
+                    "status_value": 21,
+                },
+                {
+                    "id": "1196",
+                    "active": True,
+                    "start_day": 1,
+                    "end_day": 5,
+                    "time": "18:00",
+                    "mode": "off",
+                    "mode_value": 2,
+                    "status_value": 2,
+                },
+                {
+                    "id": "1197",
+                    "active": False,
+                    "start_day": 6,
+                    "end_day": 7,
+                    "time": "08:00",
+                    "mode": "value_21",
+                    "mode_value": 21,
+                    "status_value": 21,
+                },
+            ],
+        )
+
+    def test_build_mxw_timer_value_write(self):
+        values = build_mxw_timer_value_write(
+            [
+                {
+                    "id": "1195",
+                    "active": True,
+                    "start_day": 1,
+                    "end_day": 5,
+                    "time": "08:00",
+                    "mode_value": 21,
+                },
+                {
+                    "id": "1196",
+                    "active": True,
+                    "start_day": 1,
+                    "end_day": 5,
+                    "time": "18:00",
+                    "mode": "off",
+                },
+            ]
+        )
+
+        self.assertEqual(values, {"1195": "152015", "1196": "154802", "1200": "02"})
+
+        with self.assertRaises(ValueError):
+            build_mxw_timer_value_write(
+                [
+                    {"id": "1195", "active": False, "start_day": 1, "end_day": 5, "time": "08:00", "mode": "on"},
+                    {"id": "1196", "active": True, "start_day": 1, "end_day": 5, "time": "18:00", "mode": "off"},
+                ]
+            )
+
+        with self.assertRaises(ValueError):
+            build_mxw_timer_value_write(
+                [
+                    {"id": "1195", "active": True, "start_day": 1, "end_day": 5, "time": "08:00", "mode_value": 256},
+                ]
+            )
+
     def test_dhw_values_status_parses_tenths_temperature_values(self):
         values = {
             "1152": "01",
@@ -477,9 +568,20 @@ class ProfileParsingTests(unittest.TestCase):
             ),
             {
                 "rbw_register:1129": "0001",
-                "rbw_register:1130": "07EA",
+                "rbw_register:1130": "001A",
                 "rbw_register:1131": "0005",
                 "rbw_register:1132": "001B",
+            },
+        )
+        self.assertEqual(
+            DomesticHotWaterDeviceProfile().build_value_write(
+                {"vacation_end_date": date(2026, 5, 14)}
+            ),
+            {
+                "rbw_register:1129": "0001",
+                "rbw_register:1130": "001A",
+                "rbw_register:1131": "0005",
+                "rbw_register:1132": "000E",
             },
         )
 

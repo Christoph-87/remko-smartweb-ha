@@ -102,6 +102,7 @@
       "outdoor": { "name": "Outdoor temperature" },
       "setpoint": { "name": "Setpoint" },
       "error": { "name": "Error code" },
+      "mxw_timer_schedule": { "name": "MXW timer schedule" },
       "mode": {
         "name": "Mode",
         "state": {
@@ -192,7 +193,6 @@
         "name": "Water heater",
         "state": {
           "off": "Off",
-          "heat": "Heat",
           "auto": "Auto",
           "eco": "Eco",
           "hybrid": "Hybrid",
@@ -203,7 +203,6 @@
           "operation_list": {
             "state": {
               "off": "Off",
-              "heat": "Heat",
               "auto": "Auto",
               "eco": "Eco",
               "hybrid": "Hybrid",
@@ -214,7 +213,6 @@
           "operation_mode": {
             "state": {
               "off": "Off",
-              "heat": "Heat",
               "auto": "Auto",
               "eco": "Eco",
               "hybrid": "Hybrid",

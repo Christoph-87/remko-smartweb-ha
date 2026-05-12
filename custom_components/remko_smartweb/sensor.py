@@ -94,13 +94,16 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        attrs = {}
+        if self._key == "mxw_timer_schedule":
+            attrs["slots"] = self.coordinator.data.get("mxw_timer_slots", [])
         getter = getattr(self.coordinator, "last_value_update_time", None)
         if not callable(getter):
-            return None
+            return attrs or None
         updated_at = getter(self._key)
-        if not updated_at:
-            return None
-        return {"last_successful_value_update": updated_at}
+        if updated_at:
+            attrs["last_successful_value_update"] = updated_at
+        return attrs or None
 
 
 class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):

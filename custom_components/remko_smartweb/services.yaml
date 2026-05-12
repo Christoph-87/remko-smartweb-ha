@@ -1,0 +1,23 @@
+set_mxw_timer_slots:
+  name: Set MXW timer slots
+  description: Set the compact MXW timer slot schedule used by the REMKO SmartWeb frontend.
+  fields:
+    device_name:
+      name: Device name
+      description: REMKO SmartWeb device name. Required when multiple REMKO devices are configured.
+      required: false
+      selector:
+        text:
+    slots:
+      name: Timer slots
+      description: Up to six timer programs with id, active, start_day, end_day, time, and mode_value.
+      required: true
+      example:
+        - id: "1195"
+          active: true
+          start_day: 1
+          end_day: 5
+          time: "07:00"
+          mode_value: 1
+      selector:
+        object:

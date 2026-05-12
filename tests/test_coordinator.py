@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
-from datetime import date
+from datetime import date, timedelta
 import sys
 import threading
 import types
@@ -654,19 +654,109 @@ class CoordinatorTests(unittest.TestCase):
             DomesticHotWaterDeviceProfile(),
         )
 
-        asyncio.run(entity.async_set_value(date(2026, 5, 27)))
+        vacation_end_date = date.today() + timedelta(days=15)
+        asyncio.run(entity.async_set_value(vacation_end_date))
 
-        self.assertEqual(entity.native_value, date(2026, 5, 27))
+        self.assertEqual(entity.native_min_value, date.today())
+        self.assertEqual(entity.native_value, vacation_end_date)
         self.assertEqual(
             client.values,
             {
                 "rbw_register:1129": "0001",
-                "rbw_register:1130": "07EA",
-                "rbw_register:1131": "0005",
-                "rbw_register:1132": "001B",
+                "rbw_register:1130": f"{vacation_end_date.year % 100:04X}",
+                "rbw_register:1131": f"{vacation_end_date.month:04X}",
+                "rbw_register:1132": f"{vacation_end_date.day:04X}",
             },
         )
         self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_vacation_end_date_entity_allows_today_and_rejects_past_dates(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"unit": "C"},
+            async_request_refresh=lambda: None,
+        )
+
+        class Client:
+            def set_value_ids(self, values):
+                self.values = values
+
+        client = Client()
+        entity = RemkoSmartWebVacationEndDate(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_value(date.today()))
+
+        self.assertEqual(entity.native_value, date.today())
+        self.assertEqual(client.values["rbw_register:1132"], f"{date.today().day:04X}")
+
+        with self.assertRaises(HomeAssistantError):
+            asyncio.run(entity.async_set_value(date.today() - timedelta(days=1)))
+
+        self.assertEqual(coordinator.data["dhw_vacation_end_date"], date.today().isoformat())
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_water_heater_vacation_mode_allows_today_end_date(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "dhw_vacation_end_date": date.today().isoformat(),
+                "power": "ON",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+
+        class Client:
+            def set_value_ids(self, values):
+                self.values = values
+
+        client = Client()
+        entity = RemkoSmartWebWaterHeater(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_operation_mode("vacation"))
+
+        self.assertEqual(client.values["1192"], "0C")
+
+    def test_water_heater_vacation_mode_rejects_past_end_date(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "dhw_vacation_end_date": (date.today() - timedelta(days=1)).isoformat(),
+                "power": "ON",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+
+        class Client:
+            def set_value_ids(self, values):
+                self.values = values
+
+        client = Client()
+        entity = RemkoSmartWebWaterHeater(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        with self.assertRaises(HomeAssistantError):
+            asyncio.run(entity.async_set_operation_mode("vacation"))
+
+        self.assertFalse(hasattr(client, "values"))
 
     def test_water_heater_operation_modes_have_german_translations(self):
         translations = json.loads(

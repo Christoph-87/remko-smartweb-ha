@@ -51,7 +51,14 @@ class RemkoSmartWebVacationEndDate(CoordinatorEntity, DateEntity):
         except ValueError:
             return None
 
+    @property
+    def native_min_value(self) -> date:
+        return date.today()
+
     async def async_set_value(self, value: date) -> None:
+        if value < self.native_min_value:
+            raise HomeAssistantError("DHW vacation end date must not be in the past")
+
         values = self._profile.build_value_write({"vacation_end_date": value})
         if not values:
             return
