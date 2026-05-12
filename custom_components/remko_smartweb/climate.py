@@ -64,6 +64,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
+    _attr_has_entity_name = True
+    _attr_name = None
+    _attr_translation_key = "climate"
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.FAN_MODE
@@ -108,7 +111,6 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
             self._attr_preset_modes = []
             self._attr_fan_modes = []
             self._attr_swing_modes = []
-        self._attr_name = device_name
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_climate"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},

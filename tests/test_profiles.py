@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
 import sys
 import types
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +37,7 @@ from custom_components.remko_smartweb.api import (
     _build_mqtt_topic,
     _build_rbw_get_status_cmd,
     _build_rbw_set_cmd,
+    _build_rbw_set_register_cmd,
     _build_wpm_set_cmd,
     _extract_device_metadata_from_text,
     _extract_global_var,
@@ -54,7 +57,7 @@ from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_K
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
 from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile, ReadOnlyAcUartClimateDeviceProfile
 from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDeviceProfile
-from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
+from custom_components.remko_smartweb.profiles.domestic_hot_water import DHW_MODE_VALUE_IDS, DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
 from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
@@ -171,6 +174,8 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_build_rbw_set_cmd("1194", "01"), "631003F3010001")
         self.assertEqual(_build_rbw_set_cmd("1194", "02"), "631003F3010000")
         self.assertEqual(_build_rbw_set_cmd("1192", "09"), "631003F4010002")
+        self.assertEqual(_build_rbw_set_register_cmd(1129, 1), "63100469010001")
+        self.assertEqual(_build_rbw_set_cmd("rbw_register:1130", "07EA"), "6310046A0107EA")
         self.assertIsNone(_build_rbw_set_cmd("1192", "06"))
 
     def test_build_rbw_get_status_cmd_uses_frontend_read_ranges(self):
@@ -199,6 +204,19 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_bottom_temperature"], 50.0)
         self.assertEqual(status["dhw_top_temperature"], 53.0)
         self.assertEqual(status["room"], 53.0)
+
+    def test_rbw_direct_modbus_status_parses_vacation_end_date(self):
+        registers = {}
+        registers.update(
+            _parse_rbw_registers_rx(
+                _rbw_rx(1091, 90, {1129: 1, 1130: 2026, 1131: 5, 1132: 27})
+            )
+        )
+
+        status = _parse_rbw_register_status(registers)
+
+        self.assertTrue(status["dhw_vacation_enabled"])
+        self.assertEqual(status["dhw_vacation_end_date"], "2026-05-27")
 
     def test_build_kwt_set_cmd_uses_frontend_modbus_conversion(self):
         self.assertEqual(_build_kwt_set_cmd("1190", "2B"), "0110271A00010200D7B336")
@@ -453,6 +471,17 @@ class ProfileParsingTests(unittest.TestCase):
             DomesticHotWaterDeviceProfile().build_value_write({"mode": "speed_heating"}),
             {"1192": "0B"},
         )
+        self.assertEqual(
+            DomesticHotWaterDeviceProfile().build_value_write(
+                {"vacation_end_date": date(2026, 5, 27)}
+            ),
+            {
+                "rbw_register:1129": "0001",
+                "rbw_register:1130": "07EA",
+                "rbw_register:1131": "0005",
+                "rbw_register:1132": "001B",
+            },
+        )
 
     def test_auto_profile_prefers_dhw_for_dhw_device_name(self):
         values = {
@@ -631,6 +660,49 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(detect_device_kind("Living room", {"fan": "auto"}), DEVICE_KIND_CLIMATE)
         self.assertEqual(detect_device_kind("Brauchwasserwaermepumpe", {}), DEVICE_KIND_DHW)
         self.assertEqual(detect_device_kind("SQW 405 Pro", {}), DEVICE_KIND_DIAGNOSTICS)
+
+    def test_german_entity_translations_cover_profile_entities(self):
+        translations = json.loads(
+            (COMPONENT_PATH / "translations" / "de.json").read_text(encoding="utf-8")
+        )["entity"]
+        profiles = (
+            ClimateDeviceProfile(),
+            KwtDeviceProfile(),
+            DomesticHotWaterDeviceProfile(),
+            LteDeviceProfile(),
+            WpmDeviceProfile(),
+        )
+
+        sensor_keys = {
+            key
+            for profile in profiles
+            for key, _name, _kind in profile.sensor_descriptions
+        }
+        sensor_keys.add("diagnostics")
+        number_keys = {
+            key
+            for profile in profiles
+            for key, _name, _min, _max, _step, _unit in profile.number_descriptions
+        }
+        switch_keys = {
+            "power",
+            "eco",
+            "frost_protection",
+            "turbo",
+            "sleep",
+            "bioclean",
+            "wpm_heat_cool_mode",
+            "wpm_manual_defrost",
+        }
+
+        self.assertLessEqual(sensor_keys, set(translations["sensor"]))
+        self.assertLessEqual(number_keys, set(translations["number"]))
+        self.assertLessEqual(switch_keys, set(translations["switch"]))
+        self.assertIn("dhw_vacation_end_date", translations["date"])
+        self.assertEqual(
+            set(DHW_MODE_VALUE_IDS),
+            set(translations["water_heater"]["domestic_hot_water"]["state"]) - {"off"},
+        )
 
 
 if __name__ == "__main__":

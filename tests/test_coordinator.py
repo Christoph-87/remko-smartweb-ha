@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import deque
+from datetime import date
 import sys
 import threading
 import types
@@ -21,6 +23,7 @@ sys.modules.setdefault("custom_components.remko_smartweb", remko_smartweb)
 
 homeassistant = types.ModuleType("homeassistant")
 ha_components = types.ModuleType("homeassistant.components")
+ha_date = types.ModuleType("homeassistant.components.date")
 ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
@@ -34,6 +37,11 @@ ha_exceptions = types.ModuleType("homeassistant.exceptions")
 
 
 class WaterHeaterEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class DateEntity:
     def async_write_ha_state(self):
         self.wrote_state = True
 
@@ -114,6 +122,7 @@ def async_call_later(hass, delay, callback):
     return None
 
 
+ha_date.DateEntity = DateEntity
 ha_water_heater.WaterHeaterEntity = WaterHeaterEntity
 ha_water_heater.WaterHeaterEntityFeature = WaterHeaterEntityFeature
 ha_core.HomeAssistant = HomeAssistant
@@ -130,6 +139,7 @@ ha_exceptions.HomeAssistantError = HomeAssistantError
 
 sys.modules.setdefault("homeassistant", homeassistant)
 sys.modules.setdefault("homeassistant.components", ha_components)
+sys.modules.setdefault("homeassistant.components.date", ha_date)
 sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
@@ -153,6 +163,7 @@ requests.Session = object
 sys.modules.setdefault("requests", requests)
 
 import custom_components.remko_smartweb.api as api_module
+from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebClient,
     UnsupportedPayload,
@@ -164,7 +175,7 @@ from custom_components.remko_smartweb.api import (
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
-from custom_components.remko_smartweb.water_heater import RemkoSmartWebWaterHeater
+from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
 
 
 class FailingClient:
@@ -548,6 +559,7 @@ class CoordinatorTests(unittest.TestCase):
         )
 
         self.assertEqual(entity._attr_target_temperature_step, 0.5)
+        self.assertEqual(entity._attr_translation_key, "domestic_hot_water")
 
         with self.assertRaises(HomeAssistantError):
             asyncio.run(entity.async_set_temperature(temperature=55.5))
@@ -564,6 +576,108 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(client.values, {"1333": "022B"})
         self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_water_heater_vacation_mode_requires_end_date(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "dhw_setpoint": 55.0,
+                "power": "ON",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        entity = RemkoSmartWebWaterHeater(
+            coordinator,
+            WriteFailureClient(),
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        with self.assertRaises(HomeAssistantError):
+            asyncio.run(entity.async_set_operation_mode("vacation"))
+
+    def test_water_heater_vacation_mode_writes_end_date_before_mode(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "dhw_vacation_end_date": "2026-05-27",
+                "power": "ON",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+
+        class Client:
+            def set_value_ids(self, values):
+                self.values = values
+
+        client = Client()
+        entity = RemkoSmartWebWaterHeater(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_operation_mode("vacation"))
+
+        self.assertEqual(list(client.values), [
+            "rbw_register:1129",
+            "rbw_register:1130",
+            "rbw_register:1131",
+            "rbw_register:1132",
+            "1194",
+            "1192",
+        ])
+        self.assertEqual(client.values["1192"], "0C")
+
+    def test_vacation_end_date_entity_writes_rbw_registers(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"unit": "C"},
+            async_request_refresh=lambda: None,
+        )
+
+        class Client:
+            def set_value_ids(self, values):
+                self.values = values
+
+        client = Client()
+        entity = RemkoSmartWebVacationEndDate(
+            coordinator,
+            client,
+            "WIFI Stick - Brauchwasserwaermepumpe",
+            DomesticHotWaterDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_value(date(2026, 5, 27)))
+
+        self.assertEqual(entity.native_value, date(2026, 5, 27))
+        self.assertEqual(
+            client.values,
+            {
+                "rbw_register:1129": "0001",
+                "rbw_register:1130": "07EA",
+                "rbw_register:1131": "0005",
+                "rbw_register:1132": "001B",
+            },
+        )
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_water_heater_operation_modes_have_german_translations(self):
+        translations = json.loads(
+            (COMPONENT_PATH / "translations" / "de.json").read_text(encoding="utf-8")
+        )
+
+        mode_translations = translations["entity"]["water_heater"]["domestic_hot_water"]["state"]
+
+        self.assertEqual(set(mode_translations), set(OPERATION_MODES))
+        self.assertEqual(mode_translations["speed_heating"], "Schnellheizen")
+        self.assertEqual(mode_translations["vacation"], "Urlaub")
 
 
 if __name__ == "__main__":

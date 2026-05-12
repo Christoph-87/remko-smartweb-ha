@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from homeassistant.components.water_heater import WaterHeaterEntity, WaterHeaterEntityFeature
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -27,6 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
+    _attr_has_entity_name = True
     _attr_supported_features = (
         WaterHeaterEntityFeature.TARGET_TEMPERATURE
         | WaterHeaterEntityFeature.OPERATION_MODE
@@ -35,12 +38,12 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     _attr_min_temp = 30
     _attr_max_temp = 65
     _attr_target_temperature_step = 0.5
+    _attr_translation_key = "domestic_hot_water"
 
     def __init__(self, coordinator, client, device_name: str, profile):
         super().__init__(coordinator)
         self._client = client
         self._profile = profile
-        self._attr_name = f"{device_name} Water Heater"
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_water_heater"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},
@@ -83,7 +86,21 @@ class RemkoSmartWebWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         if operation_mode == "off":
             await self.async_turn_off()
             return
-        await self._async_set_dhw({"power": True, "mode": operation_mode})
+        overrides = {"power": True, "mode": operation_mode}
+        if operation_mode == "vacation":
+            vacation_end_date = self.coordinator.data.get("dhw_vacation_end_date")
+            if not vacation_end_date:
+                raise HomeAssistantError(
+                    "Set the DHW vacation end date before enabling vacation mode"
+                )
+            try:
+                date.fromisoformat(str(vacation_end_date))
+            except ValueError as err:
+                raise HomeAssistantError(
+                    "DHW vacation end date is invalid"
+                ) from err
+            overrides["vacation_end_date"] = vacation_end_date
+        await self._async_set_dhw(overrides)
 
     async def async_turn_on(self):
         await self._async_set_dhw({"power": True})

@@ -64,7 +64,8 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         self._client = client
         self._key = key
         self._profile = profile
-        self._attr_name = f"{device_name} {name}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = key
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_switch"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},

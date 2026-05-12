@@ -54,5 +54,176 @@
         }
       }
     }
+  },
+  "entity": {
+    "climate": {
+      "climate": {
+        "state_attributes": {
+          "fan_mode": {
+            "state": {
+              "auto": "Auto",
+              "silent": "Silent",
+              "low": "Low",
+              "medium": "Medium",
+              "high": "High"
+            }
+          },
+          "swing_mode": {
+            "state": {
+              "off": "Off",
+              "vertical": "Vertical",
+              "horizontal": "Horizontal",
+              "both": "Both"
+            }
+          },
+          "preset_mode": {
+            "state": {
+              "none": "None",
+              "eco": "Eco",
+              "turbo": "Turbo",
+              "sleep": "Sleep / Silent",
+              "bioclean": "Bioclean"
+            }
+          }
+        }
+      }
+    },
+    "date": {
+      "dhw_vacation_end_date": { "name": "DHW vacation end date" }
+    },
+    "number": {
+      "target_humidity": { "name": "Target humidity" },
+      "wpm_target_temperature": { "name": "WPM target temperature" },
+      "wpm_setpoint_ch": { "name": "WPM CH setpoint" },
+      "wpm_setpoint_hp": { "name": "WPM HP setpoint" }
+    },
+    "sensor": {
+      "room": { "name": "Room temperature" },
+      "outdoor": { "name": "Outdoor temperature" },
+      "setpoint": { "name": "Setpoint" },
+      "error": { "name": "Error code" },
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "auto": "Auto",
+          "cool": "Cool",
+          "dry": "Dry",
+          "heat": "Heat",
+          "fan": "Fan"
+        }
+      },
+      "fan": {
+        "name": "Fan",
+        "state": {
+          "auto": "Auto",
+          "silent": "Silent",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
+      },
+      "swing": {
+        "name": "Swing",
+        "state": {
+          "off": "Off",
+          "vertical": "Vertical",
+          "horizontal": "Horizontal",
+          "both": "Both"
+        }
+      },
+      "filter_state": { "name": "Filter state" },
+      "frost_protection": { "name": "Frost protection" },
+      "firmware": { "name": "Firmware" },
+      "device_id": { "name": "Device ID" },
+      "dhw_setpoint": { "name": "DHW setpoint" },
+      "dhw_top_temperature": { "name": "DHW top temperature" },
+      "dhw_bottom_temperature": { "name": "DHW bottom temperature" },
+      "dhw_ambient_temperature": { "name": "DHW ambient temperature" },
+      "dhw_mode": {
+        "name": "DHW mode",
+        "state": {
+          "auto": "Auto",
+          "heat": "Heat",
+          "eco": "Eco",
+          "hybrid": "Hybrid",
+          "speed_heating": "Speed heating",
+          "vacation": "Vacation"
+        }
+      },
+      "dhw_power_state": {
+        "name": "DHW power state",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
+      "target_humidity": { "name": "Target humidity" },
+      "internal_humidity": { "name": "Internal humidity" },
+      "internal_temperature": { "name": "Internal temperature" },
+      "external_humidity": { "name": "External humidity" },
+      "external_temperature": { "name": "External temperature" },
+      "evaporator_temperature": { "name": "Evaporator temperature" },
+      "condenser_temperature": { "name": "Condenser temperature" },
+      "tank_state": { "name": "Tank state" },
+      "defrost_state": { "name": "Defrost state" },
+      "compressor_state": { "name": "Compressor state" },
+      "runtime": { "name": "Runtime" },
+      "energy": { "name": "Energy" },
+      "wpm_heat_cool_mode": { "name": "WPM heat/cool mode" },
+      "wpm_manual_defrost": { "name": "WPM manual defrost" },
+      "wpm_target_temperature": { "name": "WPM target temperature" },
+      "wpm_setpoint_ch": { "name": "WPM CH setpoint" },
+      "wpm_setpoint_hp": { "name": "WPM HP setpoint" },
+      "wpm_unit_on": { "name": "WPM unit on" },
+      "diagnostics": { "name": "Diagnostics" }
+    },
+    "switch": {
+      "power": { "name": "Power" },
+      "eco": { "name": "Eco" },
+      "frost_protection": { "name": "Frost protection" },
+      "turbo": { "name": "Turbo" },
+      "sleep": { "name": "Sleep / Silent mode" },
+      "bioclean": { "name": "Bioclean" },
+      "wpm_heat_cool_mode": { "name": "WPM heat/cool mode" },
+      "wpm_manual_defrost": { "name": "WPM manual defrost" }
+    },
+    "water_heater": {
+      "domestic_hot_water": {
+        "name": "Water heater",
+        "state": {
+          "off": "Off",
+          "heat": "Heat",
+          "auto": "Auto",
+          "eco": "Eco",
+          "hybrid": "Hybrid",
+          "speed_heating": "Speed heating",
+          "vacation": "Vacation"
+        },
+        "state_attributes": {
+          "operation_list": {
+            "state": {
+              "off": "Off",
+              "heat": "Heat",
+              "auto": "Auto",
+              "eco": "Eco",
+              "hybrid": "Hybrid",
+              "speed_heating": "Speed heating",
+              "vacation": "Vacation"
+            }
+          },
+          "operation_mode": {
+            "state": {
+              "off": "Off",
+              "heat": "Heat",
+              "auto": "Auto",
+              "eco": "Eco",
+              "hybrid": "Hybrid",
+              "speed_heating": "Speed heating",
+              "vacation": "Vacation"
+            }
+          }
+        }
+      }
+    }
   }
 }

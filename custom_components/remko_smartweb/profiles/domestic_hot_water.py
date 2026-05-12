@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from ..const import DEVICE_KIND_DHW
 from .base import SmartWebDeviceProfile
 from .value_mapping import ValueWriteSpec, build_value_write
@@ -17,6 +19,12 @@ DHW_WRITE_SPECS = (
     ValueWriteSpec("power", "1194", enum={True: 0x01, False: 0x02}),
     ValueWriteSpec("mode", "1192", enum=DHW_MODE_VALUE_IDS),
 )
+VACATION_END_DATE_REGISTER_SPECS = {
+    "enabled": "rbw_register:1129",
+    "year": "rbw_register:1130",
+    "month": "rbw_register:1131",
+    "day": "rbw_register:1132",
+}
 
 
 def _state_byte(hexstr: str | None):
@@ -144,4 +152,20 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         return status
 
     def build_value_write(self, overrides: dict) -> dict[str, str] | None:
-        return build_value_write(overrides, DHW_WRITE_SPECS)
+        values = {}
+        vacation_end_date = overrides.get("vacation_end_date")
+        if vacation_end_date is not None:
+            if isinstance(vacation_end_date, date):
+                parsed_date = vacation_end_date
+            else:
+                parsed_date = date.fromisoformat(str(vacation_end_date))
+            values.update(
+                {
+                    VACATION_END_DATE_REGISTER_SPECS["enabled"]: "0001",
+                    VACATION_END_DATE_REGISTER_SPECS["year"]: f"{parsed_date.year:04X}",
+                    VACATION_END_DATE_REGISTER_SPECS["month"]: f"{parsed_date.month:04X}",
+                    VACATION_END_DATE_REGISTER_SPECS["day"]: f"{parsed_date.day:04X}",
+                }
+            )
+        values.update(build_value_write(overrides, DHW_WRITE_SPECS) or {})
+        return values or None

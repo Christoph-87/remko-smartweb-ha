@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.4
+- Add Home Assistant entity translations for climate, domestic hot water, dehumidifier, heat-pump, sensor, switch, number, and date entities
+- Add German translations for DHW operation modes, climate fan/swing/preset modes, diagnostic entities, and mapped LTE/KWT/WPM values
+- Add a DHW vacation end-date date entity based on the RBW SmartWeb mapping (`1407` / registers `1129`-`1132`)
+- Require a configured DHW vacation end date before enabling Vacation mode from the water-heater entity
+- Parse RBW vacation end-date status from direct ESP/Modbus reads and write the date before switching the DHW mode to Vacation
+- Log RBW raw register mapping changes in debug mode to make future SmartWeb mapping work easier
+- Update the README with the new Vacation mode workflow
+
 ## v0.4.2
 - Replace the separate profile, portal, and MQTT diagnostic entities with one compact Diagnostics sensor whose attributes keep the same metadata
 - Remove legacy individual diagnostic entities from Home Assistant's entity registry when setting up the compact Diagnostics sensor

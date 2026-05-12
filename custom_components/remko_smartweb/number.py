@@ -31,7 +31,8 @@ class RemkoSmartWebNumber(CoordinatorEntity, NumberEntity):
         self._client = client
         self._profile = profile
         self._key = key
-        self._attr_name = f"{device_name} {name}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = key
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_number"
         self._attr_native_min_value = min_value
         self._attr_native_max_value = max_value

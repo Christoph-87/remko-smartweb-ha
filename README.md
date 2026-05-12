@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
-![Version](https://img.shields.io/badge/version-0.4.3-blue)
+![Version](https://img.shields.io/badge/version-0.4.4-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device from Home Assistant — temperatures, operating modes, switches, and more. Works via the REMKO SmartWeb cloud (internet connection required).
 
@@ -61,6 +61,8 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 Experimental means it works in testing but may behave differently on some units.
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.
+
+**Domestic hot water note:** REMKO requires a vacation end date before Vacation mode is activated. Set the `DHW vacation end date` date entity first, then select Vacation mode on the water-heater entity.
 
 ---
 

@@ -8,6 +8,7 @@ import ssl
 import threading
 import time
 from collections import deque
+from datetime import date
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import requests
@@ -96,6 +97,7 @@ RBW_VALUE_WRITE_REGISTERS = {
     "1192": (1012, "mode"),
     "1333": (1104, "temp1"),
 }
+RBW_DIRECT_REGISTER_PREFIX = "rbw_register:"
 RBW_MODE_REGISTER_VALUES = {
     0x03: 0,  # auto / intelligent
     0x09: 2,  # eco / economic
@@ -732,6 +734,10 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     dhw_ambient = _rbw_temp1(registers.get(2019))
     dhw_mode = RBW_REGISTER_MODE_VALUES.get(registers.get(1012))
     power_register = registers.get(1011)
+    vacation_enabled = registers.get(1129)
+    vacation_year = registers.get(1130)
+    vacation_month = registers.get(1131)
+    vacation_day = registers.get(1132)
 
     status = {}
     if dhw_setpoint is not None:
@@ -751,6 +757,11 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     if power_register is not None:
         status["dhw_power_state"] = "on" if power_register == 1 else "off"
         status["power"] = "ON" if power_register == 1 else "OFF"
+    if vacation_enabled is not None:
+        status["dhw_vacation_enabled"] = bool(vacation_enabled & 0x01)
+    vacation_date = _rbw_vacation_date(vacation_year, vacation_month, vacation_day)
+    if vacation_date is not None:
+        status["dhw_vacation_end_date"] = vacation_date
     if status.get("power") is None and status:
         status["power"] = "ON"
     if status:
@@ -759,8 +770,41 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     return None
 
 
+def _rbw_vacation_date(year: int | None, month: int | None, day: int | None) -> str | None:
+    if year is None or month is None or day is None:
+        return None
+    if year < 100:
+        year += 2000
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _build_rbw_set_register_cmd(register: int, register_value: int) -> str | None:
+    if not 0 <= register <= 0xFFFF or not 0 <= register_value <= 0xFFFF:
+        return None
+    cmd = [
+        0x63,
+        0x10,
+        (register & 0xFF00) >> 8,
+        register & 0x00FF,
+        0x01,
+        (register_value & 0xFF00) >> 8,
+        register_value & 0x00FF,
+    ]
+    return "".join(f"{b:02X}" for b in cmd)
+
+
 def _build_rbw_set_cmd(value_id: str, value_hex: str) -> str | None:
     """Build the RBW/KWT-style raw Modbus Tx used by the SmartWeb frontend."""
+    if str(value_id).startswith(RBW_DIRECT_REGISTER_PREFIX):
+        try:
+            register = int(str(value_id).removeprefix(RBW_DIRECT_REGISTER_PREFIX))
+            register_value = int(str(value_hex), 16)
+        except Exception:
+            return None
+        return _build_rbw_set_register_cmd(register, register_value)
     spec = RBW_VALUE_WRITE_REGISTERS.get(str(value_id))
     if spec is None:
         return None
@@ -2337,6 +2381,8 @@ class RemkoSmartWebClient:
             )
 
         parsed = _parse_rbw_register_status(registers)
+        if registers:
+            self._log_mapping_snapshot("rbw_esp_registers", registers)
         if not parsed:
             self._log_unsupported_payload(
                 "rbw_esp_status",
