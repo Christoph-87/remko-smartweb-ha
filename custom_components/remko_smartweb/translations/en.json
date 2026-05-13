@@ -158,6 +158,9 @@
           "off": "Off"
         }
       },
+      "electric_heater_state": { "name": "Electric heater state" },
+      "compressor_runtime": { "name": "Total compressor runtime" },
+      "electric_heater_runtime": { "name": "Total electric heater runtime" },
       "target_humidity": { "name": "Target humidity" },
       "internal_humidity": { "name": "Internal humidity" },
       "internal_temperature": { "name": "Internal temperature" },

@@ -40,6 +40,7 @@ class SensorDeviceClass:
 
 class SensorStateClass:
     MEASUREMENT = "measurement"
+    TOTAL_INCREASING = "total_increasing"
 
 
 class CoordinatorEntity:
@@ -175,6 +176,31 @@ class SensorSetupTests(unittest.TestCase):
             sensor.extra_state_attributes,
             {"last_successful_value_update": "2026-05-11T10:00:00+00:00"},
         )
+
+    def test_diagnostic_hour_sensor_metadata(self):
+        hass = HomeAssistant()
+
+        class Coordinator:
+            data = {"compressor_runtime": 1234}
+
+            def __init__(self):
+                self.hass = hass
+
+            def last_value_update_time(self, key):
+                return None
+
+        sensor = RemkoSmartWebSensor(
+            Coordinator(),
+            "SmartWeb",
+            "compressor_runtime",
+            "Total compressor runtime",
+            "diagnostic_hours",
+        )
+
+        self.assertEqual(sensor.native_value, 1234)
+        self.assertEqual(sensor.native_unit_of_measurement, "h")
+        self.assertEqual(sensor.state_class, SensorStateClass.TOTAL_INCREASING)
+        self.assertEqual(sensor._attr_entity_category, EntityCategory.DIAGNOSTIC)
 
     def test_setup_adds_single_diagnostic_sensor_with_dynamic_attributes(self):
         hass = HomeAssistant()

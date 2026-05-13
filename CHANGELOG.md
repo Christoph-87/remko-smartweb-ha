@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.8
+- Add RBW/DHW sensors for compressor state and electric heater state
+- Add diagnostic RBW/DHW runtime sensors for total compressor runtime and total electric heater runtime
+- Parse the new values from both SmartWeb value snapshots and direct RBW Modbus register reads
+
 ## v0.4.7
 - Register the MXW timer Lovelace card route only once per Home Assistant instance
 - Fix startup failures when multiple REMKO SmartWeb devices are configured and set up in parallel

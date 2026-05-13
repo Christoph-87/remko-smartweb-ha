@@ -205,6 +205,19 @@ class SequencedClient:
         return None
 
 
+class CachedStatusClient:
+    def __init__(self, response):
+        self.response = response
+        self._last_status_source = None
+
+    def read_status(self):
+        self._last_status_source = "cached_last_status"
+        return self.response
+
+    def initial_status_if_supported(self):
+        return None
+
+
 class FakeMqtt:
     def __init__(self, response_values=None):
         self.response_values = response_values
@@ -332,6 +345,24 @@ class CoordinatorTests(unittest.TestCase):
             {"room": 21.0, "setpoint": 23.0, "mode": "heat", "unit": "C"},
         )
         self.assertEqual(coordinator.last_value_update_time("room"), room_update)
+
+    def test_cached_status_does_not_overwrite_current_coordinator_state(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            CachedStatusClient({"dhw_mode": "eco", "mode": "eco", "power": "ON", "unit": "C"}),
+            entry_id="entry",
+            scan_interval=30,
+        )
+        coordinator.async_set_updated_data(
+            {"dhw_mode": "vacation", "mode": "vacation", "power": "ON", "unit": "C"}
+        )
+
+        data = asyncio.run(coordinator._async_update_data())
+
+        self.assertEqual(
+            data,
+            {"dhw_mode": "vacation", "mode": "vacation", "power": "ON", "unit": "C"},
+        )
 
     def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
         session = _MqttSession.__new__(_MqttSession)

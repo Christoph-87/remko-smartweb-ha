@@ -101,6 +101,11 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
     async def _async_update_data(self) -> dict:
         try:
             data = await self.hass.async_add_executor_job(self.client.read_status)
+            if (
+                getattr(self.client, "_last_status_source", None) == "cached_last_status"
+                and isinstance(self.data, dict)
+            ):
+                return self.data
             data = self._merge_with_last_valid_data(data)
             self._update_value_timestamps(data)
             self._reset_backoff()

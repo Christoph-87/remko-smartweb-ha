@@ -73,8 +73,12 @@ VALUE_STATUS_QUERY_LIST = [
     1453,
     1454,
     5032,
+    5081,
+    6009,
     5943,
     5944,
+    5946,
+    5947,
     # LTE / dehumidifier-style values.
     1302,
     5195,
@@ -745,6 +749,9 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     vacation_year = registers.get(1130)
     vacation_month = registers.get(1131)
     vacation_day = registers.get(1132)
+    output_register = registers.get(2050)
+    compressor_runtime = registers.get(2061)
+    electric_heater_runtime = registers.get(2062)
 
     status = {}
     if dhw_setpoint is not None:
@@ -769,6 +776,13 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     vacation_date = _rbw_vacation_date(vacation_year, vacation_month, vacation_day)
     if vacation_date is not None:
         status["dhw_vacation_end_date"] = vacation_date
+    if output_register is not None:
+        status["compressor_state"] = bool(output_register & (1 << 8))
+        status["electric_heater_state"] = bool(output_register & (1 << 9))
+    if compressor_runtime is not None:
+        status["compressor_runtime"] = compressor_runtime
+    if electric_heater_runtime is not None:
+        status["electric_heater_runtime"] = electric_heater_runtime
     if status.get("power") is None and status:
         status["power"] = "ON"
     if status:
@@ -1760,6 +1774,7 @@ class RemkoSmartWebClient:
         self._last_device_list_empty = False
         self._last_support_snapshot_signature = None
         self._mqtt = None
+        self._write_lock = threading.RLock()
 
     def initial_status_if_supported(self) -> dict | None:
         """Return a minimal state when setup can safely proceed before live values arrive."""
@@ -2743,6 +2758,13 @@ class RemkoSmartWebClient:
             _LOGGER.warning("Readback after SET failed: %s", err)
 
     def set_value_ids(self, values: dict[str, str]) -> None:
+        write_lock = getattr(self, "_write_lock", None)
+        if write_lock is None:
+            write_lock = self._write_lock = threading.RLock()
+        with write_lock:
+            return self._set_value_ids_unlocked(values)
+
+    def _set_value_ids_unlocked(self, values: dict[str, str]) -> None:
         """Write Smart-Web value IDs directly via CLIENT2HOST.
 
         This is used for devices whose frontend operates on Smart-Web values instead of C0 ESP

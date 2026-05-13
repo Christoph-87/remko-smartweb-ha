@@ -192,7 +192,18 @@ class ProfileParsingTests(unittest.TestCase):
         for rx in (
             _rbw_rx(1001, 90, {1011: 1, 1012: 2}),
             _rbw_rx(1091, 90, {1104: 170}),
-            _rbw_rx(2001, 90, {2019: 102, 2020: 160, 2021: 166}),
+            _rbw_rx(
+                2001,
+                90,
+                {
+                    2019: 102,
+                    2020: 160,
+                    2021: 166,
+                    2050: (1 << 8) | (1 << 9),
+                    2061: 1234,
+                    2062: 56,
+                },
+            ),
         ):
             registers.update(_parse_rbw_registers_rx(rx))
 
@@ -208,6 +219,10 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_bottom_temperature"], 50.0)
         self.assertEqual(status["dhw_top_temperature"], 53.0)
         self.assertEqual(status["room"], 53.0)
+        self.assertTrue(status["compressor_state"])
+        self.assertTrue(status["electric_heater_state"])
+        self.assertEqual(status["compressor_runtime"], 1234)
+        self.assertEqual(status["electric_heater_runtime"], 56)
 
     def test_rbw_direct_modbus_status_parses_vacation_end_date(self):
         registers = {}
@@ -486,8 +501,12 @@ class ProfileParsingTests(unittest.TestCase):
             "1333": "0226",
             "1336": "0226",
             "5032": "00D2",
+            "5081": "01",
+            "6009": "00",
             "5943": "0212",
             "5944": "01EA",
+            "5946": "04D2",
+            "5947": "0038",
         }
 
         status = DomesticHotWaterDeviceProfile().parse_values_status(values)
@@ -500,6 +519,10 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_power_state"], "on")
         self.assertEqual(status["power"], "ON")
         self.assertEqual(status["room"], 53.0)
+        self.assertTrue(status["compressor_state"])
+        self.assertFalse(status["electric_heater_state"])
+        self.assertEqual(status["compressor_runtime"], 1234)
+        self.assertEqual(status["electric_heater_runtime"], 56)
 
     def test_dhw_values_status_parses_signed_ambient_temperature(self):
         values = {

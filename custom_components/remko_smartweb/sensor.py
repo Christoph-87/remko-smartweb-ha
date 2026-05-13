@@ -57,6 +57,8 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
         self._kind = kind
         self._attr_has_entity_name = True
         self._attr_translation_key = key
+        if kind and kind.startswith("diagnostic_"):
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name)},
@@ -74,6 +76,8 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
         if self._kind != "temperature":
             if self._kind == "percentage":
                 return PERCENTAGE
+            if self._kind in ("hours", "diagnostic_hours"):
+                return "h"
             return None
         unit = self.coordinator.data.get("unit", "C")
         return UnitOfTemperature.FAHRENHEIT if unit == "F" else UnitOfTemperature.CELSIUS
@@ -90,6 +94,8 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
     def state_class(self):
         if self._kind in ("temperature", "percentage"):
             return SensorStateClass.MEASUREMENT
+        if self._kind in ("hours", "diagnostic_hours"):
+            return getattr(SensorStateClass, "TOTAL_INCREASING", SensorStateClass.MEASUREMENT)
         return None
 
     @property

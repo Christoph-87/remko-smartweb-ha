@@ -101,6 +101,10 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         ("dhw_ambient_temperature", "DHW Ambient Temperature", "temperature"),
         ("dhw_mode", "DHW Mode", None),
         ("dhw_power_state", "DHW Power State", None),
+        ("compressor_state", "Compressor State", None),
+        ("electric_heater_state", "Electric Heater State", None),
+        ("compressor_runtime", "Compressor Runtime", "diagnostic_hours"),
+        ("electric_heater_runtime", "Electric Heater Runtime", "diagnostic_hours"),
     )
 
     def parse_values_status(self, values: dict) -> dict | None:
@@ -114,6 +118,10 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         dhw_bottom = _temperature_tenths(values.get("5944"))
         dhw_ambient = _temperature_tenths(values.get("5032"))
         dhw_current = dhw_top if dhw_top is not None else _temperature_tenths(values.get("1336"))
+        compressor_state = _state_byte(values.get("5081"))
+        electric_heater_state = _state_byte(values.get("6009"))
+        compressor_runtime = _first_word(values.get("5946"))
+        electric_heater_runtime = _first_word(values.get("5947"))
         if (
             dhw_setpoint is None
             and dhw_current is None
@@ -122,6 +130,10 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             and dhw_mode is None
             and b1194 is None
             and b1152 is None
+            and compressor_state is None
+            and electric_heater_state is None
+            and compressor_runtime is None
+            and electric_heater_runtime is None
         ):
             return None
 
@@ -143,6 +155,14 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         if b1194 is not None:
             status["dhw_power_state"] = "on" if b1194 == 0x01 else ("off" if b1194 == 0x02 else None)
             status["power"] = "ON" if b1194 == 0x01 else ("OFF" if b1194 == 0x02 else None)
+        if compressor_state is not None:
+            status["compressor_state"] = bool(compressor_state)
+        if electric_heater_state is not None:
+            status["electric_heater_state"] = bool(electric_heater_state)
+        if compressor_runtime is not None:
+            status["compressor_runtime"] = compressor_runtime
+        if electric_heater_runtime is not None:
+            status["electric_heater_runtime"] = electric_heater_runtime
         if status.get("power") is None and (dhw_setpoint is not None or dhw_current is not None):
             status["power"] = "ON" if b1152 in (None, 0x01) else None
         status["unit"] = "C"

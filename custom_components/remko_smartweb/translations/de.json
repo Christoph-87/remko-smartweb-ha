@@ -158,6 +158,9 @@
           "off": "Aus"
         }
       },
+      "electric_heater_state": { "name": "E-Heizstab" },
+      "compressor_runtime": { "name": "Gesamtlaufzeit Kompressor" },
+      "electric_heater_runtime": { "name": "Gesamtlaufzeit E-Heizstab" },
       "target_humidity": { "name": "Zielfeuchte" },
       "internal_humidity": { "name": "Interne Luftfeuchte" },
       "internal_temperature": { "name": "Interne Temperatur" },
