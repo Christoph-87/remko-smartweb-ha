@@ -777,8 +777,8 @@ def _parse_rbw_register_status(registers: dict[int, int]) -> dict | None:
     if vacation_date is not None:
         status["dhw_vacation_end_date"] = vacation_date
     if output_register is not None:
-        status["compressor_state"] = bool(output_register & (1 << 8))
-        status["electric_heater_state"] = bool(output_register & (1 << 9))
+        status["compressor_state"] = "on" if output_register & (1 << 8) else "off"
+        status["electric_heater_state"] = "on" if output_register & (1 << 9) else "off"
     if compressor_runtime is not None:
         status["compressor_runtime"] = compressor_runtime
     if electric_heater_runtime is not None:

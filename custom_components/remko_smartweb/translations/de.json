@@ -158,7 +158,13 @@
           "off": "Aus"
         }
       },
-      "electric_heater_state": { "name": "E-Heizstab" },
+      "electric_heater_state": {
+        "name": "E-Heizstab",
+        "state": {
+          "on": "Ein",
+          "off": "Aus"
+        }
+      },
       "compressor_runtime": { "name": "Gesamtlaufzeit Kompressor" },
       "electric_heater_runtime": { "name": "Gesamtlaufzeit E-Heizstab" },
       "target_humidity": { "name": "Zielfeuchte" },
@@ -170,7 +176,13 @@
       "condenser_temperature": { "name": "Kondensatortemperatur" },
       "tank_state": { "name": "Tankstatus" },
       "defrost_state": { "name": "Abtaustatus" },
-      "compressor_state": { "name": "Kompressorstatus" },
+      "compressor_state": {
+        "name": "Kompressorstatus",
+        "state": {
+          "on": "Ein",
+          "off": "Aus"
+        }
+      },
       "runtime": { "name": "Laufzeit" },
       "energy": { "name": "Energie" },
       "wpm_heat_cool_mode": { "name": "WPM Heiz-/Kühlmodus" },

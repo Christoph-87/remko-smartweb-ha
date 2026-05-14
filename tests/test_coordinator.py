@@ -799,6 +799,41 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(set(mode_translations), set(OPERATION_MODES))
         self.assertEqual(mode_translations["speed_heating"], "Schnellheizen")
         self.assertEqual(mode_translations["vacation"], "Urlaub")
+        sensor_translations = translations["entity"]["sensor"]
+        self.assertEqual(
+            sensor_translations["compressor_state"]["state"],
+            {"on": "Ein", "off": "Aus"},
+        )
+        self.assertEqual(
+            sensor_translations["electric_heater_state"]["state"],
+            {"on": "Ein", "off": "Aus"},
+        )
+
+    def test_entity_icons_cover_water_heater_and_climate_modes(self):
+        icons = json.loads(
+            (COMPONENT_PATH / "icons.json").read_text(encoding="utf-8")
+        )
+
+        water_heater_icons = icons["entity"]["water_heater"]["domestic_hot_water"]["state"]
+        climate_icons = icons["entity"]["climate"]["climate"]["state_attributes"]
+
+        self.assertEqual(set(water_heater_icons), set(OPERATION_MODES))
+        self.assertEqual(water_heater_icons["auto"], "mdi:refresh-auto")
+        self.assertEqual(water_heater_icons["vacation"], "mdi:island")
+        self.assertEqual(water_heater_icons["hybrid"], "mdi:lightning-bolt")
+        self.assertEqual(water_heater_icons["speed_heating"], "mdi:fire")
+        self.assertEqual(
+            set(climate_icons["fan_mode"]["state"]),
+            {"auto", "silent", "low", "medium", "high"},
+        )
+        self.assertEqual(
+            set(climate_icons["swing_mode"]["state"]),
+            {"off", "vertical", "horizontal", "both"},
+        )
+        self.assertEqual(
+            set(climate_icons["preset_mode"]["state"]),
+            {"none", "eco", "turbo", "sleep", "bioclean"},
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,272 @@
+{
+  "entity": {
+    "climate": {
+      "climate": {
+        "default": "mdi:air-conditioner",
+        "state_attributes": {
+          "fan_mode": {
+            "state": {
+              "auto": "mdi:fan-auto",
+              "silent": "mdi:fan-speed-1",
+              "low": "mdi:fan-speed-1",
+              "medium": "mdi:fan-speed-2",
+              "high": "mdi:fan-speed-3"
+            }
+          },
+          "swing_mode": {
+            "state": {
+              "off": "mdi:arrow-collapse",
+              "vertical": "mdi:arrow-up-down",
+              "horizontal": "mdi:arrow-left-right",
+              "both": "mdi:axis-arrow"
+            }
+          },
+          "preset_mode": {
+            "state": {
+              "none": "mdi:circle-off-outline",
+              "eco": "mdi:leaf",
+              "turbo": "mdi:fire",
+              "sleep": "mdi:sleep",
+              "bioclean": "mdi:bacteria-outline"
+            }
+          }
+        }
+      }
+    },
+    "date": {
+      "dhw_vacation_end_date": {
+        "default": "mdi:calendar-end"
+      }
+    },
+    "number": {
+      "target_humidity": {
+        "default": "mdi:water-percent"
+      },
+      "wpm_target_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "wpm_setpoint_ch": {
+        "default": "mdi:thermometer"
+      },
+      "wpm_setpoint_hp": {
+        "default": "mdi:thermometer"
+      }
+    },
+    "sensor": {
+      "room": {
+        "default": "mdi:thermometer"
+      },
+      "outdoor": {
+        "default": "mdi:thermometer"
+      },
+      "setpoint": {
+        "default": "mdi:thermometer"
+      },
+      "error": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "mxw_timer_schedule": {
+        "default": "mdi:calendar-clock"
+      },
+      "mode": {
+        "state": {
+          "auto": "mdi:refresh-auto",
+          "cool": "mdi:snowflake",
+          "dry": "mdi:water-percent",
+          "heat": "mdi:fire",
+          "fan": "mdi:fan"
+        }
+      },
+      "fan": {
+        "state": {
+          "auto": "mdi:fan-auto",
+          "silent": "mdi:fan-speed-1",
+          "low": "mdi:fan-speed-1",
+          "medium": "mdi:fan-speed-2",
+          "high": "mdi:fan-speed-3"
+        }
+      },
+      "swing": {
+        "state": {
+          "off": "mdi:arrow-collapse",
+          "vertical": "mdi:arrow-up-down",
+          "horizontal": "mdi:arrow-left-right",
+          "both": "mdi:axis-arrow"
+        }
+      },
+      "filter_state": {
+        "default": "mdi:air-filter"
+      },
+      "frost_protection": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "firmware": {
+        "default": "mdi:chip"
+      },
+      "device_id": {
+        "default": "mdi:identifier"
+      },
+      "dhw_setpoint": {
+        "default": "mdi:thermometer-water"
+      },
+      "dhw_top_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "dhw_bottom_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "dhw_ambient_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "dhw_mode": {
+        "state": {
+          "auto": "mdi:refresh-auto",
+          "heat": "mdi:fire",
+          "eco": "mdi:leaf",
+          "hybrid": "mdi:lightning-bolt",
+          "speed_heating": "mdi:fire",
+          "vacation": "mdi:island"
+        }
+      },
+      "dhw_power_state": {
+        "state": {
+          "on": "mdi:power",
+          "off": "mdi:power"
+        }
+      },
+      "electric_heater_state": {
+        "state": {
+          "on": "mdi:radiator",
+          "off": "mdi:radiator-off"
+        }
+      },
+      "compressor_runtime": {
+        "default": "mdi:timer-outline"
+      },
+      "electric_heater_runtime": {
+        "default": "mdi:timer-outline"
+      },
+      "target_humidity": {
+        "default": "mdi:water-percent"
+      },
+      "internal_humidity": {
+        "default": "mdi:water-percent"
+      },
+      "internal_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "external_humidity": {
+        "default": "mdi:water-percent"
+      },
+      "external_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "evaporator_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "condenser_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "tank_state": {
+        "default": "mdi:water"
+      },
+      "defrost_state": {
+        "default": "mdi:snowflake-melt"
+      },
+      "compressor_state": {
+        "state": {
+          "on": "mdi:engine",
+          "off": "mdi:engine-off"
+        }
+      },
+      "runtime": {
+        "default": "mdi:timer-outline"
+      },
+      "energy": {
+        "default": "mdi:lightning-bolt"
+      },
+      "wpm_heat_cool_mode": {
+        "default": "mdi:sun-snowflake"
+      },
+      "wpm_manual_defrost": {
+        "default": "mdi:snowflake-melt"
+      },
+      "wpm_target_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "wpm_setpoint_ch": {
+        "default": "mdi:thermometer"
+      },
+      "wpm_setpoint_hp": {
+        "default": "mdi:thermometer"
+      },
+      "wpm_unit_on": {
+        "default": "mdi:power"
+      },
+      "diagnostics": {
+        "default": "mdi:clipboard-pulse-outline"
+      }
+    },
+    "switch": {
+      "power": {
+        "default": "mdi:power"
+      },
+      "eco": {
+        "default": "mdi:leaf"
+      },
+      "frost_protection": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "turbo": {
+        "default": "mdi:fire"
+      },
+      "sleep": {
+        "default": "mdi:sleep"
+      },
+      "bioclean": {
+        "default": "mdi:bacteria-outline"
+      },
+      "wpm_heat_cool_mode": {
+        "default": "mdi:sun-snowflake"
+      },
+      "wpm_manual_defrost": {
+        "default": "mdi:snowflake-melt"
+      }
+    },
+    "water_heater": {
+      "domestic_hot_water": {
+        "default": "mdi:water-boiler",
+        "state": {
+          "off": "mdi:power",
+          "auto": "mdi:refresh-auto",
+          "eco": "mdi:leaf",
+          "hybrid": "mdi:lightning-bolt",
+          "speed_heating": "mdi:fire",
+          "vacation": "mdi:island"
+        },
+        "state_attributes": {
+          "operation_list": {
+            "state": {
+              "off": "mdi:power",
+              "auto": "mdi:refresh-auto",
+              "eco": "mdi:leaf",
+              "hybrid": "mdi:lightning-bolt",
+              "speed_heating": "mdi:fire",
+              "vacation": "mdi:island"
+            }
+          },
+          "operation_mode": {
+            "state": {
+              "off": "mdi:power",
+              "auto": "mdi:refresh-auto",
+              "eco": "mdi:leaf",
+              "hybrid": "mdi:lightning-bolt",
+              "speed_heating": "mdi:fire",
+              "vacation": "mdi:island"
+            }
+          }
+        }
+      }
+    }
+  }
+}

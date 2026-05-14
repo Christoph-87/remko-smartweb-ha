@@ -156,9 +156,9 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             status["dhw_power_state"] = "on" if b1194 == 0x01 else ("off" if b1194 == 0x02 else None)
             status["power"] = "ON" if b1194 == 0x01 else ("OFF" if b1194 == 0x02 else None)
         if compressor_state is not None:
-            status["compressor_state"] = bool(compressor_state)
+            status["compressor_state"] = "on" if compressor_state else "off"
         if electric_heater_state is not None:
-            status["electric_heater_state"] = bool(electric_heater_state)
+            status["electric_heater_state"] = "on" if electric_heater_state else "off"
         if compressor_runtime is not None:
             status["compressor_runtime"] = compressor_runtime
         if electric_heater_runtime is not None:

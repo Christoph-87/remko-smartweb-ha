@@ -158,7 +158,13 @@
           "off": "Off"
         }
       },
-      "electric_heater_state": { "name": "Electric heater state" },
+      "electric_heater_state": {
+        "name": "Electric heater state",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
       "compressor_runtime": { "name": "Total compressor runtime" },
       "electric_heater_runtime": { "name": "Total electric heater runtime" },
       "target_humidity": { "name": "Target humidity" },
@@ -170,7 +176,13 @@
       "condenser_temperature": { "name": "Condenser temperature" },
       "tank_state": { "name": "Tank state" },
       "defrost_state": { "name": "Defrost state" },
-      "compressor_state": { "name": "Compressor state" },
+      "compressor_state": {
+        "name": "Compressor state",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
       "runtime": { "name": "Runtime" },
       "energy": { "name": "Energy" },
       "wpm_heat_cool_mode": { "name": "WPM heat/cool mode" },

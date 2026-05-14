@@ -219,8 +219,8 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_bottom_temperature"], 50.0)
         self.assertEqual(status["dhw_top_temperature"], 53.0)
         self.assertEqual(status["room"], 53.0)
-        self.assertTrue(status["compressor_state"])
-        self.assertTrue(status["electric_heater_state"])
+        self.assertEqual(status["compressor_state"], "on")
+        self.assertEqual(status["electric_heater_state"], "on")
         self.assertEqual(status["compressor_runtime"], 1234)
         self.assertEqual(status["electric_heater_runtime"], 56)
 
@@ -519,8 +519,8 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["dhw_power_state"], "on")
         self.assertEqual(status["power"], "ON")
         self.assertEqual(status["room"], 53.0)
-        self.assertTrue(status["compressor_state"])
-        self.assertFalse(status["electric_heater_state"])
+        self.assertEqual(status["compressor_state"], "on")
+        self.assertEqual(status["electric_heater_state"], "off")
         self.assertEqual(status["compressor_runtime"], 1234)
         self.assertEqual(status["electric_heater_runtime"], 56)
 
@@ -828,6 +828,27 @@ class ProfileParsingTests(unittest.TestCase):
             set(DHW_MODE_VALUE_IDS),
             set(translations["water_heater"]["domestic_hot_water"]["state"]) - {"off"},
         )
+
+    def test_translation_files_match_strings_structure(self):
+        def leaf_paths(value, prefix=()):
+            if isinstance(value, dict):
+                result = set()
+                for key, child in value.items():
+                    result.update(leaf_paths(child, prefix + (key,)))
+                return result
+            return {prefix}
+
+        strings = json.loads((COMPONENT_PATH / "strings.json").read_text(encoding="utf-8"))
+        expected_paths = leaf_paths(strings)
+
+        for language in ("en", "de"):
+            with self.subTest(language=language):
+                translation = json.loads(
+                    (COMPONENT_PATH / "translations" / f"{language}.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(leaf_paths(translation), expected_paths)
 
 
 if __name__ == "__main__":
