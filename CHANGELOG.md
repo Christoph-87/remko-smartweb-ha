@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.4.13
+- Add icon (`mdi:snowflake-thermometer`) for the Frost Protection preset mode in the climate card
+
 ## v0.4.12
 - Add Frost Protection as a preset mode in the climate entity — it now appears in the climate card alongside Eco, Turbo, Sleep, and Bioclean and is mutually exclusive with the other presets
 
