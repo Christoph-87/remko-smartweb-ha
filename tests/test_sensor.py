@@ -36,6 +36,7 @@ class SensorEntity:
 class SensorDeviceClass:
     TEMPERATURE = "temperature"
     HUMIDITY = "humidity"
+    TIMESTAMP = "timestamp"
 
 
 class SensorStateClass:

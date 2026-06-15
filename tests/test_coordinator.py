@@ -634,7 +634,7 @@ class CoordinatorTests(unittest.TestCase):
         coordinator = types.SimpleNamespace(
             hass=hass,
             data={
-                "dhw_vacation_end_date": "2026-05-27",
+                "dhw_vacation_end_date": "2027-05-27",
                 "power": "ON",
                 "unit": "C",
             },
@@ -832,7 +832,7 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(
             set(climate_icons["preset_mode"]["state"]),
-            {"none", "eco", "turbo", "sleep", "bioclean"},
+            {"none", "eco", "turbo", "sleep", "bioclean", "frost_protection"},
         )
 
 
