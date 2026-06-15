@@ -37,6 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
     entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
+    entities.append(RemkoSmartWebLastSyncSensor(coordinator, device_name))
     async_add_entities(entities)
 
 
@@ -110,6 +111,26 @@ class RemkoSmartWebSensor(CoordinatorEntity, SensorEntity):
         if updated_at:
             attrs["last_successful_value_update"] = updated_at
         return attrs or None
+
+
+class RemkoSmartWebLastSyncSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, coordinator, device_name: str):
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "last_sync"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_last_sync"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_name)},
+            name=device_name,
+            manufacturer="REMKO",
+            model="SmartWeb",
+        )
+
+    @property
+    def native_value(self):
+        return getattr(self.coordinator, "last_successful_update", None)
 
 
 class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):

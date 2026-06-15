@@ -89,20 +89,40 @@
       }
     },
     "date": {
-      "dhw_vacation_end_date": { "name": "DHW vacation end date" }
+      "dhw_vacation_end_date": {
+        "name": "DHW vacation end date"
+      }
     },
     "number": {
-      "target_humidity": { "name": "Target humidity" },
-      "wpm_target_temperature": { "name": "WPM target temperature" },
-      "wpm_setpoint_ch": { "name": "WPM CH setpoint" },
-      "wpm_setpoint_hp": { "name": "WPM HP setpoint" }
+      "target_humidity": {
+        "name": "Target humidity"
+      },
+      "wpm_target_temperature": {
+        "name": "WPM target temperature"
+      },
+      "wpm_setpoint_ch": {
+        "name": "WPM CH setpoint"
+      },
+      "wpm_setpoint_hp": {
+        "name": "WPM HP setpoint"
+      }
     },
     "sensor": {
-      "room": { "name": "Room temperature" },
-      "outdoor": { "name": "Outdoor temperature" },
-      "setpoint": { "name": "Setpoint" },
-      "error": { "name": "Error code" },
-      "mxw_timer_schedule": { "name": "MXW timer schedule" },
+      "room": {
+        "name": "Room temperature"
+      },
+      "outdoor": {
+        "name": "Outdoor temperature"
+      },
+      "setpoint": {
+        "name": "Setpoint"
+      },
+      "error": {
+        "name": "Error code"
+      },
+      "mxw_timer_schedule": {
+        "name": "MXW timer schedule"
+      },
       "mode": {
         "name": "Mode",
         "state": {
@@ -132,14 +152,30 @@
           "both": "Both"
         }
       },
-      "filter_state": { "name": "Filter state" },
-      "frost_protection": { "name": "Frost protection" },
-      "firmware": { "name": "Firmware" },
-      "device_id": { "name": "Device ID" },
-      "dhw_setpoint": { "name": "DHW setpoint" },
-      "dhw_top_temperature": { "name": "DHW top temperature" },
-      "dhw_bottom_temperature": { "name": "DHW bottom temperature" },
-      "dhw_ambient_temperature": { "name": "DHW ambient temperature" },
+      "filter_state": {
+        "name": "Filter state"
+      },
+      "frost_protection": {
+        "name": "Frost protection"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "device_id": {
+        "name": "Device ID"
+      },
+      "dhw_setpoint": {
+        "name": "DHW setpoint"
+      },
+      "dhw_top_temperature": {
+        "name": "DHW top temperature"
+      },
+      "dhw_bottom_temperature": {
+        "name": "DHW bottom temperature"
+      },
+      "dhw_ambient_temperature": {
+        "name": "DHW ambient temperature"
+      },
       "dhw_mode": {
         "name": "DHW mode",
         "state": {
@@ -165,17 +201,39 @@
           "off": "Off"
         }
       },
-      "compressor_runtime": { "name": "Total compressor runtime" },
-      "electric_heater_runtime": { "name": "Total electric heater runtime" },
-      "target_humidity": { "name": "Target humidity" },
-      "internal_humidity": { "name": "Internal humidity" },
-      "internal_temperature": { "name": "Internal temperature" },
-      "external_humidity": { "name": "External humidity" },
-      "external_temperature": { "name": "External temperature" },
-      "evaporator_temperature": { "name": "Evaporator temperature" },
-      "condenser_temperature": { "name": "Condenser temperature" },
-      "tank_state": { "name": "Tank state" },
-      "defrost_state": { "name": "Defrost state" },
+      "compressor_runtime": {
+        "name": "Total compressor runtime"
+      },
+      "electric_heater_runtime": {
+        "name": "Total electric heater runtime"
+      },
+      "target_humidity": {
+        "name": "Target humidity"
+      },
+      "internal_humidity": {
+        "name": "Internal humidity"
+      },
+      "internal_temperature": {
+        "name": "Internal temperature"
+      },
+      "external_humidity": {
+        "name": "External humidity"
+      },
+      "external_temperature": {
+        "name": "External temperature"
+      },
+      "evaporator_temperature": {
+        "name": "Evaporator temperature"
+      },
+      "condenser_temperature": {
+        "name": "Condenser temperature"
+      },
+      "tank_state": {
+        "name": "Tank state"
+      },
+      "defrost_state": {
+        "name": "Defrost state"
+      },
       "compressor_state": {
         "name": "Compressor state",
         "state": {
@@ -183,25 +241,62 @@
           "off": "Off"
         }
       },
-      "runtime": { "name": "Runtime" },
-      "energy": { "name": "Energy" },
-      "wpm_heat_cool_mode": { "name": "WPM heat/cool mode" },
-      "wpm_manual_defrost": { "name": "WPM manual defrost" },
-      "wpm_target_temperature": { "name": "WPM target temperature" },
-      "wpm_setpoint_ch": { "name": "WPM CH setpoint" },
-      "wpm_setpoint_hp": { "name": "WPM HP setpoint" },
-      "wpm_unit_on": { "name": "WPM unit on" },
-      "diagnostics": { "name": "Diagnostics" }
+      "runtime": {
+        "name": "Runtime"
+      },
+      "energy": {
+        "name": "Energy"
+      },
+      "wpm_heat_cool_mode": {
+        "name": "WPM heat/cool mode"
+      },
+      "wpm_manual_defrost": {
+        "name": "WPM manual defrost"
+      },
+      "wpm_target_temperature": {
+        "name": "WPM target temperature"
+      },
+      "wpm_setpoint_ch": {
+        "name": "WPM CH setpoint"
+      },
+      "wpm_setpoint_hp": {
+        "name": "WPM HP setpoint"
+      },
+      "wpm_unit_on": {
+        "name": "WPM unit on"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
+      },
+      "last_sync": {
+        "name": "Last Synchronisation"
+      }
     },
     "switch": {
-      "power": { "name": "Power" },
-      "eco": { "name": "Eco" },
-      "frost_protection": { "name": "Frost protection" },
-      "turbo": { "name": "Turbo" },
-      "sleep": { "name": "Sleep / Silent mode" },
-      "bioclean": { "name": "Bioclean" },
-      "wpm_heat_cool_mode": { "name": "WPM heat/cool mode" },
-      "wpm_manual_defrost": { "name": "WPM manual defrost" }
+      "power": {
+        "name": "Power"
+      },
+      "eco": {
+        "name": "Eco"
+      },
+      "frost_protection": {
+        "name": "Frost protection"
+      },
+      "turbo": {
+        "name": "Turbo"
+      },
+      "sleep": {
+        "name": "Sleep / Silent mode"
+      },
+      "bioclean": {
+        "name": "Bioclean"
+      },
+      "wpm_heat_cool_mode": {
+        "name": "WPM heat/cool mode"
+      },
+      "wpm_manual_defrost": {
+        "name": "WPM manual defrost"
+      }
     },
     "water_heater": {
       "domestic_hot_water": {

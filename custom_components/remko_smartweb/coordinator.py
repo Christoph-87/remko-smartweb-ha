@@ -32,6 +32,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         self._store = Store(hass, CACHE_VERSION, f"{DOMAIN}_{entry_id}_last_state")
         self._last_saved_data = None
         self._field_value_update_times: dict[str, str] = {}
+        self.last_successful_update: datetime | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -109,6 +110,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
             data = self._merge_with_last_valid_data(data)
             self._update_value_timestamps(data)
             self._reset_backoff()
+            self.last_successful_update = datetime.now(timezone.utc)
             await self._async_save_last_known_data(data)
             return data
         except Exception as err:
