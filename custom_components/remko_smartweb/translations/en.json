@@ -82,7 +82,8 @@
               "eco": "Eco",
               "turbo": "Turbo",
               "sleep": "Sleep / Silent",
-              "bioclean": "Bioclean"
+              "bioclean": "Bioclean",
+              "frost_protection": "Frost Protection"
             }
           }
         }

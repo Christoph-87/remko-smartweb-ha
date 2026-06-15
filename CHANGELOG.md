@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.12
+- Add Frost Protection as a preset mode in the climate entity — it now appears in the climate card alongside Eco, Turbo, Sleep, and Bioclean and is mutually exclusive with the other presets
+
+## v0.4.11
+- Add `User-Agent: Home Assistant` header to the SmartWeb login request — required after a recent REMKO firmware update that rejects login attempts without a User-Agent header (affects WIFI Stick / Klimaanlage devices)
+- Add REMKO value ID `1199` to the status query list — Frost Protection state was parsed and the switch entity existed since v0.3.8, but the register was never actually queried, so the entity always showed the wrong state
+- Add a Last Synchronisation diagnostic sensor (`last_sync`) that shows the timestamp of the last successful data fetch from the device
+
 ## v0.4.8
 - Add RBW/DHW sensors for compressor state and electric heater state
 - Add diagnostic RBW/DHW runtime sensors for total compressor runtime and total electric heater runtime

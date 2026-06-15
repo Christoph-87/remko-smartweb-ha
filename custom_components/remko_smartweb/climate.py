@@ -24,7 +24,7 @@ HVAC_BY_PROFILE_MODE = {"off": HVACMode.OFF, **HVAC_MAP}
 
 FAN_MODES = ["auto", "silent", "low", "medium", "high"]
 SWING_MODES = ["off", "vertical", "horizontal", "both"]
-PRESET_MODES = ["none", "eco", "turbo", "sleep", "bioclean"]
+PRESET_MODES = ["none", "eco", "turbo", "sleep", "bioclean", "frost_protection"]
 
 
 def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
@@ -166,7 +166,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
     def preset_mode(self):
         if not getattr(self._profile, "supports_climate_presets", True):
             return None
-        for key in ("eco", "turbo", "sleep", "bioclean"):
+        for key in ("eco", "turbo", "sleep", "bioclean", "frost_protection"):
             if self.coordinator.data.get(key):
                 return key
         return "none"
@@ -200,13 +200,14 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         if preset_mode not in PRESET_MODES:
             return
         if preset_mode == "none":
-            overrides = {"eco": False, "turbo": False, "sleep": False, "bioclean": False}
+            overrides = {"eco": False, "turbo": False, "sleep": False, "bioclean": False, "frost_protection": False}
         else:
             overrides = {
                 "eco": preset_mode == "eco",
                 "turbo": preset_mode == "turbo",
                 "sleep": preset_mode == "sleep",
                 "bioclean": preset_mode == "bioclean",
+                "frost_protection": preset_mode == "frost_protection",
             }
         await self._async_set(overrides)
 
