@@ -48,6 +48,7 @@ VALUE_STATUS_QUERY_LIST = [
     1196,
     1197,
     1198,
+    1199,
     1200,
     1218,
     1210,
@@ -1650,7 +1651,7 @@ class RemkoSmartWebAccount:
             "post",
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
-            headers={"X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f"{BASE}/"},
+            headers={"User-Agent": "Home Assistant", "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f"{BASE}/"},
             timeout=15,
         )
         r.raise_for_status()
