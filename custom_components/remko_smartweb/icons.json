@@ -27,7 +27,8 @@
               "eco": "mdi:leaf",
               "turbo": "mdi:fire",
               "sleep": "mdi:sleep",
-              "bioclean": "mdi:bacteria-outline"
+              "bioclean": "mdi:bacteria-outline",
+              "frost_protection": "mdi:snowflake-thermometer"
             }
           }
         }
