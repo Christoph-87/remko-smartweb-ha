@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.4.14
+- Fix climate write commands for Generic AC devices (MXW, Klima) — when the initial C0 status read times out in the Home Assistant context, the integration now falls back to the last known payload instead of silently dropping the write command
+
 ## v0.4.13
 - Add icon (`mdi:snowflake-thermometer`) for the Frost Protection preset mode in the climate card
 

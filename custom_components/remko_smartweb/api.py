@@ -2745,6 +2745,13 @@ class RemkoSmartWebClient:
             except Exception as err:
                 last_err = err
                 time.sleep(0.5)
+        if not payload and self._last_payload:
+            _LOGGER.warning(
+                "REMKO SmartWeb write using cached C0 payload for %r (live read failed: %s)",
+                self.device_name,
+                last_err,
+            )
+            payload = self._last_payload
         if not payload:
             raise UnsupportedPayload(f"No C0 payload (status read failed: {last_err})")
         tx = _build_set_cmd_from_c0(payload, overrides)
