@@ -1800,7 +1800,7 @@ class RemkoSmartWebClient:
         self.device_portal_id = metadata.get("device_portal_id") or self.device_portal_id
         self.device_portal_name = metadata.get("device_portal_name") or self.device_portal_name
         self.device_type = metadata.get("device_type") or self.device_type
-        if self.device_kind == DEVICE_KIND_AUTO:
+        if self.device_kind in (DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE):
             profile = get_specialized_profile(self._profile_hint_name())
             if profile is not None:
                 self.profile = profile
