@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-docs/smt.min.js
-docs/lib.ac.uart.js
+.env
+docs/*.js
+docs/fetch_and_diff.py
