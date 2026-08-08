@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.16
+- Fix NameError "name 'DEVICE_KIND_CLIMATE' is not defined" introduced in v0.4.15 that caused all status updates to fail on warmwater heat pump (RBW/DHW) devices
+
+## v0.4.15
+- Apply specialized AC profile auto-detection also to DEVICE_KIND_CLIMATE devices, not only DEVICE_KIND_AUTO devices
+
 ## v0.4.14
 - Fix climate write commands for Generic AC devices (MXW, Klima) — when the initial C0 status read times out in the Home Assistant context, the integration now falls back to the last known payload instead of silently dropping the write command
 

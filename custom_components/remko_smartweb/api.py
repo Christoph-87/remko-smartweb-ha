@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 import requests
 import paho.mqtt.client as mqtt
 
-from .const import DEVICE_KIND_AUTO
+from .const import DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE
 from .profiles import (
     DomesticHotWaterDeviceProfile,
     KwtDeviceProfile,
