@@ -16,6 +16,7 @@ from .const import (
     CONF_MAX_TEMP,
     CONF_MODEL,
     CONF_DEVICE_KIND,
+    CONF_BEEP,
     DEVICE_KIND_AUTO,
     DEVICE_KIND_CLIMATE,
     DEVICE_KIND_DHW,
@@ -329,6 +330,10 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 CONF_MAX_TEMP,
                 default=self._options.get(CONF_MAX_TEMP, d_max),
             ): vol.Coerce(int),
+            vol.Optional(
+                CONF_BEEP,
+                default=self._options.get(CONF_BEEP, False),
+            ): bool,
         })
         return self.async_show_form(step_id="climate", data_schema=schema)
 

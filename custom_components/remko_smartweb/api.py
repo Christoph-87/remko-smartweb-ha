@@ -1321,12 +1321,14 @@ def _bool_from_str(val: str | None) -> bool | None:
     return None
 
 
-def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
+def _build_set_cmd_from_c0(payload: list[int], overrides: dict, beep: bool = False) -> str | None:
     """Build a SET frame by applying overrides on top of a C0 payload."""
     if not payload or payload[0] != 0xC0 or len(payload) < 22:
         return None
 
     b1 = payload[1] | 0x02
+    if beep:
+        b1 |= 0x40
     mode_map = {"auto": 1, "cool": 2, "dry": 3, "heat": 4, "fan": 5}
     mode = (payload[2] & 0xE0) >> 5
     if overrides.get("mode"):
@@ -1339,7 +1341,24 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict) -> str | None:
         sp = round((sp - 32) / 1.8 * 2) / 2
     b2 = (mode << 5) | (0x10 if sp % 1 else 0x00) | int(sp - 16)
 
-    fan = payload[3] & 0x7F
+    fan_raw = payload[3] & 0x7F
+    # Normalize to canonical UART fan values — the AC unit rejects non-canonical values
+    # (e.g. dry mode returns 0x65=101 for "auto", but the only valid auto encoding is 102)
+    if fan_raw < 21:
+        fan = 20
+    elif fan_raw < 41:
+        fan = 40
+    elif fan_raw < 61:
+        fan = 60
+    elif fan_raw < 101:
+        fan = 80
+    else:
+        fan = 102
+    if fan_raw != fan and not overrides.get("fan"):
+        _LOGGER.debug(
+            "REMKO SmartWeb SET fan byte normalized: raw=0x%02X → canonical=0x%02X",
+            fan_raw, fan,
+        )
     if overrides.get("fan"):
         fan = {"silent": 20, "low": 40, "medium": 60, "high": 80, "auto": 102}.get(overrides["fan"], fan)
     b3 = fan
@@ -1747,6 +1766,7 @@ class RemkoSmartWebClient:
         device_name: str,
         device_path: str | None = None,
         device_kind: str = DEVICE_KIND_AUTO,
+        beep: bool = False,
         account: RemkoSmartWebAccount | None = None,
     ):
         self.email = email
@@ -1754,6 +1774,7 @@ class RemkoSmartWebClient:
         self.device_name = device_name
         self.device_path = device_path
         self.device_kind = device_kind
+        self._beep = beep
         self.profile = get_parser_profile(device_name, device_kind)
         self._owns_account = account is None
         self.account = account or RemkoSmartWebAccount(email, password)
@@ -2754,14 +2775,39 @@ class RemkoSmartWebClient:
             payload = self._last_payload
         if not payload:
             raise UnsupportedPayload(f"No C0 payload (status read failed: {last_err})")
-        tx = _build_set_cmd_from_c0(payload, overrides)
+        tx = _build_set_cmd_from_c0(payload, overrides, beep=self._beep)
         if not tx:
             raise UnsupportedPayload("Failed to build SET frame")
+        _LOGGER.debug(
+            "REMKO SmartWeb SET frame: device=%r overrides=%s c0_payload=%s tx=%s",
+            self.device_name, overrides, bytes(payload).hex(), tx,
+        )
         self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
         # Try to read back status after SET to keep state in sync (best effort).
         time.sleep(1.0)
         try:
-            self.read_status()
+            readback = self.read_status()
+            if isinstance(readback, dict):
+                pwr_intended = "ON" if overrides["power"] else "OFF" if "power" in overrides else None
+                mode_intended = overrides.get("mode")
+                sp_intended = overrides.get("setpoint")
+                pwr_ok = pwr_intended is None or readback.get("power") == pwr_intended
+                mode_ok = mode_intended is None or readback.get("mode") == mode_intended
+                sp_ok = sp_intended is None or abs((readback.get("setpoint") or 0) - sp_intended) < 0.6
+                if pwr_ok and mode_ok and sp_ok:
+                    _LOGGER.debug(
+                        "REMKO SmartWeb SET readback OK: device=%r power=%s mode=%s setpoint=%s",
+                        self.device_name,
+                        readback.get("power"), readback.get("mode"), readback.get("setpoint"),
+                    )
+                else:
+                    _LOGGER.warning(
+                        "REMKO SmartWeb SET readback mismatch for %r — command may have been ignored:"
+                        " intended=%s actual_power=%s actual_mode=%s actual_setpoint=%s",
+                        self.device_name,
+                        {k: overrides[k] for k in ("power", "mode", "setpoint") if k in overrides},
+                        readback.get("power"), readback.get("mode"), readback.get("setpoint"),
+                    )
         except Exception as err:
             _LOGGER.warning("Readback after SET failed: %s", err)
 

@@ -50,7 +50,8 @@
         "data": {
           "model": "Innengerät-Modell",
           "min_temp": "Minimale Temperatur (Override)",
-          "max_temp": "Maximale Temperatur (Override)"
+          "max_temp": "Maximale Temperatur (Override)",
+          "beep": "Bestätigungston (Gerät piept bei jedem Befehl)"
         }
       }
     }

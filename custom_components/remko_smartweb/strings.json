@@ -50,7 +50,8 @@
         "data": {
           "model": "Indoor unit model",
           "min_temp": "Min temperature (override)",
-          "max_temp": "Max temperature (override)"
+          "max_temp": "Max temperature (override)",
+          "beep": "Beep on command (unit confirms each command with a beep)"
         }
       }
     }

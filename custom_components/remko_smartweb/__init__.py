@@ -16,6 +16,7 @@ from .const import (
     CONF_DEVICE_PATH,
     CONF_DEVICE_KIND,
     CONF_SCAN_INTERVAL,
+    CONF_BEEP,
     DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
     PLATFORMS,
@@ -72,6 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_path = entry.data.get(CONF_DEVICE_PATH)
     device_kind = entry.options.get(CONF_DEVICE_KIND, DEVICE_KIND_AUTO)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    beep = entry.options.get(CONF_BEEP, False)
     account = _get_or_create_account(hass, email, password)
 
     client = RemkoSmartWebClient(
@@ -80,6 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_name=device_name,
         device_path=device_path,
         device_kind=device_kind,
+        beep=beep,
         account=account,
     )
     coordinator = RemkoSmartWebCoordinator(

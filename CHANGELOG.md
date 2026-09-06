@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.17
+- Fix climate SET command rejections caused by non-canonical fan byte values — when an AC unit was previously in dry mode, its C0 status returns a fan value (e.g. `0x65`) outside the valid SET encoding set `{20, 40, 60, 80, 102}`; the fan byte is now normalized to the nearest canonical value before sending
+- Add per-device "Beep on command" option for climate devices — when enabled, the AC unit confirms each received command with a beep (disabled by default, configurable under device options → Climate Options)
+- Add debug logging for climate SET frames: logs the C0 payload bytes, the outgoing TX hex, and a structured readback comparison (intended vs. actual power/mode/setpoint) after each write
+- Log a warning when SET readback shows the AC unit did not apply the command, and a debug entry when the fan byte is normalized from a non-canonical raw value
+
 ## v0.4.16
 - Fix NameError "name 'DEVICE_KIND_CLIMATE' is not defined" introduced in v0.4.15 that caused all status updates to fail on warmwater heat pump (RBW/DHW) devices
 
