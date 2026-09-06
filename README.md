@@ -46,6 +46,7 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 |--------|--------|:----:|:-----:|
 | ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ | ✅ |
 | ❄️ **Air conditioner** | SKW 521 DC | ✅ | ✅ |
+| ❄️ **Air conditioner** | RVD 525 DC | ✅ | ✅ |
 | ❄️ **Air conditioner** | RKL 495 DC | ✅ | ⚠️ |
 | ❄️ **Air conditioner** | RKL 355 DC | ✅ | ⚠️ |
 | ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ | ⚠️ |
