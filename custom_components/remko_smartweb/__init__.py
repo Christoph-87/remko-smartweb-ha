@@ -17,6 +17,11 @@ from .const import (
     CONF_DEVICE_KIND,
     CONF_SCAN_INTERVAL,
     CONF_BEEP,
+    CONF_LOCAL_MQTT_HOST,
+    CONF_LOCAL_MQTT_PORT,
+    CONF_LOCAL_MQTT_USER,
+    CONF_LOCAL_MQTT_PASSWORD,
+    DEFAULT_LOCAL_MQTT_PORT,
     DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
     PLATFORMS,
@@ -74,6 +79,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_kind = entry.options.get(CONF_DEVICE_KIND, DEVICE_KIND_AUTO)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     beep = entry.options.get(CONF_BEEP, False)
+    local_mqtt_host = entry.options.get(CONF_LOCAL_MQTT_HOST) or None
+    local_mqtt_port = int(entry.options.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT))
+    local_mqtt_user = entry.options.get(CONF_LOCAL_MQTT_USER) or None
+    local_mqtt_password = entry.options.get(CONF_LOCAL_MQTT_PASSWORD) or None
     account = _get_or_create_account(hass, email, password)
 
     client = RemkoSmartWebClient(
@@ -84,6 +93,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_kind=device_kind,
         beep=beep,
         account=account,
+        local_mqtt_host=local_mqtt_host,
+        local_mqtt_port=local_mqtt_port,
+        local_mqtt_user=local_mqtt_user,
+        local_mqtt_password=local_mqtt_password,
     )
     coordinator = RemkoSmartWebCoordinator(
         hass,

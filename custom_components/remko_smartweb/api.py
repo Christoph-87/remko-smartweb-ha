@@ -1461,8 +1461,34 @@ def _build_set_cmd_from_c0(payload: list[int], overrides: dict, beep: bool = Fal
     return "".join(f"{b:02X}" for b in packet)
 
 
+def _detect_local_portal_ip() -> bool:
+    """Return True if WSS_HOST resolves to a private/loopback address.
+
+    When WiFi sticks are DNS-redirected to a local MQTT broker, the same
+    hostname resolves to a private IP for the HA host as well.  This enables
+    HOST2CLIENT responses and the pending-SET queue automatically.
+    """
+    import ipaddress
+    import socket
+    try:
+        ip = socket.gethostbyname(WSS_HOST)
+        addr = ipaddress.ip_address(ip)
+        return addr.is_private or addr.is_loopback
+    except Exception:
+        return False
+
+
 class _MqttSession:
-    def __init__(self, sid: str, sk: str, topic: str):
+    def __init__(
+        self,
+        sid: str,
+        sk: str,
+        topic: str,
+        local_host: str | None = None,
+        local_port: int = 1883,
+        local_user: str | None = None,
+        local_password: str | None = None,
+    ):
         self.sid = sid
         self.sk = sk
         self.topic = topic
@@ -1478,21 +1504,53 @@ class _MqttSession:
         self._recent_messages = deque(maxlen=20)
         self._received_non_tx_count = 0
         self._subscribed_topics = []
+        # Local-portal state
+        self._local_portal: bool = bool(local_host) or _detect_local_portal_ip()
+        self._pending_set_tx: str | None = None
+        self._pending_set_done = threading.Event()
+        self._last_c2h_time: float = 0.0
+        self._no_c2h_warned: bool = False
 
-        self.client = mqtt.Client(
-            client_id=f"SMT{random.randint(0,9999):04d}{sid}",
-            protocol=mqtt.MQTTv311,
-            transport="websockets",
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        )
-        self.client.username_pw_set(self.sid, self.sk)
-        self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
-        self.client.ws_set_options(path=WSS_PATH)
+        client_id = f"SMT{random.randint(0,9999):04d}{sid}"
+        if local_host:
+            # Explicit local broker: plain TCP MQTT, no TLS, separate credentials.
+            self.client = mqtt.Client(
+                client_id=client_id,
+                protocol=mqtt.MQTTv311,
+                transport="tcp",
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            )
+            if local_user:
+                self.client.username_pw_set(local_user, local_password)
+            _LOGGER.info(
+                "REMKO SmartWeb %s: using explicit local MQTT broker %s:%d",
+                topic, local_host, local_port,
+            )
+            conn_host, conn_port = local_host, local_port
+        else:
+            # Cloud (or DNS-redirected) broker: WebSocket TLS with SID/SK.
+            self.client = mqtt.Client(
+                client_id=client_id,
+                protocol=mqtt.MQTTv311,
+                transport="websockets",
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            )
+            self.client.username_pw_set(self.sid, self.sk)
+            self.client.tls_set(cert_reqs=ssl.CERT_NONE)
+            self.client.ws_set_options(path=WSS_PATH)
+            if self._local_portal:
+                _LOGGER.info(
+                    "REMKO SmartWeb %s: local portal mode detected "
+                    "(%s resolves to a private IP) — "
+                    "HOST2CLIENT responder and pending-SET queue active",
+                    topic, WSS_HOST,
+                )
+            conn_host, conn_port = WSS_HOST, WSS_PORT
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         self.client.on_disconnect = self._on_disconnect
 
-        self.client.connect(WSS_HOST, WSS_PORT, keepalive=60)
+        self.client.connect(conn_host, conn_port, keepalive=60)
         self.client.loop_start()
 
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
@@ -1543,6 +1601,45 @@ class _MqttSession:
                     self._last_values = values
                     self._last_seen_values = values
                     self._cond.notify_all()
+                _c2h_needs_reply = (
+                    isinstance(obj, dict)
+                    and str(msg.topic).endswith("/CLIENT2HOST")
+                    and "query_list" in obj
+                )
+                if _c2h_needs_reply:
+                    self._last_c2h_time = time.time()
+                    self._no_c2h_warned = False
+            if _c2h_needs_reply:
+                reply_topic = msg.topic.replace("/CLIENT2HOST", "/HOST2CLIENT")
+                reply = json.dumps(
+                    {"CLIENT_ID": obj.get("CLIENT_ID", ""), "values": {}}
+                )
+                try:
+                    self.client.publish(reply_topic, reply, qos=0, retain=False)
+                    # Dispatch pending SET immediately in the stick's active window.
+                    pending_tx = self._pending_set_tx
+                    if pending_tx is not None:
+                        self._pending_set_tx = None
+                        self.client.publish(
+                            f"{self.topic}/ESP",
+                            json.dumps({"Tx": pending_tx,
+                                        "CLIENT_ID": "SMTACUARTTEST"}),
+                            qos=0, retain=False,
+                        )
+                        self.client.publish(
+                            f"{self.topic}/ESP",
+                            json.dumps({"Tx": _build_status_cmd(),
+                                        "CLIENT_ID": "SMTACUARTTEST"}),
+                            qos=0, retain=False,
+                        )
+                        self._pending_set_done.set()
+                        _LOGGER.debug(
+                            "REMKO SmartWeb local portal: dispatched pending SET "
+                            "for %s after CLIENT2HOST",
+                            self.topic,
+                        )
+                except Exception:
+                    pass
         except Exception:
             _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 
@@ -1551,7 +1648,7 @@ class _MqttSession:
         return not self._closed
 
     def publish(self, topic: str, payload: dict):
-        self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
+        self.client.publish(topic, json.dumps(payload), qos=0, retain=False)
 
     def clear_values(self) -> None:
         with self._cond:
@@ -1561,14 +1658,63 @@ class _MqttSession:
         with self._cond:
             return self._last_smt_user
 
+    def clear_rx(self) -> None:
+        """Clear the cached Rx so the next wait_rx waits for a genuinely new RESP."""
+        with self._cond:
+            self._last_rx = None
+
+    # ── local-portal helpers ──────────────────────────────────────────────
+
+    @property
+    def local_portal(self) -> bool:
+        """True when connected to a local broker (explicit config or DNS detection)."""
+        return self._local_portal
+
+    def queue_set(self, tx: str) -> None:
+        """Store a SET frame for dispatch after the next CLIENT2HOST."""
+        self._pending_set_done.clear()
+        self._pending_set_tx = tx
+
+    def cancel_pending_set(self) -> None:
+        """Discard any queued SET and unblock callers waiting on it."""
+        self._pending_set_tx = None
+        self._pending_set_done.set()
+
+    def wait_set_executed(self, timeout: float = 35.0) -> bool:
+        """Block until a queued SET is dispatched.  Returns True if it was."""
+        return self._pending_set_done.wait(timeout=timeout)
+
+    def check_local_portal_health(self, device_name: str) -> None:
+        """Emit a one-shot warning when local-mode prerequisites appear unmet."""
+        if not self._local_portal:
+            return
+        age_s = (time.time() - self._last_c2h_time) if self._last_c2h_time else None
+        stale = age_s is None or age_s > 300
+        if stale and not self._no_c2h_warned:
+            self._no_c2h_warned = True
+            if age_s is None:
+                _LOGGER.warning(
+                    "REMKO SmartWeb local portal %r: no CLIENT2HOST received yet — "
+                    "verify that the WiFi stick's DNS points to this broker",
+                    device_name,
+                )
+            else:
+                _LOGGER.warning(
+                    "REMKO SmartWeb local portal %r: no CLIENT2HOST for %.0f min — "
+                    "WiFi stick may have lost connectivity or DNS redirect expired",
+                    device_name, age_s / 60,
+                )
+
     def wait_rx(self, timeout: float = 10.0) -> str | None:
         end = time.time() + timeout
         with self._cond:
             while time.time() < end:
                 if self._last_rx is not None:
-                    rx = self._last_rx
-                    self._last_rx = None
-                    return rx
+                    # Do NOT clear _last_rx — WiFi sticks push RESP autonomously
+                    # every ~90 s; keeping it lets every poll succeed until a
+                    # fresher RESP arrives.  Callers that need a true fresh read
+                    # (e.g. for SET verification) should call clear_rx() first.
+                    return self._last_rx
                 remaining = end - time.time()
                 if remaining <= 0:
                     break
@@ -1591,15 +1737,20 @@ class _MqttSession:
 
     def diagnostic_snapshot(self):
         with self._cond:
+            age_s = (time.time() - self._last_c2h_time) if self._last_c2h_time else None
             return {
                 "recent_messages": list(self._recent_messages),
                 "last_tx_echo": self._last_tx_echo,
                 "last_values": self._last_seen_values,
                 "received_non_tx_count": self._received_non_tx_count,
                 "subscribed_topics": list(self._subscribed_topics),
+                "local_portal": self._local_portal,
+                "last_c2h_age_s": round(age_s, 1) if age_s is not None else None,
+                "pending_set": self._pending_set_tx is not None,
             }
 
     def close(self):
+        self.cancel_pending_set()  # Unblock any thread in wait_set_executed
         try:
             self.client.loop_stop()
             self.client.disconnect()
@@ -1768,6 +1919,10 @@ class RemkoSmartWebClient:
         device_kind: str = DEVICE_KIND_AUTO,
         beep: bool = False,
         account: RemkoSmartWebAccount | None = None,
+        local_mqtt_host: str | None = None,
+        local_mqtt_port: int = 1883,
+        local_mqtt_user: str | None = None,
+        local_mqtt_password: str | None = None,
     ):
         self.email = email
         self.password = password
@@ -1797,6 +1952,10 @@ class RemkoSmartWebClient:
         self._last_support_snapshot_signature = None
         self._mqtt = None
         self._write_lock = threading.RLock()
+        self._local_mqtt_host = local_mqtt_host
+        self._local_mqtt_port = local_mqtt_port
+        self._local_mqtt_user = local_mqtt_user
+        self._local_mqtt_password = local_mqtt_password
 
     def initial_status_if_supported(self) -> dict | None:
         """Return a minimal state when setup can safely proceed before live values arrive."""
@@ -1869,7 +2028,13 @@ class RemkoSmartWebClient:
         if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or self.topic != _build_mqtt_topic(self.sid):
             raise DeviceResolveError("Device MQTT credentials are incomplete")
         if self._mqtt is None or not self._mqtt.ensure_connected():
-            self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
+            self._mqtt = _MqttSession(
+                self.sid, self.sk, self.topic,
+                local_host=self._local_mqtt_host,
+                local_port=self._local_mqtt_port,
+                local_user=self._local_mqtt_user,
+                local_password=self._local_mqtt_password,
+            )
             if not self._mqtt.ensure_connected():
                 raise DeviceResolveError("MQTT connect failed")
 
@@ -2031,14 +2196,27 @@ class RemkoSmartWebClient:
         self._resolve_device_rel(rel)
 
     def _refresh_device_from_list(self) -> None:
-        """Force a fresh /rest/liste lookup and recreate MQTT state for this device."""
-        if self._mqtt is not None:
-            self._mqtt.close()
-            self._mqtt = None
+        """Force a fresh /rest/liste lookup; MQTT is preserved if SID unchanged."""
+        old_sid = self.sid
+        saved_mqtt = self._mqtt
+        self._mqtt = None
         self.sid = None
         self.sk = None
         self.topic = None
-        self.resolve_device(force_list=True)
+        try:
+            self.resolve_device(force_list=True)
+        except Exception:
+            if saved_mqtt is not None:
+                saved_mqtt.close()
+            raise
+        # Reuse existing MQTT session if SID unchanged and still connected,
+        # so that autonomously cached RESP messages (e.g. from WiFi sticks that
+        # push RESP every ~90 s) are preserved across re-login cycles.
+        if saved_mqtt is not None:
+            if self.sid == old_sid and saved_mqtt.ensure_connected():
+                self._mqtt = saved_mqtt
+            else:
+                saved_mqtt.close()
 
     def _mqtt_roundtrip_esp(self, payload: dict, timeout=10) -> str | None:
         """Publish ESP payload and wait for Rx response on persistent MQTT."""
@@ -2296,6 +2474,8 @@ class RemkoSmartWebClient:
             summary["duration_sec"] = round(duration, 3)
         summary.update(_parsed_status_summary(parsed))
         _LOGGER.debug("REMKO SmartWeb poll summary: %s", _debug_value(summary))
+        if self._mqtt is not None:
+            self._mqtt.check_local_portal_health(self.device_name)
 
     def _log_support_snapshot_once(
         self,
@@ -2782,13 +2962,23 @@ class RemkoSmartWebClient:
             "REMKO SmartWeb SET frame: device=%r overrides=%s c0_payload=%s tx=%s",
             self.device_name, overrides, bytes(payload).hex(), tx,
         )
-        self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+        self._mqtt.clear_rx()  # Force readback to wait for fresh RESP; not stale pre-SET cache
+        # Queue SET for dispatch after next CLIENT2HOST (active window guaranteed).
+        # Works in both local-broker and cloud/bridge setups.
+        self._mqtt.queue_set(tx)
+        executed = self._mqtt.wait_set_executed(timeout=35.0)
+        if not executed:
+            _LOGGER.warning(
+                "REMKO SmartWeb SET not dispatched for %r within 35 s — "
+                "no CLIENT2HOST received; check stick connectivity",
+                self.device_name,
+            )
         # Try to read back status after SET to keep state in sync (best effort).
         time.sleep(1.0)
         try:
             readback = self.read_status()
             if isinstance(readback, dict):
-                pwr_intended = "ON" if overrides["power"] else "OFF" if "power" in overrides else None
+                pwr_intended = ("ON" if overrides["power"] else "OFF") if "power" in overrides else None
                 mode_intended = overrides.get("mode")
                 sp_intended = overrides.get("setpoint")
                 pwr_ok = pwr_intended is None or readback.get("power") == pwr_intended

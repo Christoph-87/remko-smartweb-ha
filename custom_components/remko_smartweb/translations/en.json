@@ -53,6 +53,16 @@
           "max_temp": "Max temperature (override)",
           "beep": "Beep on command (unit confirms each command with a beep)"
         }
+      },
+      "local_broker": {
+        "title": "Local MQTT Broker (optional)",
+        "description": "Leave 'Local MQTT host' empty to use the REMKO cloud portal. Fill it in when this device's WiFi stick is DNS-redirected to a local Mosquitto broker (e.g. via AdGuard). HA will connect directly to that broker and deliver SET commands reliably within one reconnect cycle (~30 s).",
+        "data": {
+          "local_mqtt_host": "Local MQTT host (e.g. 192.168.2.4)",
+          "local_mqtt_port": "Local MQTT port",
+          "local_mqtt_user": "Local MQTT username",
+          "local_mqtt_password": "Local MQTT password"
+        }
       }
     }
   },

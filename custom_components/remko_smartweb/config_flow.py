@@ -17,6 +17,11 @@ from .const import (
     CONF_MODEL,
     CONF_DEVICE_KIND,
     CONF_BEEP,
+    CONF_LOCAL_MQTT_HOST,
+    CONF_LOCAL_MQTT_PORT,
+    CONF_LOCAL_MQTT_USER,
+    CONF_LOCAL_MQTT_PASSWORD,
+    DEFAULT_LOCAL_MQTT_PORT,
     DEVICE_KIND_AUTO,
     DEVICE_KIND_CLIMATE,
     DEVICE_KIND_DHW,
@@ -247,6 +252,65 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_entry_data = self._entry_data_for_device(device_name)
         return await self.async_step_device_kind()
 
+    async def async_step_local_broker(self, user_input=None):
+        """Optional step: configure a local MQTT broker for this device.
+
+        Leave 'Local MQTT host' blank to use the REMKO cloud portal (default).
+        Fill it in when the WiFi stick is redirected to a local Mosquitto broker
+        (e.g. via AdGuard DNS override) so HA connects directly to that broker
+        rather than the cloud.  HA will then handle the CLIENT2HOST handshake
+        and deliver SET commands reliably within one reconnect cycle (~30 s).
+        """
+        if user_input is not None:
+            host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
+            if host:
+                self._options[CONF_LOCAL_MQTT_HOST] = host
+                self._options[CONF_LOCAL_MQTT_PORT] = int(
+                    user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT
+                )
+                user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
+                if user_val:
+                    self._options[CONF_LOCAL_MQTT_USER] = user_val
+                    self._options[CONF_LOCAL_MQTT_PASSWORD] = (
+                        user_input.get(CONF_LOCAL_MQTT_PASSWORD) or ""
+                    )
+                else:
+                    self._options.pop(CONF_LOCAL_MQTT_USER, None)
+                    self._options.pop(CONF_LOCAL_MQTT_PASSWORD, None)
+            else:
+                # User cleared the host → remove all local broker settings
+                for k in (CONF_LOCAL_MQTT_HOST, CONF_LOCAL_MQTT_PORT,
+                          CONF_LOCAL_MQTT_USER, CONF_LOCAL_MQTT_PASSWORD):
+                    self._options.pop(k, None)
+            return self.async_create_entry(title="", data=self._options)
+
+        import voluptuous as vol  # already imported at module level, but safe to re-reference
+        schema = vol.Schema({
+            vol.Optional(
+                CONF_LOCAL_MQTT_HOST,
+                default=self._options.get(CONF_LOCAL_MQTT_HOST, ""),
+            ): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_PORT,
+                default=self._options.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT),
+            ): vol.Coerce(int),
+            vol.Optional(
+                CONF_LOCAL_MQTT_USER,
+                default=self._options.get(CONF_LOCAL_MQTT_USER, ""),
+            ): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_PASSWORD,
+                default=self._options.get(CONF_LOCAL_MQTT_PASSWORD, ""),
+            ): str,
+        })
+        return self.async_show_form(
+            step_id="local_broker",
+            data_schema=schema,
+            description_placeholders={
+                "broker_hint": "e.g. 192.168.2.4 or leave empty for REMKO cloud"
+            },
+        )
+
     def _suggest_device_kind(self, device_name: str) -> str:
         if looks_like_dhw_name(device_name):
             return DEVICE_KIND_DHW
@@ -280,7 +344,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             self._options.pop(CONF_MODEL, None)
             self._options.pop(CONF_MIN_TEMP, None)
             self._options.pop(CONF_MAX_TEMP, None)
-            return self.async_create_entry(title="", data=self._options)
+            return await self.async_step_local_broker()
 
         device_kind = self._config_entry.options.get(
             CONF_DEVICE_KIND,
@@ -300,7 +364,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
     async def async_step_climate(self, user_input=None):
         if user_input is not None:
             self._options.update(user_input)
-            return self.async_create_entry(title="", data=self._options)
+            return await self.async_step_local_broker()
 
         model = self._options.get(CONF_MODEL, "other")
         model_defaults = {

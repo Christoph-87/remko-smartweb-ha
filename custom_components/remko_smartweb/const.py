@@ -20,4 +20,11 @@ DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_MIN_TEMP = 16
 DEFAULT_MAX_TEMP = 30
 
+CONF_LOCAL_MQTT_HOST = "local_mqtt_host"
+CONF_LOCAL_MQTT_PORT = "local_mqtt_port"
+CONF_LOCAL_MQTT_USER = "local_mqtt_user"
+CONF_LOCAL_MQTT_PASSWORD = "local_mqtt_password"
+
+DEFAULT_LOCAL_MQTT_PORT = 1883
+
 PLATFORMS = ["sensor", "climate", "water_heater", "switch", "number", "date"]
