@@ -171,6 +171,13 @@ class RemkoSmartWebClient:
             metadata["Portal DEV"] = self.device_dev
         if self.topic:
             metadata["MQTT Topic"] = _redact_debug_text(self.topic)
+        if self._local_mqtt_host:
+            metadata["Connection Mode"] = "local"
+            metadata["Local Broker"] = f"{self._local_mqtt_host}:{self._local_mqtt_port}"
+        elif self._mqtt is not None and self._mqtt.local_portal:
+            metadata["Connection Mode"] = "local (auto-detected)"
+        else:
+            metadata["Connection Mode"] = "cloud"
         return metadata
 
     def _ensure_login(self, force: bool = False) -> None:
