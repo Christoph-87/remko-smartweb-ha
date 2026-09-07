@@ -235,7 +235,10 @@ class _MqttSession:
                 )
                 try:
                     self.client.publish(reply_topic, reply, qos=0, retain=False)
-                    # Dispatch pending SET immediately in the stick's active window.
+                    # Dispatch pending SET (if any) then always refresh status.
+                    # This guarantees a fresh RESP is cached for the next poll,
+                    # because the stick only responds to ESP commands while active
+                    # (i.e. immediately after receiving HOST2CLIENT).
                     pending_tx = self._pending_set_tx
                     if pending_tx is not None:
                         self._pending_set_tx = None
@@ -245,18 +248,18 @@ class _MqttSession:
                                         "CLIENT_ID": "SMTACUARTTEST"}),
                             qos=0, retain=False,
                         )
-                        self.client.publish(
-                            f"{self.topic}/ESP",
-                            json.dumps({"Tx": _build_status_cmd(),
-                                        "CLIENT_ID": "SMTACUARTTEST"}),
-                            qos=0, retain=False,
-                        )
                         self._pending_set_done.set()
                         _LOGGER.debug(
                             "REMKO SmartWeb local portal: dispatched pending SET "
                             "for %s after CLIENT2HOST",
                             self.topic,
                         )
+                    self.client.publish(
+                        f"{self.topic}/ESP",
+                        json.dumps({"Tx": _build_status_cmd(),
+                                    "CLIENT_ID": "SMTACUARTTEST"}),
+                        qos=0, retain=False,
+                    )
                 except Exception:
                     pass
         except Exception:
