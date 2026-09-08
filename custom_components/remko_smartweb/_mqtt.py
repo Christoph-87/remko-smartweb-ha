@@ -125,6 +125,72 @@ class _LocalBrokerConfig(_BrokerConfig):
         return self._host, self._port
 
 
+def discover_local_topic(
+    host: str,
+    port: int,
+    user: str | None,
+    password: str | None,
+    timeout: float = 20.0,
+) -> str | None:
+    """Discover the REMKO topic from a local MQTT broker.
+
+    A local portal setup may not have current SID/SK credentials from the cloud.
+    The stick still announces itself below V04P27/<stick>/...; older setups
+    emit CLIENT2HOST while newer/local portal firmware has been observed to
+    emit HOST2PORTAL.  Either direction is enough to derive the base topic used
+    for local ESP commands.
+    """
+    found: list[str] = []
+    done = threading.Event()
+    client = mqtt.Client(
+        client_id=f"SMT_DISCOVERY_{random.randint(0, 9999):04d}",
+        protocol=mqtt.MQTTv311,
+        transport="tcp",
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+    )
+    if user:
+        client.username_pw_set(user, password)
+
+    def _on_connect(client, userdata, flags, reason_code, properties=None):
+        rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        if rc == 0:
+            client.subscribe(
+                [
+                    ("V04P27/+/CLIENT2HOST", 2),
+                    ("V04P27/+/HOST2PORTAL", 2),
+                ]
+            )
+            return
+        _LOGGER.warning("REMKO SmartWeb local MQTT discovery connect failed rc=%s", rc)
+        done.set()
+
+    def _on_message(client, userdata, msg):
+        parts = str(msg.topic).split("/")
+        if (
+            len(parts) == 3
+            and parts[0] == "V04P27"
+            and parts[2] in {"CLIENT2HOST", "HOST2PORTAL"}
+        ):
+            found.append("/".join(parts[:2]))
+            done.set()
+
+    client.on_connect = _on_connect
+    client.on_message = _on_message
+    try:
+        client.connect(host, port, keepalive=30)
+        client.loop_start()
+        done.wait(timeout=timeout)
+    except Exception as err:
+        _LOGGER.warning("REMKO SmartWeb local MQTT topic discovery failed: %s", err)
+    finally:
+        try:
+            client.loop_stop()
+            client.disconnect()
+        except Exception:
+            pass
+    return found[0] if found else None
+
+
 # ---------------------------------------------------------------------------
 # MQTT session
 # ---------------------------------------------------------------------------
@@ -144,8 +210,11 @@ class _MqttSession:
         self._recent_messages: deque = deque(maxlen=20)
         self._received_non_tx_count = 0
         self._subscribed_topics: list[str] = []
+        self._outgoing_client_ids: deque = deque(maxlen=20)
         # Local-portal state
         self._local_portal: bool = broker.is_local()
+        topic_device = topic.split("/", 2)[1].upper() if "/" in topic else ""
+        self._local_host2portal_mode: bool = self._local_portal and topic_device.startswith("SMT")
         self._pending_set_tx: str | None = None
         self._pending_set_done = threading.Event()
         self._last_c2h_time: float = 0.0
@@ -180,10 +249,18 @@ class _MqttSession:
             return
         subscriptions = [
             (f"{self.topic}/HOST2CLIENT", 2),
-            (f"{self.topic}/CLIENT2HOST", 2),
             (f"{self.topic}/RESP", 2),
             (f"{self.topic}/ESP", 2),
         ]
+        if self._local_portal:
+            subscriptions.extend(
+                [
+                    (f"{self.topic}/HOST2PORTAL", 2),
+                    (f"{self.topic}/PORTAL2HOST", 2),
+                ]
+            )
+        if not self._local_host2portal_mode:
+            subscriptions.append((f"{self.topic}/CLIENT2HOST", 2))
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
@@ -208,7 +285,14 @@ class _MqttSession:
                     self._recent_messages.append(summary)
                 # Rx hex for ESP status
                 obj = _json_loads_maybe_wrapped(text)
+                is_own_client2host = False
                 if isinstance(obj, dict):
+                    client_id = str(obj.get("CLIENT_ID") or "")
+                    is_own_client2host = (
+                        str(msg.topic).endswith("/CLIENT2HOST")
+                        and client_id
+                        and client_id in getattr(self, "_outgoing_client_ids", ())
+                    )
                     if obj.get("Rx"):
                         self._last_rx = json.dumps(obj)
                         self._cond.notify_all()
@@ -223,6 +307,9 @@ class _MqttSession:
                 _c2h_needs_reply = (
                     isinstance(obj, dict)
                     and str(msg.topic).endswith("/CLIENT2HOST")
+                    and getattr(self, "_local_portal", False)
+                    and not getattr(self, "_local_host2portal_mode", False)
+                    and not is_own_client2host
                     and "query_list" in obj
                 )
                 if _c2h_needs_reply:
@@ -235,10 +322,9 @@ class _MqttSession:
                 )
                 try:
                     self.client.publish(reply_topic, reply, qos=0, retain=False)
-                    # Dispatch pending SET (if any) then always refresh status.
-                    # This guarantees a fresh RESP is cached for the next poll,
-                    # because the stick only responds to ESP commands while active
-                    # (i.e. immediately after receiving HOST2CLIENT).
+                    # Dispatch pending SET, or refresh status when this is just a poll.
+                    # Avoid sending SET and STATUS in the same active window; some sticks
+                    # ignore the SET when another ESP command follows immediately.
                     pending_tx = self._pending_set_tx
                     if pending_tx is not None:
                         self._pending_set_tx = None
@@ -246,7 +332,7 @@ class _MqttSession:
                             f"{self.topic}/ESP",
                             json.dumps({"Tx": pending_tx,
                                         "CLIENT_ID": "SMTACUARTTEST"}),
-                            qos=0, retain=False,
+                            qos=2, retain=False,
                         )
                         self._pending_set_done.set()
                         _LOGGER.debug(
@@ -254,12 +340,13 @@ class _MqttSession:
                             "for %s after CLIENT2HOST",
                             self.topic,
                         )
-                    self.client.publish(
-                        f"{self.topic}/ESP",
-                        json.dumps({"Tx": _build_status_cmd(),
-                                    "CLIENT_ID": "SMTACUARTTEST"}),
-                        qos=0, retain=False,
-                    )
+                    else:
+                        self.client.publish(
+                            f"{self.topic}/ESP",
+                            json.dumps({"Tx": _build_status_cmd(),
+                                        "CLIENT_ID": "SMTACUARTTEST"}),
+                            qos=2, retain=False,
+                        )
                 except Exception:
                     pass
         except Exception:
@@ -270,7 +357,14 @@ class _MqttSession:
         return not self._closed
 
     def publish(self, topic: str, payload: dict):
-        self.client.publish(topic, json.dumps(payload), qos=0, retain=False)
+        if str(topic).endswith("/CLIENT2HOST") and isinstance(payload, dict):
+            client_id = str(payload.get("CLIENT_ID") or "")
+            if client_id:
+                with self._lock:
+                    if not hasattr(self, "_outgoing_client_ids"):
+                        self._outgoing_client_ids = deque(maxlen=20)
+                    self._outgoing_client_ids.append(client_id)
+        self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
 
     def clear_values(self) -> None:
         with self._cond:
@@ -291,6 +385,11 @@ class _MqttSession:
     def local_portal(self) -> bool:
         """True when connected to a local broker (explicit config or DNS detection)."""
         return self._local_portal
+
+    @property
+    def local_host2portal_mode(self) -> bool:
+        """True for local sticks that announce HOST2PORTAL instead of CLIENT2HOST."""
+        return self._local_host2portal_mode
 
     def queue_set(self, tx: str) -> None:
         """Store a SET frame for dispatch after the next CLIENT2HOST."""
@@ -367,6 +466,7 @@ class _MqttSession:
                 "received_non_tx_count": self._received_non_tx_count,
                 "subscribed_topics": list(self._subscribed_topics),
                 "local_portal": self._local_portal,
+                "local_host2portal_mode": self._local_host2portal_mode,
                 "last_c2h_age_s": round(age_s, 1) if age_s is not None else None,
                 "pending_set": self._pending_set_tx is not None,
             }

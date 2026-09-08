@@ -258,8 +258,8 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Leave 'Local MQTT host' blank to use the REMKO cloud portal (default).
         Fill it in when the WiFi stick is redirected to a local Mosquitto broker
         (e.g. via AdGuard DNS override) so HA connects directly to that broker
-        rather than the cloud.  HA will then handle the CLIENT2HOST handshake
-        and deliver SET commands reliably within one reconnect cycle (~30 s).
+        rather than the cloud.  HA will then discover the stick's local MQTT
+        topic and use the local portal path for status/control.
         """
         if user_input is not None:
             host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()

@@ -21,6 +21,7 @@ from .const import (
     CONF_LOCAL_MQTT_PORT,
     CONF_LOCAL_MQTT_USER,
     CONF_LOCAL_MQTT_PASSWORD,
+    CONF_LOCAL_MQTT_TOPIC,
     DEFAULT_LOCAL_MQTT_PORT,
     DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
@@ -83,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     local_mqtt_port = int(entry.options.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT))
     local_mqtt_user = entry.options.get(CONF_LOCAL_MQTT_USER) or None
     local_mqtt_password = entry.options.get(CONF_LOCAL_MQTT_PASSWORD) or None
+    local_mqtt_topic = entry.data.get(CONF_LOCAL_MQTT_TOPIC) or None
     account = _get_or_create_account(hass, email, password)
 
     client = RemkoSmartWebClient(
@@ -97,6 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         local_mqtt_port=local_mqtt_port,
         local_mqtt_user=local_mqtt_user,
         local_mqtt_password=local_mqtt_password,
+        local_mqtt_topic=local_mqtt_topic,
     )
     coordinator = RemkoSmartWebCoordinator(
         hass,
@@ -115,10 +118,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await hass.async_add_executor_job(released_account.close)
         raise
 
+    entry_data_update = dict(entry.data)
+    changed_entry_data = False
     if not device_path and client.device_path:
+        entry_data_update[CONF_DEVICE_PATH] = client.device_path
+        changed_entry_data = True
+    if local_mqtt_host and client.topic and client.topic != local_mqtt_topic:
+        entry_data_update[CONF_LOCAL_MQTT_TOPIC] = client.topic
+        changed_entry_data = True
+    if changed_entry_data:
         hass.config_entries.async_update_entry(
             entry,
-            data={**entry.data, CONF_DEVICE_PATH: client.device_path},
+            data=entry_data_update,
         )
 
     device_profile = get_device_profile(device_name, coordinator.data, device_kind)

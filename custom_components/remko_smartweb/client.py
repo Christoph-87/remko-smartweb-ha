@@ -51,6 +51,7 @@ from ._mqtt import (
     _CloudBrokerConfig,
     _LocalBrokerConfig,
     _MqttSession,
+    discover_local_topic,
 )
 from ._account import (
     DeviceListUnavailable,
@@ -88,6 +89,7 @@ class RemkoSmartWebClient:
         local_mqtt_port: int = 1883,
         local_mqtt_user: str | None = None,
         local_mqtt_password: str | None = None,
+        local_mqtt_topic: str | None = None,
     ):
         self.email = email
         self.password = password
@@ -102,7 +104,7 @@ class RemkoSmartWebClient:
 
         self.sid = None
         self.sk = None
-        self.topic = None
+        self.topic = local_mqtt_topic
         self.smt_user = None
         self.device_portal_id = None
         self.device_dev = None
@@ -121,6 +123,50 @@ class RemkoSmartWebClient:
         self._local_mqtt_port = local_mqtt_port
         self._local_mqtt_user = local_mqtt_user
         self._local_mqtt_password = local_mqtt_password
+
+    @property
+    def uses_local_mqtt(self) -> bool:
+        return bool(self._local_mqtt_host)
+
+    def _mqtt_credentials_ready(self) -> bool:
+        if not self.topic:
+            return False
+        if getattr(self, "_local_mqtt_host", None):
+            return True
+        return bool(_valid_credential_part(self.sid) and _valid_credential_part(self.sk))
+
+    def _ensure_local_topic(self) -> bool:
+        if not self._local_mqtt_host:
+            return False
+        if self.topic:
+            return True
+        topic = discover_local_topic(
+            self._local_mqtt_host,
+            self._local_mqtt_port,
+            self._local_mqtt_user,
+            self._local_mqtt_password,
+        )
+        if not topic:
+            return False
+        self.topic = topic
+        parts = topic.split("/")
+        if len(parts) >= 2:
+            self.sid = parts[1]
+        _LOGGER.info(
+            "Resolved REMKO SmartWeb local MQTT topic for %r: %s",
+            self.device_name,
+            _redact_debug_text(topic),
+        )
+        return True
+
+    def prime_status_cache(self, status: dict | None) -> None:
+        """Seed the write cache from coordinator data before a local SET call."""
+        if not isinstance(status, dict):
+            return
+        self._last_status = status
+        payload = status.get("_payload")
+        if payload:
+            self._last_payload = payload
 
     def initial_status_if_supported(self) -> dict | None:
         """Return a minimal state when setup can safely proceed before live values arrive."""
@@ -186,7 +232,9 @@ class RemkoSmartWebClient:
 
     def _ensure_device(self) -> None:
         """Ensure SID/SK/topic are resolved from SmartWeb."""
-        if _valid_credential_part(self.sid) and _valid_credential_part(self.sk) and self.topic == _build_mqtt_topic(self.sid):
+        if self._mqtt_credentials_ready():
+            return
+        if self._ensure_local_topic():
             return
         self.sid = None
         self.sk = None
@@ -197,7 +245,7 @@ class RemkoSmartWebClient:
         self.resolve_device()
 
     def _ensure_mqtt(self) -> None:
-        if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or self.topic != _build_mqtt_topic(self.sid):
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device MQTT credentials are incomplete")
         if self._mqtt is None or not self._mqtt.ensure_connected():
             if self._local_mqtt_host:
@@ -376,6 +424,8 @@ class RemkoSmartWebClient:
     def _refresh_device_from_list(self) -> None:
         """Force a fresh /rest/liste lookup; MQTT is preserved if SID unchanged."""
         old_sid = self.sid
+        old_sk = self.sk
+        old_topic = self.topic
         saved_mqtt = self._mqtt
         self._mqtt = None
         self.sid = None
@@ -384,8 +434,10 @@ class RemkoSmartWebClient:
         try:
             self.resolve_device(force_list=True)
         except Exception:
-            if saved_mqtt is not None:
-                saved_mqtt.close()
+            self.sid = old_sid
+            self.sk = old_sk
+            self.topic = old_topic
+            self._mqtt = saved_mqtt
             raise
         # Reuse existing MQTT session if SID unchanged and still connected,
         # so that autonomously cached RESP messages (e.g. from WiFi sticks that
@@ -398,7 +450,7 @@ class RemkoSmartWebClient:
 
     def _mqtt_roundtrip_esp(self, payload: dict, timeout=10) -> str | None:
         """Publish ESP payload and wait for Rx response on persistent MQTT."""
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         self._mqtt.publish(f"{self.topic}/ESP", payload)
@@ -408,13 +460,13 @@ class RemkoSmartWebClient:
         """Poll values via CLIENT2HOST on persistent MQTT."""
         from . import api as _api_module
 
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         poll = {
             "FORCE_RESPONSE": True,
             "query_list": _api_module._value_query_list(),
-            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
+            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid or 'LOCAL'}",
             "LASTWRITE": 0,
             "ISTOUCH": False,
             "DEVID": "",
@@ -429,14 +481,14 @@ class RemkoSmartWebClient:
         """Write Smart-Web value IDs via CLIENT2HOST and wait for a values update."""
         from . import api as _api_module
 
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         payload = {
             "values": {str(key): str(value) for key, value in values.items()},
             "query_list": _api_module._value_query_list(values),
             "FORCE_RESPONSE": True,
-            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
+            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid or 'LOCAL'}",
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
             "DEVID": "",
@@ -499,7 +551,7 @@ class RemkoSmartWebClient:
 
     def _mqtt_write_rbw_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
         """Write RBW/DHW value IDs through the ESP Tx path used by the frontend."""
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         unsupported = []
@@ -529,7 +581,7 @@ class RemkoSmartWebClient:
 
     def _mqtt_write_kwt_esp_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> bool:
         """Write KWT value IDs through the ESP Modbus Tx path used by the frontend."""
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         unsupported = []
@@ -558,7 +610,7 @@ class RemkoSmartWebClient:
 
     def _mqtt_write_ac_uart_frames(self, tx_frames: list[str], protocol_name: str, write_id: str, timeout=10) -> bool:
         """Write experimental AC UART Tx frames through the ESP path used by the frontend."""
-        if not self.sid or not self.sk or not self.topic:
+        if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
         for index, tx in enumerate(tx_frames, start=1):
@@ -969,31 +1021,49 @@ class RemkoSmartWebClient:
             mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
         )
 
-        try:
-            _LOGGER.debug(
-                "Status values for %r stayed empty/unparseable; refreshing device lookup from /rest/liste",
-                self.device_name,
+        if self._local_mqtt_host and self._last_status:
+            self._last_status_source = "cached_last_status"
+            self._log_support_snapshot_once(
+                "status_unparseable_using_last_status",
+                stage="read_status",
+                values=values,
+                error="Unable to parse status",
             )
-            self._refresh_device_from_list()
-        except Exception as err:
-            _LOGGER.debug("Forced SmartWeb device list refresh failed for %r: %s", self.device_name, err)
+            self._log_poll_summary(
+                "cached_last_status",
+                parsed=self._last_status,
+                values=values,
+                duration=time.monotonic() - started,
+            )
+            return self._last_status
+
+        if not self._local_mqtt_host:
+            try:
+                _LOGGER.debug(
+                    "Status values for %r stayed empty/unparseable; refreshing device lookup from /rest/liste",
+                    self.device_name,
+                )
+                self._refresh_device_from_list()
+            except Exception as err:
+                _LOGGER.debug("Forced SmartWeb device list refresh failed for %r: %s", self.device_name, err)
 
         # retry once after forcing a re-login
-        self._ensure_login(force=True)
-        self._ensure_device()
-        resp = self._mqtt_roundtrip_esp(payload, timeout=10)
-        parsed = _parse(resp)
-        if parsed:
-            self._last_payload = parsed.get("_payload")
-            self._last_status = parsed
-            self._last_status_source = "esp_rx_retry"
-            self._log_poll_summary("esp_rx_retry", parsed=parsed, duration=time.monotonic() - started)
-            return parsed
-        self._log_unsupported_payload(
-            "esp_status_retry",
-            esp_response=resp,
-            mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
-        )
+        if not self._local_mqtt_host:
+            self._ensure_login(force=True)
+            self._ensure_device()
+            resp = self._mqtt_roundtrip_esp(payload, timeout=10)
+            parsed = _parse(resp)
+            if parsed:
+                self._last_payload = parsed.get("_payload")
+                self._last_status = parsed
+                self._last_status_source = "esp_rx_retry"
+                self._log_poll_summary("esp_rx_retry", parsed=parsed, duration=time.monotonic() - started)
+                return parsed
+            self._log_unsupported_payload(
+                "esp_status_retry",
+                esp_response=resp,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
 
         if self._last_status:
             self._last_status_source = "cached_last_status"
@@ -1140,6 +1210,13 @@ class RemkoSmartWebClient:
                 last_err,
             )
             payload = self._last_payload
+        if not payload and isinstance(self._last_status, dict) and self._last_status.get("_payload"):
+            _LOGGER.warning(
+                "REMKO SmartWeb write using cached status payload for %r (live read failed: %s)",
+                self.device_name,
+                last_err,
+            )
+            payload = self._last_status["_payload"]
         if not payload:
             raise UnsupportedPayload(f"No C0 payload (status read failed: {last_err})")
         tx = _build_set_cmd_from_c0(payload, overrides, beep=self._beep)
@@ -1150,15 +1227,28 @@ class RemkoSmartWebClient:
             self.device_name, overrides, bytes(payload).hex(), tx,
         )
         self._mqtt.clear_rx()  # Force readback to wait for fresh RESP; not stale pre-SET cache
-        # Queue SET for dispatch after next CLIENT2HOST (active window guaranteed).
-        # Works in both local-broker and cloud/bridge setups.
-        self._mqtt.queue_set(tx)
-        executed = self._mqtt.wait_set_executed(timeout=35.0)
-        if not executed:
-            _LOGGER.warning(
-                "REMKO SmartWeb SET not dispatched for %r within 35 s — "
-                "no CLIENT2HOST received; check stick connectivity",
-                self.device_name,
+        # Only legacy local portal bridges need an active CLIENT2HOST window
+        # before an ESP SET.  In normal cloud mode the frontend publishes the
+        # SET directly; waiting for an unrelated CLIENT2HOST would otherwise
+        # turn cloud writes into no-ops when no browser portal is open.
+        defer_until_client2host = (
+            self._mqtt.local_portal
+            and not self._mqtt.local_host2portal_mode
+        )
+        if defer_until_client2host:
+            self._mqtt.queue_set(tx)
+            executed = self._mqtt.wait_set_executed(timeout=1.5)
+            if not executed:
+                _LOGGER.warning(
+                    "REMKO SmartWeb SET queued for %r; no CLIENT2HOST received within %.1f s",
+                    self.device_name,
+                    1.5,
+                )
+                return
+        else:
+            self._mqtt.publish(
+                f"{self.topic}/ESP",
+                {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"},
             )
         # Try to read back status after SET to keep state in sync (best effort).
         time.sleep(1.0)
@@ -1383,6 +1473,27 @@ class RemkoSmartWebClient:
                 return
 
         response_values = self._mqtt_write_values(values, timeout=10, write_id=write_id)
+        if (
+            not response_values
+            and getattr(self.profile, "kind", None) == DEVICE_KIND_CLIMATE
+        ):
+            _LOGGER.warning(
+                "REMKO SmartWeb climate value write confirmation pending: %s",
+                _debug_value(
+                    {
+                        "write_id": write_id,
+                        "device": self.device_name,
+                        "path": "client2host",
+                        "reason": (
+                            "empty_write_response"
+                            if isinstance(response_values, dict)
+                            else "write_response_timeout"
+                        ),
+                        "written_values": sorted(values),
+                    }
+                ),
+            )
+            return
         if isinstance(response_values, dict):
             self._log_mapping_snapshot("client2host_write_values", response_values)
             mismatches = {

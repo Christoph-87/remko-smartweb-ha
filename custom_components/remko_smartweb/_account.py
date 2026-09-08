@@ -96,7 +96,11 @@ class RemkoSmartWebAccount:
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
             headers={
-                "User-Agent": "Home Assistant",
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": BASE,
                 "Referer": f"{BASE}/",

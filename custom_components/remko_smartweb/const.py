@@ -24,6 +24,7 @@ CONF_LOCAL_MQTT_HOST = "local_mqtt_host"
 CONF_LOCAL_MQTT_PORT = "local_mqtt_port"
 CONF_LOCAL_MQTT_USER = "local_mqtt_user"
 CONF_LOCAL_MQTT_PASSWORD = "local_mqtt_password"
+CONF_LOCAL_MQTT_TOPIC = "local_mqtt_topic"
 
 DEFAULT_LOCAL_MQTT_PORT = 1883
 

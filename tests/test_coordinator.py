@@ -23,6 +23,8 @@ sys.modules.setdefault("custom_components.remko_smartweb", remko_smartweb)
 
 homeassistant = types.ModuleType("homeassistant")
 ha_components = types.ModuleType("homeassistant.components")
+ha_climate = types.ModuleType("homeassistant.components.climate")
+ha_climate_const = types.ModuleType("homeassistant.components.climate.const")
 ha_date = types.ModuleType("homeassistant.components.date")
 ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
@@ -44,6 +46,38 @@ class WaterHeaterEntity:
 class DateEntity:
     def async_write_ha_state(self):
         self.wrote_state = True
+
+
+class ClimateEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class ClimateEntityFeature:
+    TARGET_TEMPERATURE = 1
+    FAN_MODE = 2
+    SWING_MODE = 4
+    TURN_ON = 8
+    TURN_OFF = 16
+    PRESET_MODE = 32
+
+
+class HVACMode:
+    OFF = "off"
+    AUTO = "auto"
+    COOL = "cool"
+    HEAT = "heat"
+    DRY = "dry"
+    FAN_ONLY = "fan_only"
+
+
+class HVACAction:
+    OFF = "off"
+    COOLING = "cooling"
+    HEATING = "heating"
+    DRYING = "drying"
+    FAN = "fan"
+    IDLE = "idle"
 
 
 class WaterHeaterEntityFeature:
@@ -123,6 +157,10 @@ def async_call_later(hass, delay, callback):
 
 
 ha_date.DateEntity = DateEntity
+ha_climate.ClimateEntity = ClimateEntity
+ha_climate_const.HVACMode = HVACMode
+ha_climate_const.HVACAction = HVACAction
+ha_climate_const.ClimateEntityFeature = ClimateEntityFeature
 ha_water_heater.WaterHeaterEntity = WaterHeaterEntity
 ha_water_heater.WaterHeaterEntityFeature = WaterHeaterEntityFeature
 ha_core.HomeAssistant = HomeAssistant
@@ -139,6 +177,8 @@ ha_exceptions.HomeAssistantError = HomeAssistantError
 
 sys.modules.setdefault("homeassistant", homeassistant)
 sys.modules.setdefault("homeassistant.components", ha_components)
+sys.modules.setdefault("homeassistant.components.climate", ha_climate)
+sys.modules.setdefault("homeassistant.components.climate.const", ha_climate_const)
 sys.modules.setdefault("homeassistant.components.date", ha_date)
 sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
@@ -163,6 +203,7 @@ requests.Session = object
 sys.modules.setdefault("requests", requests)
 
 import custom_components.remko_smartweb.api as api_module
+import custom_components.remko_smartweb.client as client_module
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebClient,
@@ -173,6 +214,8 @@ from custom_components.remko_smartweb.api import (
     _smartweb_value_matches,
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
+from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
+from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
@@ -223,8 +266,13 @@ class FakeMqtt:
         self.response_values = response_values
         self.published = []
         self.cleared = False
+        self.local_portal = False
+        self.local_host2portal_mode = False
 
     def clear_values(self):
+        self.cleared = True
+
+    def clear_rx(self):
         self.cleared = True
 
     def publish(self, topic, payload):
@@ -239,6 +287,12 @@ class FakeMqtt:
     def last_smt_user(self):
         return None
 
+    def queue_set(self, tx):
+        raise AssertionError("cloud writes must not wait for CLIENT2HOST")
+
+    def wait_set_executed(self, timeout=10):
+        raise AssertionError("cloud writes must not wait for CLIENT2HOST")
+
 
 class WriteFailureClient:
     def __init__(self):
@@ -247,6 +301,27 @@ class WriteFailureClient:
     def set_value_ids(self, values):
         self.values = values
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
+
+
+class ClimateWriteClient:
+    uses_local_mqtt = False
+
+    def __init__(self, set_values_error=None):
+        self.value_writes = []
+        self.state_writes = []
+        self.set_values_error = set_values_error
+        self.primed_status = None
+
+    def set_value_ids(self, values):
+        self.value_writes.append(values)
+
+    def set_values(self, overrides):
+        if self.set_values_error is not None:
+            raise self.set_values_error
+        self.state_writes.append(overrides)
+
+    def prime_status_cache(self, status):
+        self.primed_status = status
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -421,6 +496,183 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(session._last_rx, '{"Rx": "63100450000108aa"}')
 
+    def test_mqtt_session_dispatches_pending_set_without_immediate_status(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = True
+        session._local_host2portal_mode = False
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = "AABBCC"
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/CLIENT2HOST",
+                payload=b'{"CLIENT_ID":"client","query_list":[1194]}',
+            ),
+        )
+
+        self.assertEqual(len(session.client.published), 2)
+        self.assertEqual(session.client.published[0][0], "V04P27/ABC/HOST2CLIENT")
+        self.assertEqual(session.client.published[1][0], "V04P27/ABC/ESP")
+        self.assertEqual(session.client.published[1][1]["Tx"], "AABBCC")
+        self.assertTrue(session._pending_set_done.is_set())
+        self.assertIsNone(session._pending_set_tx)
+
+    def test_mqtt_session_refreshes_status_when_no_pending_set(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = True
+        session._local_host2portal_mode = False
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = None
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/CLIENT2HOST",
+                payload=b'{"CLIENT_ID":"client","query_list":[1194]}',
+            ),
+        )
+
+        self.assertEqual(len(session.client.published), 2)
+        self.assertEqual(session.client.published[0][0], "V04P27/ABC/HOST2CLIENT")
+        self.assertEqual(session.client.published[1][0], "V04P27/ABC/ESP")
+        self.assertNotEqual(session.client.published[1][1]["Tx"], "AABBCC")
+
+    def test_mqtt_session_does_not_answer_cloud_client2host_polls(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = False
+        session._local_host2portal_mode = False
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = None
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/CLIENT2HOST",
+                payload=b'{"CLIENT_ID":"browser","query_list":[1194]}',
+            ),
+        )
+
+        self.assertEqual(session.client.published, [])
+
+    def test_mqtt_session_cloud_subscriptions_match_main_branch_topics(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.subscriptions = None
+
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._local_portal = False
+        session._local_host2portal_mode = False
+        session._subscribed_topics = []
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+
+        self.assertEqual(
+            [topic for topic, _qos in client.subscriptions],
+            [
+                "V04P27/ABC/HOST2CLIENT",
+                "V04P27/ABC/RESP",
+                "V04P27/ABC/ESP",
+                "V04P27/ABC/CLIENT2HOST",
+            ],
+        )
+
+    def test_mqtt_session_local_host2portal_subscriptions_exclude_client2host(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.subscriptions = None
+
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._subscribed_topics = []
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+
+        topics = [topic for topic, _qos in client.subscriptions]
+        self.assertIn("V04P27/SMTABC/HOST2PORTAL", topics)
+        self.assertIn("V04P27/SMTABC/PORTAL2HOST", topics)
+        self.assertNotIn("V04P27/SMTABC/CLIENT2HOST", topics)
+
     def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
         self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
         self.assertTrue(_smartweb_value_matches("01", "00000000000000000001"))
@@ -518,6 +770,34 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(force_flags, [True])
         self.assertEqual(resolved_paths, ["/fresh-device"])
 
+    def test_local_mqtt_topic_discovery_avoids_cloud_device_resolution(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.sid = None
+        client.sk = None
+        client.topic = None
+        client._mqtt = None
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_user = None
+        client._local_mqtt_password = None
+        client.resolve_device = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("cloud resolution should not be used")
+        )
+
+        original_discover = client_module.discover_local_topic
+        client_module.discover_local_topic = (
+            lambda host, port, user, password: "V04P27/0123456789ABCDEF"
+        )
+        try:
+            client._ensure_device()
+        finally:
+            client_module.discover_local_topic = original_discover
+
+        self.assertEqual(client.topic, "V04P27/0123456789ABCDEF")
+        self.assertEqual(client.sid, "0123456789ABCDEF")
+        self.assertTrue(client._mqtt_credentials_ready())
+
     def test_set_value_ids_rejects_unconfirmed_readback_value(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "DHW"
@@ -537,6 +817,187 @@ class CoordinatorTests(unittest.TestCase):
                 client.set_value_ids({"1333": "022B"})
         finally:
             api_module.time.sleep = original_sleep
+
+    def test_climate_value_write_allows_empty_response_as_pending(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.profile = ClimateDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: {}
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client.read_status = lambda: (_ for _ in ()).throw(AssertionError("readback should be skipped"))
+
+        client.set_value_ids({"1194": "02"})
+
+    def test_climate_value_write_allows_timeout_as_pending(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.profile = ClimateDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: None
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client.read_status = lambda: (_ for _ in ()).throw(AssertionError("readback should be skipped"))
+
+        client.set_value_ids({"1194": "02"})
+
+    def test_climate_set_temperature_honors_hvac_mode(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "OFF",
+                "mode": "dry",
+                "setpoint": 24.0,
+                "room": 25.0,
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            17,
+            30,
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_temperature(temperature=21.0, hvac_mode=HVACMode.COOL))
+
+        self.assertEqual(
+            client.state_writes,
+            [{"setpoint": 21.0, "power": True, "mode": "cool"}],
+        )
+        self.assertEqual(client.value_writes, [])
+
+    def test_cloud_generic_ac_climate_prefers_esp_set_path(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "OFF",
+                "mode": "auto",
+                "setpoint": 21.0,
+                "room": 24.0,
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            17,
+            30,
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_hvac_mode(HVACMode.COOL))
+
+        self.assertEqual(client.state_writes, [{"power": True, "mode": "cool"}])
+        self.assertEqual(client.value_writes, [])
+        self.assertIs(client.primed_status, coordinator.data)
+
+    def test_cloud_generic_ac_climate_falls_back_to_value_write_without_c0_payload(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "OFF",
+                "mode": "auto",
+                "setpoint": 21.0,
+                "room": 24.0,
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient(set_values_error=UnsupportedPayload("No C0 payload"))
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            17,
+            30,
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_hvac_mode(HVACMode.COOL))
+
+        self.assertEqual(client.state_writes, [])
+        self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
+
+    def test_local_climate_set_queues_without_blocking_for_client2host(self):
+        class QueuedMqtt:
+            local_portal = True
+            local_host2portal_mode = False
+
+            def __init__(self):
+                self.cleared = False
+                self.queued = None
+                self.wait_timeout = None
+
+            def clear_rx(self):
+                self.cleared = True
+
+            def queue_set(self, tx):
+                self.queued = tx
+
+            def wait_set_executed(self, timeout):
+                self.wait_timeout = timeout
+                return False
+
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.profile = ClimateDeviceProfile()
+        client._beep = False
+        client._last_payload = None
+        client._last_status = None
+        client._local_mqtt_host = "192.168.2.4"
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._read_status_c0 = lambda retries=1: (_ for _ in ()).throw(UnsupportedPayload("no fresh status"))
+        client.read_status = lambda: (_ for _ in ()).throw(AssertionError("readback should be skipped"))
+        client._mqtt = QueuedMqtt()
+
+        client.prime_status_cache({"_payload": bytes.fromhex("c001453c7f7f00300000005d5300000000000000000099")})
+        client.set_values({"power": False})
+
+        self.assertTrue(client._mqtt.cleared)
+        self.assertIsNotNone(client._mqtt.queued)
+        self.assertEqual(client._mqtt.wait_timeout, 1.5)
+
+    def test_cloud_climate_set_publishes_esp_immediately(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.profile = ClimateDeviceProfile()
+        client._beep = False
+        client._last_payload = None
+        client._last_status = None
+        client._local_mqtt_host = None
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._read_status_c0 = lambda retries=1: {
+            "_payload": bytes.fromhex("c001453c7f7f00300000005d5300000000000000000099")
+        }
+        client.read_status = lambda: {"power": "OFF", "mode": "cool", "setpoint": 21.0}
+        client._mqtt = FakeMqtt()
+
+        client.set_values({"power": True, "mode": "cool", "setpoint": 21.0})
+
+        self.assertEqual(len(client._mqtt.published), 1)
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
+        self.assertIn("Tx", payload)
 
     def test_dhw_esp_write_does_not_fallback_on_cached_readback_mismatch(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

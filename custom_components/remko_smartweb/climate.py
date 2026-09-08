@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 
+from ._account import UnsupportedPayload
 from .const import DOMAIN, CONF_MIN_TEMP, CONF_MAX_TEMP, CONF_MODEL, DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 HVAC_MAP = {
@@ -185,8 +186,17 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         await self._async_set({"power": False})
 
     async def async_set_temperature(self, **kwargs):
+        overrides = {}
         if (temp := kwargs.get("temperature")) is not None:
-            await self._async_set({"setpoint": float(temp)})
+            overrides["setpoint"] = float(temp)
+        if (hvac_mode := kwargs.get("hvac_mode")) is not None:
+            if hvac_mode == HVACMode.OFF:
+                overrides["power"] = False
+            else:
+                overrides["power"] = True
+                overrides["mode"] = MODE_MAP.get(hvac_mode, "auto")
+        if overrides:
+            await self._async_set(overrides)
 
     async def async_set_fan_mode(self, fan_mode: str):
         if fan_mode in FAN_MODES:
@@ -217,6 +227,11 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         value_write = self._profile.build_value_write(overrides)
         if getattr(self._profile, "supports_value_write", False) and not value_write:
             return
+        use_value_write = (
+            bool(value_write)
+            and not getattr(self._client, "uses_local_mqtt", False)
+            and getattr(self._profile, "protocol_name", "") != "default_ac_uart"
+        )
         # HA calls can arrive quickly; we use a single read->write cycle per call.
         # Optimistic UI update to avoid flicker (skip for setpoint changes).
         if self.coordinator.data is not None and "setpoint" not in overrides:
@@ -228,10 +243,20 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
                     data[k] = v
             self.coordinator.data = data
             self.async_write_ha_state()
-        if value_write:
+        if use_value_write:
             await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
         else:
-            await self.hass.async_add_executor_job(self._client.set_values, overrides)
+            if (
+                getattr(self._client, "uses_local_mqtt", False)
+                or getattr(self._profile, "protocol_name", "") == "default_ac_uart"
+            ):
+                self._client.prime_status_cache(self.coordinator.data)
+            try:
+                await self.hass.async_add_executor_job(self._client.set_values, overrides)
+            except UnsupportedPayload:
+                if not value_write:
+                    raise
+                await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
 
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()

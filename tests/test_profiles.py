@@ -385,6 +385,28 @@ class ProfileParsingTests(unittest.TestCase):
             },
         )
 
+    def test_climate_profile_builds_value_write(self):
+        values = ClimateDeviceProfile().build_value_write(
+            {
+                "power": True,
+                "setpoint": 21.5,
+                "mode": "heat",
+                "fan": "medium",
+                "swing": "vertical",
+            }
+        )
+
+        self.assertEqual(
+            values,
+            {
+                "1194": "01",
+                "1190": "2B",
+                "1192": "06",
+                "1191": "04",
+                "1193": "01",
+            },
+        )
+
     def test_climate_values_status_parses_mxw_timer_slots(self):
         values = {
             "1194": "01",
