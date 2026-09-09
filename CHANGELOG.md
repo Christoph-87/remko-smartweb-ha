@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.4.18
+- Fix SmartWeb login/device list loading after REMKO started rejecting the `User-Agent: Home Assistant` login header; login now uses a browser-like user agent
+
 ## v0.4.17
 - Fix climate SET command rejections caused by non-canonical fan byte values — when an AC unit was previously in dry mode, its C0 status returns a fan value (e.g. `0x65`) outside the valid SET encoding set `{20, 40, 60, 80, 102}`; the fan byte is now normalized to the nearest canonical value before sending
 - Add per-device "Beep on command" option for climate devices — when enabled, the AC unit confirms each received command with a beep (disabled by default, configurable under device options → Climate Options)
