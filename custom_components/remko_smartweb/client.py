@@ -1251,9 +1251,31 @@ class RemkoSmartWebClient:
                 {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"},
             )
         # Try to read back status after SET to keep state in sync (best effort).
-        time.sleep(1.0)
+        # Some SmartWeb devices briefly report the previous state immediately
+        # after accepting an ESP SET frame, so retry before logging a mismatch.
         try:
-            readback = self.read_status()
+            readback = None
+            last_readback_err = None
+            for attempt in range(3):
+                time.sleep(1.0)
+                try:
+                    readback = self.read_status()
+                except Exception as err:
+                    last_readback_err = err
+                    continue
+                if not isinstance(readback, dict):
+                    continue
+                pwr_intended = ("ON" if overrides["power"] else "OFF") if "power" in overrides else None
+                mode_intended = overrides.get("mode")
+                sp_intended = overrides.get("setpoint")
+                pwr_ok = pwr_intended is None or readback.get("power") == pwr_intended
+                mode_ok = mode_intended is None or readback.get("mode") == mode_intended
+                sp_ok = sp_intended is None or abs((readback.get("setpoint") or 0) - sp_intended) < 0.6
+                if pwr_ok and mode_ok and sp_ok:
+                    break
+                if attempt < 2:
+                    continue
+                break
             if isinstance(readback, dict):
                 pwr_intended = ("ON" if overrides["power"] else "OFF") if "power" in overrides else None
                 mode_intended = overrides.get("mode")
@@ -1268,13 +1290,15 @@ class RemkoSmartWebClient:
                         readback.get("power"), readback.get("mode"), readback.get("setpoint"),
                     )
                 else:
-                    _LOGGER.warning(
-                        "REMKO SmartWeb SET readback mismatch for %r — command may have been ignored:"
+                    _LOGGER.info(
+                        "REMKO SmartWeb SET readback pending for %r — device still reports the previous state:"
                         " intended=%s actual_power=%s actual_mode=%s actual_setpoint=%s",
                         self.device_name,
                         {k: overrides[k] for k in ("power", "mode", "setpoint") if k in overrides},
                         readback.get("power"), readback.get("mode"), readback.get("setpoint"),
                     )
+            elif last_readback_err is not None:
+                raise last_readback_err
         except Exception as err:
             _LOGGER.warning("Readback after SET failed: %s", err)
 

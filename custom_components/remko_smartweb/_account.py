@@ -56,9 +56,20 @@ class RemkoSmartWebAccount:
     """Shared SmartWeb HTTP account state for one credential pair."""
 
     def __init__(self, email: str, password: str):
+        from . import api as _api_module
+
         self.email = email
         self.password = password
         self.session = requests.Session()
+        headers = getattr(self.session, "headers", None)
+        if headers is not None:
+            headers.update(
+                {
+                    "User-Agent": _api_module.SMARTWEB_USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+                }
+            )
         self._lock = threading.RLock()
         self._last_login = 0.0
         self._device_name_map = None
@@ -96,11 +107,7 @@ class RemkoSmartWebAccount:
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
             headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
+                "User-Agent": _api_module.SMARTWEB_USER_AGENT,
                 "X-Requested-With": "XMLHttpRequest",
                 "Origin": BASE,
                 "Referer": f"{BASE}/",

@@ -206,7 +206,9 @@ import custom_components.remko_smartweb.api as api_module
 import custom_components.remko_smartweb.client as client_module
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.api import (
+    RemkoSmartWebAccount,
     RemkoSmartWebClient,
+    SMARTWEB_USER_AGENT,
     UnsupportedPayload,
     _MqttSession,
     _build_kwt_set_cmd,
@@ -303,6 +305,27 @@ class WriteFailureClient:
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
 
 
+class FakeResponse:
+    def raise_for_status(self):
+        return None
+
+
+class FakeCookies:
+    def get_dict(self):
+        return {"PHPSESSID": "test-session"}
+
+
+class FakeRequestsSession:
+    def __init__(self):
+        self.calls = []
+        self.cookies = FakeCookies()
+        self.headers = {}
+
+    def post(self, url, **kwargs):
+        self.calls.append(("post", url, kwargs))
+        return FakeResponse()
+
+
 class ClimateWriteClient:
     uses_local_mqtt = False
 
@@ -325,6 +348,24 @@ class ClimateWriteClient:
 
 
 class CoordinatorTests(unittest.TestCase):
+    def test_smartweb_account_uses_browser_user_agent_for_session_and_login(self):
+        account_module = sys.modules["custom_components.remko_smartweb._account"]
+        original_session = account_module.requests.Session
+        try:
+            account_module.requests.Session = FakeRequestsSession
+            account = RemkoSmartWebAccount("user@example.com", "secret")
+            self.assertEqual(account.session.headers["User-Agent"], SMARTWEB_USER_AGENT)
+
+            account.login()
+
+            _, _, kwargs = account.session.calls[0]
+            headers = kwargs["headers"]
+            self.assertEqual(headers["User-Agent"], SMARTWEB_USER_AGENT)
+            self.assertNotEqual(headers["User-Agent"], "Home Assistant")
+            self.assertIn("Mozilla/5.0", headers["User-Agent"])
+        finally:
+            account_module.requests.Session = original_session
+
     def test_unsupported_payload_keeps_last_data(self):
         coordinator = RemkoSmartWebCoordinator(
             HomeAssistant(),
@@ -473,6 +514,30 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
 
+    def test_mqtt_session_accepts_portal2client_values_like_frontend(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/PORTAL2CLIENT",
+                payload=b'{"SMT_USER":12345,"values":{"1333":"0226"}}',
+            ),
+        )
+
+        self.assertEqual(session._last_values, {"1333": "0226"})
+        self.assertEqual(session.last_smt_user(), 12345)
+
     def test_mqtt_session_handles_double_encoded_rx_payload(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()
@@ -618,7 +683,7 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(session.client.published, [])
 
-    def test_mqtt_session_cloud_subscriptions_match_main_branch_topics(self):
+    def test_mqtt_session_cloud_subscriptions_include_portal_response_topics(self):
         class FakeMqttClient:
             def __init__(self):
                 self.subscriptions = None
@@ -642,6 +707,7 @@ class CoordinatorTests(unittest.TestCase):
             [topic for topic, _qos in client.subscriptions],
             [
                 "V04P27/ABC/HOST2CLIENT",
+                "V04P27/ABC/PORTAL2CLIENT",
                 "V04P27/ABC/RESP",
                 "V04P27/ABC/ESP",
                 "V04P27/ABC/CLIENT2HOST",
@@ -998,6 +1064,45 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
         self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
         self.assertIn("Tx", payload)
+
+    def test_climate_set_values_retries_stale_readback_before_mismatch_warning(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.profile = ClimateDeviceProfile()
+        client._beep = False
+        client._last_payload = None
+        client._last_status = None
+        client._local_mqtt_host = None
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._read_status_c0 = lambda retries=1: {
+            "_payload": bytes.fromhex("c001453c7f7f00300000005d5300000000000000000099")
+        }
+        readbacks = deque(
+            [
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "ON", "mode": "cool", "setpoint": 21.0},
+            ]
+        )
+        client.read_status = lambda: readbacks.popleft()
+        client._mqtt = FakeMqtt()
+        warnings = []
+        original_warning = client_module._LOGGER.warning
+        original_sleep = client_module.time.sleep
+        client_module._LOGGER.warning = lambda msg, *args, **kwargs: warnings.append(str(msg))
+        client_module.time.sleep = lambda _seconds: None
+        try:
+            client.set_values({"power": True, "mode": "cool", "setpoint": 21.0})
+        finally:
+            client_module._LOGGER.warning = original_warning
+            client_module.time.sleep = original_sleep
+
+        self.assertEqual(len(client._mqtt.published), 1)
+        self.assertEqual(len(readbacks), 0)
+        self.assertFalse(any("readback mismatch" in msg for msg in warnings))
 
     def test_dhw_esp_write_does_not_fallback_on_cached_readback_mismatch(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

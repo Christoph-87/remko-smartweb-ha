@@ -249,6 +249,7 @@ class _MqttSession:
             return
         subscriptions = [
             (f"{self.topic}/HOST2CLIENT", 2),
+            (f"{self.topic}/PORTAL2CLIENT", 2),
             (f"{self.topic}/RESP", 2),
             (f"{self.topic}/ESP", 2),
         ]
@@ -300,7 +301,7 @@ class _MqttSession:
                     if str(smt_user or "").isdigit():
                         self._last_smt_user = int(smt_user)
                 values = _extract_values_from_payload(text)
-                if isinstance(values, dict) and str(msg.topic).endswith("/HOST2CLIENT"):
+                if isinstance(values, dict) and str(msg.topic).endswith(("/HOST2CLIENT", "/PORTAL2CLIENT")):
                     self._last_values = values
                     self._last_seen_values = values
                     self._cond.notify_all()

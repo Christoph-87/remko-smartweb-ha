@@ -20,6 +20,9 @@ WSS_HOST = "smartweb.remko.media"
 WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
+# SmartWeb may block Python/HA-style HTTP clients after login. Use the same
+# browser-like identity for the full HTTP session, not just the login request.
+SMARTWEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 LOGIN_TTL_SEC = 10 * 60
 DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
