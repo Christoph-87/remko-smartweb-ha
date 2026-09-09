@@ -30,6 +30,8 @@ WSS_HOST = "smartweb.remko.media"
 WSS_PORT = 8083
 WSS_PATH = "/mqtt"
 VERSION = "V04P27"
+# SmartWeb started rejecting the old "Home Assistant" user agent for login.
+SMARTWEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 LOGIN_TTL_SEC = 10 * 60
 DEVICE_LIST_TTL_SEC = 60
 ACCOUNT_REQUEST_MIN_INTERVAL_SEC = 0.5
@@ -1670,7 +1672,7 @@ class RemkoSmartWebAccount:
             "post",
             LOGIN_URL,
             data={"name": self.email, "passwort": self.password},
-            headers={"User-Agent": "Home Assistant", "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f"{BASE}/"},
+            headers={"User-Agent": SMARTWEB_USER_AGENT, "X-Requested-With": "XMLHttpRequest", "Origin": BASE, "Referer": f"{BASE}/"},
             timeout=15,
         )
         r.raise_for_status()

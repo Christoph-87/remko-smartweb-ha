@@ -165,7 +165,9 @@ sys.modules.setdefault("requests", requests)
 import custom_components.remko_smartweb.api as api_module
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.api import (
+    RemkoSmartWebAccount,
     RemkoSmartWebClient,
+    SMARTWEB_USER_AGENT,
     UnsupportedPayload,
     _MqttSession,
     _build_kwt_set_cmd,
@@ -249,7 +251,40 @@ class WriteFailureClient:
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
 
 
+class FakeResponse:
+    def raise_for_status(self):
+        return None
+
+
+class FakeCookies:
+    def get_dict(self):
+        return {"PHPSESSID": "test-session"}
+
+
+class FakeRequestsSession:
+    def __init__(self):
+        self.calls = []
+        self.cookies = FakeCookies()
+
+    def post(self, url, **kwargs):
+        self.calls.append(("post", url, kwargs))
+        return FakeResponse()
+
+
 class CoordinatorTests(unittest.TestCase):
+    def test_smartweb_login_uses_browser_user_agent(self):
+        account = RemkoSmartWebAccount("user@example.com", "secret")
+        fake_session = FakeRequestsSession()
+        account.session = fake_session
+
+        account.login()
+
+        _, _, kwargs = fake_session.calls[0]
+        headers = kwargs["headers"]
+        self.assertEqual(headers["User-Agent"], SMARTWEB_USER_AGENT)
+        self.assertNotEqual(headers["User-Agent"], "Home Assistant")
+        self.assertIn("Mozilla/5.0", headers["User-Agent"])
+
     def test_unsupported_payload_keeps_last_data(self):
         coordinator = RemkoSmartWebCoordinator(
             HomeAssistant(),
