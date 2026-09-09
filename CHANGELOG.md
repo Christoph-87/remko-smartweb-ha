@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.19
+- Keep the browser-like SmartWeb user agent on the full account HTTP session, not only on the login request, so `/rest/liste` and device detail requests are not blocked after login
+- Listen for SmartWeb `PORTAL2CLIENT` value responses in addition to `HOST2CLIENT`, matching the official SmartWeb frontend behavior
+- Treat immediately stale climate SET readback as pending confirmation instead of warning that the command may have been ignored
+
 ## v0.4.18
 - Fix SmartWeb login/device list loading after REMKO started rejecting the `User-Agent: Home Assistant` login header; login now uses a browser-like user agent
 
