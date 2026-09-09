@@ -265,6 +265,7 @@ class FakeRequestsSession:
     def __init__(self):
         self.calls = []
         self.cookies = FakeCookies()
+        self.headers = {}
 
     def post(self, url, **kwargs):
         self.calls.append(("post", url, kwargs))
@@ -272,18 +273,22 @@ class FakeRequestsSession:
 
 
 class CoordinatorTests(unittest.TestCase):
-    def test_smartweb_login_uses_browser_user_agent(self):
-        account = RemkoSmartWebAccount("user@example.com", "secret")
-        fake_session = FakeRequestsSession()
-        account.session = fake_session
+    def test_smartweb_account_uses_browser_user_agent_for_session_and_login(self):
+        original_session = api_module.requests.Session
+        try:
+            api_module.requests.Session = FakeRequestsSession
+            account = RemkoSmartWebAccount("user@example.com", "secret")
+            self.assertEqual(account.session.headers["User-Agent"], SMARTWEB_USER_AGENT)
 
-        account.login()
+            account.login()
 
-        _, _, kwargs = fake_session.calls[0]
-        headers = kwargs["headers"]
-        self.assertEqual(headers["User-Agent"], SMARTWEB_USER_AGENT)
-        self.assertNotEqual(headers["User-Agent"], "Home Assistant")
-        self.assertIn("Mozilla/5.0", headers["User-Agent"])
+            _, _, kwargs = account.session.calls[0]
+            headers = kwargs["headers"]
+            self.assertEqual(headers["User-Agent"], SMARTWEB_USER_AGENT)
+            self.assertNotEqual(headers["User-Agent"], "Home Assistant")
+            self.assertIn("Mozilla/5.0", headers["User-Agent"])
+        finally:
+            api_module.requests.Session = original_session
 
     def test_unsupported_payload_keeps_last_data(self):
         coordinator = RemkoSmartWebCoordinator(
