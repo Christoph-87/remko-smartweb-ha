@@ -260,8 +260,7 @@ class _MqttSession:
                     (f"{self.topic}/PORTAL2HOST", 2),
                 ]
             )
-        if not self._local_host2portal_mode:
-            subscriptions.append((f"{self.topic}/CLIENT2HOST", 2))
+        subscriptions.append((f"{self.topic}/CLIENT2HOST", 2))
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
@@ -309,7 +308,6 @@ class _MqttSession:
                     isinstance(obj, dict)
                     and str(msg.topic).endswith("/CLIENT2HOST")
                     and getattr(self, "_local_portal", False)
-                    and not getattr(self, "_local_host2portal_mode", False)
                     and not is_own_client2host
                     and "query_list" in obj
                 )

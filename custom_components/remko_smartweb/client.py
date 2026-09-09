@@ -123,6 +123,7 @@ class RemkoSmartWebClient:
         self._local_mqtt_port = local_mqtt_port
         self._local_mqtt_user = local_mqtt_user
         self._local_mqtt_password = local_mqtt_password
+        self._local_mqtt_command_topic = None
 
     @property
     def uses_local_mqtt(self) -> bool:
@@ -158,6 +159,52 @@ class RemkoSmartWebClient:
             _redact_debug_text(topic),
         )
         return True
+
+    def _ensure_local_command_topic(self) -> None:
+        """Resolve the SID-based ESP command topic while keeping the local topic.
+
+        Local sticks announce themselves below V04P27/SMT<mac>/HOST2PORTAL, but
+        broker logs show they subscribe to ESP frames below the normal SID topic.
+        """
+        if not self._local_mqtt_host or self._local_mqtt_command_topic:
+            return
+        local_topic = self.topic
+        try:
+            self.resolve_device(force_list=False)
+            command_topic = _build_mqtt_topic(self.sid)
+            if command_topic:
+                self._local_mqtt_command_topic = command_topic
+                _LOGGER.info(
+                    "Resolved REMKO SmartWeb local command topic for %r: %s",
+                    self.device_name,
+                    _redact_debug_text(command_topic),
+                )
+        except Exception as err:
+            _LOGGER.debug(
+                "Could not resolve REMKO SmartWeb local command topic for %r: %s",
+                self.device_name,
+                err,
+            )
+        finally:
+            self.topic = local_topic
+
+    def _esp_topic(self) -> str:
+        base_topic = (
+            getattr(self, "_local_mqtt_command_topic", None)
+            if getattr(self, "_local_mqtt_host", None)
+            else None
+        )
+        return f"{base_topic or self.topic}/ESP"
+
+    def _publish_esp(self, payload: dict) -> None:
+        topic = self._esp_topic()
+        _LOGGER.debug(
+            "REMKO SmartWeb ESP publish: device=%r topic=%s payload_keys=%s",
+            self.device_name,
+            _redact_debug_text(topic),
+            sorted(payload.keys()),
+        )
+        self._mqtt.publish(topic, payload)
 
     def prime_status_cache(self, status: dict | None) -> None:
         """Seed the write cache from coordinator data before a local SET call."""
@@ -232,9 +279,12 @@ class RemkoSmartWebClient:
 
     def _ensure_device(self) -> None:
         """Ensure SID/SK/topic are resolved from SmartWeb."""
-        if self._mqtt_credentials_ready():
+        if self._local_mqtt_host:
+            if not self.topic and not self._ensure_local_topic():
+                raise DeviceResolveError("Local MQTT topic not found")
+            self._ensure_local_command_topic()
             return
-        if self._ensure_local_topic():
+        if self._mqtt_credentials_ready():
             return
         self.sid = None
         self.sk = None
@@ -453,7 +503,7 @@ class RemkoSmartWebClient:
         if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device not resolved")
         self._ensure_mqtt()
-        self._mqtt.publish(f"{self.topic}/ESP", payload)
+        self._publish_esp(payload)
         return self._mqtt.wait_rx(timeout=timeout)
 
     def _mqtt_poll_values(self, timeout=10) -> dict | None:
@@ -573,7 +623,7 @@ class RemkoSmartWebClient:
                     }
                 ),
             )
-            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             # The frontend waits for RESP and then refreshes the value model.
             self._mqtt.wait_rx(timeout=timeout)
             time.sleep(1.0)
@@ -603,7 +653,7 @@ class RemkoSmartWebClient:
                     }
                 ),
             )
-            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             self._mqtt.wait_rx(timeout=timeout)
             time.sleep(1.0)
         return not unsupported
@@ -627,7 +677,7 @@ class RemkoSmartWebClient:
                     }
                 ),
             )
-            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             self._mqtt.wait_rx(timeout=timeout)
             time.sleep(0.5)
         return True
@@ -650,7 +700,7 @@ class RemkoSmartWebClient:
                 }
             ),
         )
-        self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+        self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
         self._mqtt.wait_rx(timeout=timeout)
         return True
 
@@ -675,7 +725,7 @@ class RemkoSmartWebClient:
                     }
                 ),
             )
-            self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
             self._mqtt.wait_rx(timeout=timeout)
             time.sleep(0.5)
         return not unsupported
@@ -1194,15 +1244,29 @@ class RemkoSmartWebClient:
             return
         payload = None
         last_err = None
-        for _ in range(2):
-            try:
-                status = self._read_status_c0(retries=1)
-                payload = status.get("_payload")
-                last_err = None
-                break
-            except Exception as err:
-                last_err = err
-                time.sleep(0.5)
+        if self._mqtt.local_host2portal_mode:
+            if self._last_payload:
+                _LOGGER.info(
+                    "REMKO SmartWeb local SET using cached C0 payload for %r",
+                    self.device_name,
+                )
+                payload = self._last_payload
+            elif isinstance(self._last_status, dict) and self._last_status.get("_payload"):
+                _LOGGER.info(
+                    "REMKO SmartWeb local SET using cached status payload for %r",
+                    self.device_name,
+                )
+                payload = self._last_status["_payload"]
+        if not payload:
+            for _ in range(2):
+                try:
+                    status = self._read_status_c0(retries=1)
+                    payload = status.get("_payload")
+                    last_err = None
+                    break
+                except Exception as err:
+                    last_err = err
+                    time.sleep(0.5)
         if not payload and self._last_payload:
             _LOGGER.warning(
                 "REMKO SmartWeb write using cached C0 payload for %r (live read failed: %s)",
@@ -1246,10 +1310,13 @@ class RemkoSmartWebClient:
                 )
                 return
         else:
-            self._mqtt.publish(
-                f"{self.topic}/ESP",
-                {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"},
-            )
+            self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+            if self._mqtt.local_host2portal_mode:
+                _LOGGER.info(
+                    "REMKO SmartWeb local SET sent for %r; readback confirmation pending",
+                    self.device_name,
+                )
+                return
         # Try to read back status after SET to keep state in sync (best effort).
         # Some SmartWeb devices briefly report the previous state immediately
         # after accepting an ESP SET frame, so retry before logging a mismatch.

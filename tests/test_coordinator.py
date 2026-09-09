@@ -714,7 +714,7 @@ class CoordinatorTests(unittest.TestCase):
             ],
         )
 
-    def test_mqtt_session_local_host2portal_subscriptions_exclude_client2host(self):
+    def test_mqtt_session_local_host2portal_subscriptions_include_client2host(self):
         class FakeMqttClient:
             def __init__(self):
                 self.subscriptions = None
@@ -737,7 +737,50 @@ class CoordinatorTests(unittest.TestCase):
         topics = [topic for topic, _qos in client.subscriptions]
         self.assertIn("V04P27/SMTABC/HOST2PORTAL", topics)
         self.assertIn("V04P27/SMTABC/PORTAL2HOST", topics)
-        self.assertNotIn("V04P27/SMTABC/CLIENT2HOST", topics)
+        self.assertIn("V04P27/SMTABC/CLIENT2HOST", topics)
+
+    def test_mqtt_session_local_host2portal_answers_client2host_polls(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = "AABBCC"
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SMTABC/CLIENT2HOST",
+                payload=b'{"CLIENT_ID":"stick","query_list":[1194]}',
+            ),
+        )
+
+        self.assertEqual(len(session.client.published), 2)
+        self.assertEqual(session.client.published[0][0], "V04P27/SMTABC/HOST2CLIENT")
+        self.assertEqual(session.client.published[1][0], "V04P27/SMTABC/ESP")
+        self.assertEqual(session.client.published[1][1]["Tx"], "AABBCC")
+        self.assertTrue(session._pending_set_done.is_set())
+        self.assertIsNone(session._pending_set_tx)
 
     def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
         self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
@@ -836,7 +879,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(force_flags, [True])
         self.assertEqual(resolved_paths, ["/fresh-device"])
 
-    def test_local_mqtt_topic_discovery_avoids_cloud_device_resolution(self):
+    def test_local_mqtt_topic_discovery_keeps_local_topic_and_resolves_command_topic(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"
         client.sid = None
@@ -847,9 +890,14 @@ class CoordinatorTests(unittest.TestCase):
         client._local_mqtt_port = 1883
         client._local_mqtt_user = None
         client._local_mqtt_password = None
-        client.resolve_device = lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("cloud resolution should not be used")
-        )
+        client._local_mqtt_command_topic = None
+
+        def _resolve_device(*args, **kwargs):
+            client.sid = "FEDCBA9876543210"
+            client.sk = "0123456789ABCDEF"
+            client.topic = "V04P27/FEDCBA9876543210"
+
+        client.resolve_device = _resolve_device
 
         original_discover = client_module.discover_local_topic
         client_module.discover_local_topic = (
@@ -861,7 +909,9 @@ class CoordinatorTests(unittest.TestCase):
             client_module.discover_local_topic = original_discover
 
         self.assertEqual(client.topic, "V04P27/0123456789ABCDEF")
-        self.assertEqual(client.sid, "0123456789ABCDEF")
+        self.assertEqual(client.sid, "FEDCBA9876543210")
+        self.assertEqual(client._local_mqtt_command_topic, "V04P27/FEDCBA9876543210")
+        self.assertEqual(client._esp_topic(), "V04P27/FEDCBA9876543210/ESP")
         self.assertTrue(client._mqtt_credentials_ready())
 
     def test_set_value_ids_rejects_unconfirmed_readback_value(self):
@@ -1062,6 +1112,37 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(len(client._mqtt.published), 1)
         topic, payload = client._mqtt.published[0]
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
+        self.assertIn("Tx", payload)
+
+    def test_local_host2portal_climate_set_publishes_without_readback(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.topic = "V04P27/SMTABCDEF123456"
+        client._local_mqtt_command_topic = "V04P27/FEDCBA9876543210"
+        client.profile = ClimateDeviceProfile()
+        client._beep = False
+        client._last_payload = bytes.fromhex("c001453c7f7f00300000005d5300000000000000000099")
+        client._last_status = None
+        client._local_mqtt_host = "192.168.2.4"
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._read_status_c0 = lambda retries=1: (_ for _ in ()).throw(
+            AssertionError("local host2portal writes should use cached payload")
+        )
+        client.read_status = lambda: (_ for _ in ()).throw(
+            AssertionError("local host2portal writes should not wait for readback")
+        )
+        client._mqtt = FakeMqtt()
+        client._mqtt.local_portal = True
+        client._mqtt.local_host2portal_mode = True
+
+        client.set_values({"power": True, "mode": "cool", "setpoint": 21.0})
+
+        self.assertEqual(len(client._mqtt.published), 1)
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/FEDCBA9876543210/ESP")
         self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
         self.assertIn("Tx", payload)
 

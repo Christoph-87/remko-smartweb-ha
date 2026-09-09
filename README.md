@@ -68,6 +68,30 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 
 ---
 
+## Experimental local MQTT mode
+
+This branch also contains experimental support for running a REMKO WiFi stick against a local MQTT broker while other devices continue to use the REMKO cloud.
+
+The local mode is intended for advanced installations where a single WiFi stick is redirected from `smartweb.remko.media` to a local broker. Enable it per device in the integration options:
+
+- `Local MQTT host`
+- `Local MQTT port`
+- `Local MQTT username`
+- `Local MQTT password`
+
+The integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
+
+Important infrastructure notes:
+
+- Redirect only the intended local stick, not the whole network.
+- The stick-side TLS listener commonly uses port `8883` with a certificate for `smartweb.remko.media`.
+- Do not broadly redirect port `8083`. Home Assistant uses `smartweb.remko.media:8083` for REMKO cloud WebSocket sessions; redirecting that port can make cloud devices connect to the local broker instead of REMKO.
+- Local mode may not provide an immediate status readback. Commands can therefore be accepted with pending confirmation while the Home Assistant entity updates optimistically.
+
+Cloud-only installations do not need any local MQTT options.
+
+---
+
 ## Troubleshooting
 
 | Problem | What to try |
@@ -76,6 +100,7 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 | Entities unavailable | Check internet access · reduce the polling interval in options |
 | `SmartWeb returned an empty or unparseable device list from /rest/liste` | Update to the latest version and restart Home Assistant. REMKO may block non-browser HTTP clients; current versions keep a browser-like user agent on the full SmartWeb session, not only during login. |
 | `SET readback mismatch` after a climate command | The device may report the old state for a few seconds after accepting a command. Current versions retry the immediate readback and log pending confirmation instead of warning too early. |
+| Local MQTT device accepts commands slowly or times out | Update to a local-portal build that sends ESP SET frames to the SID-based command topic and treats local readback as pending. |
 | Commands feel slow | SmartWeb is cloud-based — a few seconds of delay is normal |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
 
