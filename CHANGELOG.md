@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.19
+- Keep the browser-like SmartWeb user agent on the full account HTTP session, not only on the login request. v0.4.18 fixed login itself, but REMKO can also block follow-up requests such as `/rest/liste` and device detail pages when they use the default Python/requests user agent
+- Listen for SmartWeb `PORTAL2CLIENT` value responses in addition to `HOST2CLIENT`, matching the official SmartWeb frontend behavior
+- Treat immediately stale climate SET readback as pending confirmation instead of warning that the command may have been ignored
+
+## v0.4.18
+- Fix SmartWeb login after REMKO started rejecting the `User-Agent: Home Assistant` login header; login now uses a browser-like user agent. Follow-up requests were hardened further in v0.4.19
+
 ## v0.4.17
 - Fix climate SET command rejections caused by non-canonical fan byte values — when an AC unit was previously in dry mode, its C0 status returns a fan value (e.g. `0x65`) outside the valid SET encoding set `{20, 40, 60, 80, 102}`; the fan byte is now normalized to the nearest canonical value before sending
 - Add per-device "Beep on command" option for climate devices — when enabled, the AC unit confirms each received command with a beep (disabled by default, configurable under device options → Climate Options)
