@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- Reload REMKO SmartWeb config entries after option changes so the per-device "Beep on command" setting takes effect without a manual Home Assistant restart/reload
+- Add a regression test for the default AC-UART beep bit used by the REMKO frontend (`cmd[1]` bit `0x40`) and include the active beep setting in SET-frame debug logs
+- Restore permissive TLS handling for the SmartWeb MQTT websocket endpoint, matching the behavior needed by Home Assistant containers when REMKO's websocket certificate chain cannot be verified
+
 ## v0.4.18
 - Fix SmartWeb login/device list loading after REMKO started rejecting the `User-Agent: Home Assistant` login header; login now uses a browser-like user agent
 

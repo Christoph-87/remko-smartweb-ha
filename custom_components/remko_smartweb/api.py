@@ -1488,7 +1488,10 @@ class _MqttSession:
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         )
         self.client.username_pw_set(self.sid, self.sk)
-        self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+        # REMKO's SmartWeb websocket endpoint may present a certificate chain that
+        # fails verification in Home Assistant containers; the web portal uses the
+        # same endpoint, so keep the MQTT transport permissive here.
+        self.client.tls_set(cert_reqs=ssl.CERT_NONE)
         self.client.ws_set_options(path=WSS_PATH)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -2781,8 +2784,8 @@ class RemkoSmartWebClient:
         if not tx:
             raise UnsupportedPayload("Failed to build SET frame")
         _LOGGER.debug(
-            "REMKO SmartWeb SET frame: device=%r overrides=%s c0_payload=%s tx=%s",
-            self.device_name, overrides, bytes(payload).hex(), tx,
+            "REMKO SmartWeb SET frame: device=%r overrides=%s beep=%s c0_payload=%s tx=%s",
+            self.device_name, overrides, self._beep, bytes(payload).hex(), tx,
         )
         self._mqtt.publish(f"{self.topic}/ESP", {"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
         # Try to read back status after SET to keep state in sync (best effort).

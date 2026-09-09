@@ -31,6 +31,7 @@ sys.modules.setdefault("requests", requests)
 
 from custom_components.remko_smartweb.api import (
     _build_ac_uart_set_cmds,
+    _build_set_cmd_from_c0,
     _build_kwt_set_cmd,
     _build_lte_set_cmd,
     _build_modbus_read_cmd,
@@ -320,6 +321,18 @@ class ProfileParsingTests(unittest.TestCase):
         )
         self.assertEqual(_build_ac_uart_set_cmds("free_ac_uart", current, {"mode": "heat"}), [])
         self.assertEqual(_build_ac_uart_set_cmds("nwt_ac_uart", current, {"mode": "heat"}), [])
+
+    def test_build_default_ac_uart_set_cmd_sets_beep_bit_when_enabled(self):
+        payload = list(bytes.fromhex(CLIMATE_C0_RX))[10:]
+
+        quiet = bytes.fromhex(_build_set_cmd_from_c0(payload, {"power": True, "mode": "cool"}, beep=False))
+        beep = bytes.fromhex(_build_set_cmd_from_c0(payload, {"power": True, "mode": "cool"}, beep=True))
+
+        # The REMKO frontend sets beep in AC-UART setStatus() via cmd[1] bit 0x40.
+        self.assertFalse(quiet[11] & 0x40)
+        self.assertTrue(beep[11] & 0x40)
+        self.assertEqual(beep[11] & 0x03, 0x03)
+        self.assertNotEqual(quiet.hex(), beep.hex())
 
     def test_build_lte_set_cmd_uses_frontend_protocol(self):
         self.assertEqual(
