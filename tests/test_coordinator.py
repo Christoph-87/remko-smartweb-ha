@@ -8,6 +8,7 @@ import sys
 import threading
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -432,6 +433,50 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
+
+    def test_mqtt_session_reports_connect_timeout_as_not_connected(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._connected = threading.Event()
+        session._closed = False
+
+        self.assertFalse(session.ensure_connected(timeout=0.01))
+
+    def test_mqtt_session_uses_permissive_tls_for_smartweb_websocket(self):
+        calls = []
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            def username_pw_set(self, sid, sk):
+                calls.append(("username_pw_set", sid, sk))
+
+            def tls_set(self, **kwargs):
+                calls.append(("tls_set", kwargs))
+
+            def tls_insecure_set(self, value):
+                calls.append(("tls_insecure_set", value))
+
+            def ws_set_options(self, **kwargs):
+                calls.append(("ws_set_options", kwargs))
+
+            def connect(self, host, port, keepalive):
+                calls.append(("connect", host, port, keepalive))
+
+            def loop_start(self):
+                calls.append(("loop_start",))
+
+        fake_mqtt = types.SimpleNamespace(
+            Client=FakeClient,
+            MQTTv311=4,
+            CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
+        )
+
+        with patch.object(api_module, "mqtt", fake_mqtt):
+            _MqttSession("SID", "SK", "V04P27/SID")
+
+        self.assertIn(("tls_set", {"cert_reqs": api_module.ssl.CERT_NONE}), calls)
+        self.assertIn(("tls_insecure_set", True), calls)
 
     def test_mqtt_session_handles_double_encoded_rx_payload(self):
         session = _MqttSession.__new__(_MqttSession)

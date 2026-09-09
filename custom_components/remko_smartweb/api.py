@@ -1492,6 +1492,7 @@ class _MqttSession:
         # fails verification in Home Assistant containers; the web portal uses the
         # same endpoint, so keep the MQTT transport permissive here.
         self.client.tls_set(cert_reqs=ssl.CERT_NONE)
+        self.client.tls_insecure_set(True)
         self.client.ws_set_options(path=WSS_PATH)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -1552,7 +1553,8 @@ class _MqttSession:
             _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
-        self._connected.wait(timeout=timeout)
+        if not self._connected.wait(timeout=timeout):
+            return False
         return not self._closed
 
     def publish(self, topic: str, payload: dict):
