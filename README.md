@@ -74,6 +74,8 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 |---------|-------------|
 | No entities after install | Restart Home Assistant |
 | Entities unavailable | Check internet access · reduce the polling interval in options |
+| `SmartWeb returned an empty or unparseable device list from /rest/liste` | Update to the latest version and restart Home Assistant. REMKO may block non-browser HTTP clients; current versions keep a browser-like user agent on the full SmartWeb session, not only during login. |
+| `SET readback mismatch` after a climate command | The device may report the old state for a few seconds after accepting a command. Current versions retry the immediate readback and log pending confirmation instead of warning too early. |
 | Commands feel slow | SmartWeb is cloud-based — a few seconds of delay is normal |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
 
