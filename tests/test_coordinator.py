@@ -433,6 +433,30 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
 
+    def test_mqtt_session_accepts_portal2client_values_like_frontend(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/ABC/PORTAL2CLIENT",
+                payload=b'{"SMT_USER":12345,"values":{"1333":"0226"}}',
+            ),
+        )
+
+        self.assertEqual(session._last_values, {"1333": "0226"})
+        self.assertEqual(session.last_smt_user(), 12345)
+
     def test_mqtt_session_handles_double_encoded_rx_payload(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()
@@ -525,6 +549,89 @@ class CoordinatorTests(unittest.TestCase):
         topic, payload = client._mqtt.published[0]
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
         self.assertEqual(payload, {"Tx": _build_kwt_set_cmd("1190", "2B"), "CLIENT_ID": "SMTACUARTTEST"})
+
+    def test_climate_set_values_retries_stale_readback_before_mismatch_warning(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.device_name = "Climate"
+        client.profile = types.SimpleNamespace(protocol_name="")
+        client._mqtt = FakeMqtt()
+        client._beep = False
+        client._last_payload = None
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        c0_payload = [
+            0xC0, 0x00, 0x42, 0x66, 0x7F, 0x7F, 0x00, 0x30, 0x00, 0x00, 0x00,
+            0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]
+        client._read_status_c0 = lambda retries=1: {"_payload": c0_payload}
+        readbacks = deque(
+            [
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "ON", "mode": "cool", "setpoint": 21.0},
+            ]
+        )
+        client.read_status = lambda: readbacks.popleft()
+        warnings = []
+        original_warning = api_module._LOGGER.warning
+        original_sleep = api_module.time.sleep
+        api_module._LOGGER.warning = lambda msg, *args, **kwargs: warnings.append(str(msg))
+        api_module.time.sleep = lambda _seconds: None
+        try:
+            client.set_values({"power": True, "mode": "cool", "setpoint": 21.0})
+        finally:
+            api_module._LOGGER.warning = original_warning
+            api_module.time.sleep = original_sleep
+
+        self.assertEqual(len(client._mqtt.published), 1)
+        self.assertEqual(len(readbacks), 0)
+        self.assertFalse(any("readback mismatch" in msg for msg in warnings))
+
+    def test_climate_set_values_reports_pending_instead_of_warning_for_stale_readback(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.device_name = "Climate"
+        client.profile = types.SimpleNamespace(protocol_name="")
+        client._mqtt = FakeMqtt()
+        client._beep = False
+        client._last_payload = None
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        c0_payload = [
+            0xC0, 0x00, 0x42, 0x66, 0x7F, 0x7F, 0x00, 0x30, 0x00, 0x00, 0x00,
+            0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]
+        client._read_status_c0 = lambda retries=1: {"_payload": c0_payload}
+        readbacks = deque(
+            [
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+                {"power": "OFF", "mode": "cool", "setpoint": 21.0},
+            ]
+        )
+        client.read_status = lambda: readbacks.popleft()
+        warnings = []
+        infos = []
+        original_warning = api_module._LOGGER.warning
+        original_info = api_module._LOGGER.info
+        original_sleep = api_module.time.sleep
+        api_module._LOGGER.warning = lambda msg, *args, **kwargs: warnings.append(str(msg))
+        api_module._LOGGER.info = lambda msg, *args, **kwargs: infos.append(str(msg))
+        api_module.time.sleep = lambda _seconds: None
+        try:
+            client.set_values({"power": True, "mode": "cool", "setpoint": 21.0})
+        finally:
+            api_module._LOGGER.warning = original_warning
+            api_module._LOGGER.info = original_info
+            api_module.time.sleep = original_sleep
+
+        self.assertEqual(len(client._mqtt.published), 1)
+        self.assertEqual(len(readbacks), 0)
+        self.assertFalse(any("readback mismatch" in msg for msg in warnings))
+        self.assertTrue(any("readback pending" in msg for msg in infos))
 
     def test_resolve_device_force_list_skips_stored_device_path(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
