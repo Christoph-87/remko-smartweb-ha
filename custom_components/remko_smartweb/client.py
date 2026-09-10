@@ -206,6 +206,12 @@ class RemkoSmartWebClient:
         )
         self._mqtt.publish(topic, payload)
 
+    def _client2host_client_id(self) -> str:
+        """Return the frontend CLIENT_ID, preserving cloud behavior from main."""
+        if getattr(self, "_local_mqtt_host", None):
+            return f"SMTHA{random.randint(0,9999):04d}"
+        return f"SMT{random.randint(0,9999):04d}{self.sid}"
+
     def prime_status_cache(self, status: dict | None) -> None:
         """Seed the write cache from coordinator data before a local SET call."""
         if not isinstance(status, dict):
@@ -520,7 +526,7 @@ class RemkoSmartWebClient:
         poll = {
             "FORCE_RESPONSE": True,
             "query_list": _api_module._value_query_list(),
-            "CLIENT_ID": f"SMTHA{random.randint(0,9999):04d}",
+            "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": 0,
             "ISTOUCH": False,
             "DEVID": "",
@@ -542,7 +548,7 @@ class RemkoSmartWebClient:
             "values": {str(key): str(value) for key, value in values.items()},
             "query_list": _api_module._value_query_list(values),
             "FORCE_RESPONSE": True,
-            "CLIENT_ID": f"SMTHA{random.randint(0,9999):04d}",
+            "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
             "DEVID": "",
