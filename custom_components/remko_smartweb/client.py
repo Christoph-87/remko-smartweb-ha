@@ -1295,22 +1295,31 @@ class RemkoSmartWebClient:
             self.device_name, overrides, bytes(payload).hex(), tx,
         )
         self._mqtt.clear_rx()  # Force readback to wait for fresh RESP; not stale pre-SET cache
-        # Only legacy local portal bridges need an active CLIENT2HOST window
-        # before an ESP SET.  In normal cloud mode the frontend publishes the
-        # SET directly; waiting for an unrelated CLIENT2HOST would otherwise
-        # turn cloud writes into no-ops when no browser portal is open.
+        # Publish directly whenever we know the stick's SmartWeb command topic.
+        # The older CLIENT2HOST queue is only a legacy fallback for bridge-style
+        # setups that do not expose a SID-based ESP topic.
+        has_command_topic = bool(getattr(self, "_local_mqtt_command_topic", None))
         defer_until_client2host = (
             self._mqtt.local_portal
             and not self._mqtt.local_host2portal_mode
+            and not has_command_topic
         )
         if defer_until_client2host:
             self._mqtt.queue_set(tx)
             executed = self._mqtt.wait_set_executed(timeout=1.5)
             if not executed:
-                _LOGGER.warning(
-                    "REMKO SmartWeb SET queued for %r; no CLIENT2HOST received within %.1f s",
+                _LOGGER.info(
+                    "REMKO SmartWeb SET queue for %r had no CLIENT2HOST trigger "
+                    "within %.1f s; publishing ESP directly",
                     self.device_name,
                     1.5,
+                )
+                self._mqtt.cancel_pending_set()
+                self._publish_esp({"Tx": tx, "CLIENT_ID": "SMTACUARTTEST"})
+                _LOGGER.info(
+                    "REMKO SmartWeb local SET sent for %r after queue fallback; "
+                    "readback confirmation pending",
+                    self.device_name,
                 )
                 return
         else:

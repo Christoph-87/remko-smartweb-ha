@@ -1161,7 +1161,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.state_writes, [])
         self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
 
-    def test_local_climate_set_queues_without_blocking_for_client2host(self):
+    def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:
             local_portal = True
             local_host2portal_mode = False
@@ -1169,6 +1169,8 @@ class CoordinatorTests(unittest.TestCase):
             def __init__(self):
                 self.cleared = False
                 self.queued = None
+                self.cancelled = False
+                self.published = []
                 self.wait_timeout = None
 
             def clear_rx(self):
@@ -1181,8 +1183,16 @@ class CoordinatorTests(unittest.TestCase):
                 self.wait_timeout = timeout
                 return False
 
+            def cancel_pending_set(self):
+                self.cancelled = True
+                self.queued = None
+
+            def publish(self, topic, payload):
+                self.published.append((topic, payload))
+
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"
+        client.topic = "V04P27/0123456789ABCDEF"
         client.profile = ClimateDeviceProfile()
         client._beep = False
         client._last_payload = None
@@ -1199,8 +1209,12 @@ class CoordinatorTests(unittest.TestCase):
         client.set_values({"power": False})
 
         self.assertTrue(client._mqtt.cleared)
-        self.assertIsNotNone(client._mqtt.queued)
+        self.assertTrue(client._mqtt.cancelled)
         self.assertEqual(client._mqtt.wait_timeout, 1.5)
+        self.assertEqual(len(client._mqtt.published), 1)
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
 
     def test_cloud_climate_set_publishes_esp_immediately(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

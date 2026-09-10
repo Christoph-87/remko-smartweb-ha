@@ -137,8 +137,9 @@ def discover_local_topic(
     A local portal setup may not have current SID/SK credentials from the cloud.
     The stick still announces itself below V04P27/<stick>/...; older setups
     emit CLIENT2HOST while newer/local portal firmware has been observed to
-    emit HOST2PORTAL.  Either direction is enough to derive the base topic used
-    for local ESP commands.
+    emit HOST2PORTAL.  Either direction is enough to derive the local
+    announcement topic.  ESP commands may still use the SID-based command topic
+    resolved from SmartWeb metadata.
     """
     found: list[str] = []
     done = threading.Event()
@@ -433,7 +434,7 @@ class _MqttSession:
         return self._local_host2portal_mode
 
     def queue_set(self, tx: str) -> None:
-        """Store a SET frame for dispatch after the next CLIENT2HOST."""
+        """Store a SET frame for dispatch after the next portal poll trigger."""
         self._pending_set_done.clear()
         self._pending_set_tx = tx
 
@@ -442,8 +443,8 @@ class _MqttSession:
         self._pending_set_tx = None
         self._pending_set_done.set()
 
-    def wait_set_executed(self, timeout: float = 35.0) -> bool:
-        """Block until a queued SET is dispatched.  Returns True if it was."""
+    def wait_set_executed(self, timeout: float = 1.5) -> bool:
+        """Wait briefly for a queued SET dispatch; callers should fall back."""
         return self._pending_set_done.wait(timeout=timeout)
 
     def check_local_portal_health(self, device_name: str) -> None:
@@ -456,13 +457,13 @@ class _MqttSession:
             self._no_c2h_warned = True
             if age_s is None:
                 _LOGGER.warning(
-                    "REMKO SmartWeb local portal %r: no CLIENT2HOST received yet — "
+                    "REMKO SmartWeb local portal %r: no portal poll trigger received yet — "
                     "verify that the WiFi stick's DNS points to this broker",
                     device_name,
                 )
             else:
                 _LOGGER.warning(
-                    "REMKO SmartWeb local portal %r: no CLIENT2HOST for %.0f min — "
+                    "REMKO SmartWeb local portal %r: no portal poll trigger for %.0f min — "
                     "WiFi stick may have lost connectivity or DNS redirect expired",
                     device_name, age_s / 60,
                 )
