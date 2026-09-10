@@ -209,6 +209,9 @@
       }
     },
     "switch": {
+      "beep": {
+        "default": "mdi:volume-high"
+      },
       "power": {
         "default": "mdi:power"
       },

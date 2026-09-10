@@ -129,6 +129,13 @@ class RemkoSmartWebClient:
     def uses_local_mqtt(self) -> bool:
         return bool(self._local_mqtt_host)
 
+    @property
+    def beep_enabled(self) -> bool:
+        return bool(self._beep)
+
+    def set_beep_enabled(self, enabled: bool) -> None:
+        self._beep = bool(enabled)
+
     def _mqtt_credentials_ready(self) -> bool:
         if not self.topic:
             return False

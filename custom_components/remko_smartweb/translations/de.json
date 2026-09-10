@@ -288,6 +288,9 @@
       }
     },
     "switch": {
+      "beep": {
+        "name": "Bestätigungston"
+      },
       "power": {
         "name": "Ein/Aus"
       },

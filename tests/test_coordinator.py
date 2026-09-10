@@ -139,13 +139,21 @@ class Store:
 class HomeAssistant:
     def __init__(self):
         self.scheduled_callbacks = []
+        self.config_entries = types.SimpleNamespace(async_update_entry=self.async_update_entry)
+        self.updated_entries = []
 
     async def async_add_executor_job(self, func, *args):
         return func(*args)
 
+    def async_update_entry(self, entry, **kwargs):
+        self.updated_entries.append((entry, kwargs))
+        if "options" in kwargs:
+            entry.options = kwargs["options"]
+
 
 class ConfigEntry:
-    pass
+    def __init__(self, options=None):
+        self.options = options or {}
 
 
 class DeviceInfo(dict):
@@ -1258,12 +1266,43 @@ class CoordinatorTests(unittest.TestCase):
         profile = ClimateDeviceProfile()
         present = {"power", "mode", "setpoint"}
 
+        self.assertTrue(_should_add_switch(profile, present, "beep"))
         self.assertTrue(_should_add_switch(profile, present, "power"))
         self.assertTrue(_should_add_switch(profile, present, "turbo"))
         self.assertTrue(_should_add_switch(profile, present, "bioclean"))
         self.assertTrue(_should_add_switch(profile, present, "sleep"))
         self.assertTrue(_should_add_switch(profile, present, "eco"))
         self.assertFalse(_should_add_switch(profile, present, "wpm_manual_defrost"))
+
+    def test_beep_switch_is_available_for_non_climate_profiles(self):
+        self.assertTrue(_should_add_switch(DomesticHotWaterDeviceProfile(), set(), "beep"))
+
+    def test_beep_switch_updates_client_and_entry_options_without_device_write(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(hass=hass, data={"power": "OFF"})
+        client = ClimateWriteClient()
+        client.set_beep_enabled = lambda enabled: setattr(client, "beep_enabled", bool(enabled))
+        client.beep_enabled = False
+        entry = ConfigEntry(options={"scan_interval": 30, "beep": False})
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            "beep",
+            "Beep on Command",
+            ClimateDeviceProfile(),
+            entry,
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertTrue(client.beep_enabled)
+        self.assertTrue(entity.is_on)
+        self.assertEqual(entry.options["beep"], True)
+        self.assertEqual(entry.options["scan_interval"], 30)
+        self.assertEqual(client.value_writes, [])
+        self.assertEqual(client.state_writes, [])
+        self.assertTrue(entity.wrote_state)
 
     def test_generic_ac_power_switch_keeps_value_write_path(self):
         hass = HomeAssistant()

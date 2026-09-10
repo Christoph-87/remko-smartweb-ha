@@ -59,7 +59,7 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 ✅ Supported &nbsp;·&nbsp; ⚠️ Experimental &nbsp;·&nbsp; — Not available
 
 **Read** = sensor values are shown in Home Assistant.
-**Write** = you can change settings (temperature, mode, on/off) from Home Assistant.
+**Write** = you can change settings (temperature, mode, on/off) from Home Assistant. A per-device **Beep on command** switch controls whether supported AC command frames ask the unit to beep when accepting commands.
 Experimental means it works in testing but may behave differently on some units.
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.

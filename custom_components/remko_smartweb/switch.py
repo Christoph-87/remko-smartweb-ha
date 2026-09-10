@@ -7,9 +7,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN
+from .const import CONF_BEEP, DOMAIN
 
 SWITCHES = [
+    (CONF_BEEP, "Beep on Command"),
     ("power", "Power"),
     ("eco", "Eco"),
     ("frost_protection", "Frost Protection"),
@@ -41,11 +42,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = []
     for (key, name) in SWITCHES:
         if _should_add_switch(profile, present, key):
-            entities.append(RemkoSmartWebSwitch(coordinator, client, device_name, key, name, profile))
+            entities.append(RemkoSmartWebSwitch(coordinator, client, device_name, key, name, profile, entry))
     async_add_entities(entities)
 
 
 def _should_add_switch(profile, present: set[str], key: str) -> bool:
+    if key == CONF_BEEP:
+        return True
     if getattr(profile, "supports_value_write", False):
         if profile.build_value_write({key: True}) or profile.build_value_write({key: False}):
             return True
@@ -64,11 +67,12 @@ def _should_add_switch(profile, present: set[str], key: str) -> bool:
 
 
 class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
-    def __init__(self, coordinator, client, device_name: str, key: str, name: str, profile):
+    def __init__(self, coordinator, client, device_name: str, key: str, name: str, profile, entry=None):
         super().__init__(coordinator)
         self._client = client
         self._key = key
         self._profile = profile
+        self._entry = entry
         self._attr_has_entity_name = True
         self._attr_translation_key = key
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_switch"
@@ -81,6 +85,8 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
+        if self._key == CONF_BEEP:
+            return bool(getattr(self._client, "beep_enabled", False))
         if self._key == "power":
             return self.coordinator.data.get("power") == "ON"
         return bool(self.coordinator.data.get(self._key))
@@ -92,6 +98,20 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         await self._async_set(False)
 
     async def _async_set(self, state: bool):
+        if self._key == CONF_BEEP:
+            if hasattr(self._client, "set_beep_enabled"):
+                self._client.set_beep_enabled(state)
+            else:
+                self._client._beep = bool(state)
+            if self._entry is not None:
+                options = dict(getattr(self._entry, "options", {}) or {})
+                options[CONF_BEEP] = bool(state)
+                config_entries = getattr(self.hass, "config_entries", None)
+                update_entry = getattr(config_entries, "async_update_entry", None)
+                if callable(update_entry):
+                    update_entry(self._entry, options=options)
+            self.async_write_ha_state()
+            return
         if (
             not getattr(self._profile, "supports_value_write", False)
             and not getattr(self._profile, "supports_climate_write", False)

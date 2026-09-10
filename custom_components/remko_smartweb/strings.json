@@ -288,6 +288,9 @@
       }
     },
     "switch": {
+      "beep": {
+        "name": "Beep on command"
+      },
       "power": {
         "name": "Power"
       },

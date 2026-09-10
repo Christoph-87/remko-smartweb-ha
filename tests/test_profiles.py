@@ -842,6 +842,7 @@ class ProfileParsingTests(unittest.TestCase):
             for key, _name, _min, _max, _step, _unit in profile.number_descriptions
         }
         switch_keys = {
+            "beep",
             "power",
             "eco",
             "frost_protection",

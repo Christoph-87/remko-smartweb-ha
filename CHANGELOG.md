@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- Add a per-device `Beep on command` switch entity so the command beep can be toggled directly from Home Assistant instead of only through the integration options
+- Restore extended AC switch behavior for Value-ID capable climate profiles: Power keeps the Value-ID path, while Eco, Turbo, Sleep, Bioclean, and Frost Protection fall back to the C0/ESP SET path when needed
+- Parse the Bioclean flag from C0 status frames so the switch can reflect device state after polling
+
 ## v0.4.19
 - Keep the browser-like SmartWeb user agent on the full account HTTP session, not only on the login request. v0.4.18 fixed login itself, but REMKO can also block follow-up requests such as `/rest/liste` and device detail pages when they use the default Python/requests user agent
 - Listen for SmartWeb `PORTAL2CLIENT` value responses in addition to `HOST2CLIENT`, matching the official SmartWeb frontend behavior
