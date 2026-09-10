@@ -944,6 +944,46 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(payload["CLIENT_ID"].startswith("SMTHA"))
         self.assertNotIn("0123456789ABCDEF", payload["CLIENT_ID"])
 
+    def test_cloud_mqtt_poll_values_matches_main_client_id(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_name = "DHW"
+        client._local_mqtt_host = None
+        client._mqtt = FakeMqtt({"1194": "01"})
+        client._ensure_mqtt = lambda: None
+
+        response = client._mqtt_poll_values(timeout=1)
+
+        self.assertEqual(response, {"1194": "01"})
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/CLIENT2HOST")
+        self.assertEqual(payload["LASTWRITE"], 0)
+        self.assertTrue(payload["FORCE_RESPONSE"])
+        self.assertEqual(payload["SMT_USER"], 12345)
+        self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
+        self.assertFalse(payload["CLIENT_ID"].startswith("SMTHA"))
+        self.assertTrue(payload["CLIENT_ID"].endswith("0123456789ABCDEF"))
+
+    def test_local_mqtt_poll_values_uses_non_stick_client_id(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_name = "DHW"
+        client._local_mqtt_host = "192.168.2.4"
+        client._mqtt = FakeMqtt({"1194": "01"})
+        client._ensure_mqtt = lambda: None
+
+        client._mqtt_poll_values(timeout=1)
+
+        _topic, payload = client._mqtt.published[0]
+        self.assertTrue(payload["CLIENT_ID"].startswith("SMTHA"))
+        self.assertNotIn("0123456789ABCDEF", payload["CLIENT_ID"])
+
     def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.sid = "0123456789ABCDEF"
