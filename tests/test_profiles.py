@@ -346,10 +346,20 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["swing"], "off")
         self.assertEqual(status["room"], 25)
         self.assertEqual(status["outdoor"], 25)
+        self.assertFalse(status["bioclean"])
         self.assertFalse(status["display"])
         self.assertFalse(status["frost_protection"])
         self.assertEqual(status["unit"], "C")
         self.assertEqual(status["_payload"][0], 0xC0)
+
+    def test_climate_c0_status_parses_bioclean_flag(self):
+        data = bytearray.fromhex(CLIMATE_C0_RX)
+        data[10 + 9] |= 0x20
+
+        status = ClimateDeviceProfile().parse_c0_status(data.hex())
+
+        self.assertIsNotNone(status)
+        self.assertTrue(status["bioclean"])
 
     def test_climate_c0_status_rejects_non_c0_frame(self):
         self.assertIsNone(ClimateDeviceProfile().parse_c0_status("63100450000108aa"))

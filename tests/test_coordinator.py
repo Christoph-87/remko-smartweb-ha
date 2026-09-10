@@ -26,6 +26,7 @@ ha_components = types.ModuleType("homeassistant.components")
 ha_climate = types.ModuleType("homeassistant.components.climate")
 ha_climate_const = types.ModuleType("homeassistant.components.climate.const")
 ha_date = types.ModuleType("homeassistant.components.date")
+ha_switch = types.ModuleType("homeassistant.components.switch")
 ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
@@ -49,6 +50,11 @@ class DateEntity:
 
 
 class ClimateEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class SwitchEntity:
     def async_write_ha_state(self):
         self.wrote_state = True
 
@@ -161,6 +167,7 @@ ha_climate.ClimateEntity = ClimateEntity
 ha_climate_const.HVACMode = HVACMode
 ha_climate_const.HVACAction = HVACAction
 ha_climate_const.ClimateEntityFeature = ClimateEntityFeature
+ha_switch.SwitchEntity = SwitchEntity
 ha_water_heater.WaterHeaterEntity = WaterHeaterEntity
 ha_water_heater.WaterHeaterEntityFeature = WaterHeaterEntityFeature
 ha_core.HomeAssistant = HomeAssistant
@@ -180,6 +187,7 @@ sys.modules.setdefault("homeassistant.components", ha_components)
 sys.modules.setdefault("homeassistant.components.climate", ha_climate)
 sys.modules.setdefault("homeassistant.components.climate.const", ha_climate_const)
 sys.modules.setdefault("homeassistant.components.date", ha_date)
+sys.modules.setdefault("homeassistant.components.switch", ha_switch)
 sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
@@ -217,6 +225,7 @@ from custom_components.remko_smartweb.api import (
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
+from custom_components.remko_smartweb.switch import RemkoSmartWebSwitch, _should_add_switch
 from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
@@ -1244,6 +1253,67 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.state_writes, [])
         self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
+
+    def test_generic_ac_extended_switches_are_available_without_value_write_specs(self):
+        profile = ClimateDeviceProfile()
+        present = {"power", "mode", "setpoint"}
+
+        self.assertTrue(_should_add_switch(profile, present, "power"))
+        self.assertTrue(_should_add_switch(profile, present, "turbo"))
+        self.assertTrue(_should_add_switch(profile, present, "bioclean"))
+        self.assertTrue(_should_add_switch(profile, present, "sleep"))
+        self.assertTrue(_should_add_switch(profile, present, "eco"))
+        self.assertFalse(_should_add_switch(profile, present, "wpm_manual_defrost"))
+
+    def test_generic_ac_power_switch_keeps_value_write_path(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"power": "OFF", "mode": "auto", "setpoint": 21.0, "unit": "C"},
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            "power",
+            "Power",
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertEqual(client.value_writes, [{"1194": "01"}])
+        self.assertEqual(client.state_writes, [])
+        self.assertEqual(coordinator.data["power"], "ON")
+
+    def test_generic_ac_extended_switch_falls_back_to_c0_set_values(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "ON",
+                "mode": "cool",
+                "setpoint": 21.0,
+                "turbo": False,
+                "unit": "C",
+            },
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Arbeitszimmer Obergeschoss",
+            "turbo",
+            "Turbo",
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertEqual(client.value_writes, [])
+        self.assertEqual(client.state_writes, [{"turbo": True}])
+        self.assertTrue(coordinator.data["turbo"])
 
     def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:

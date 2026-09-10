@@ -47,9 +47,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 def _should_add_switch(profile, present: set[str], key: str) -> bool:
     if getattr(profile, "supports_value_write", False):
-        if key != "power" and key not in present:
-            return False
-        return bool(profile.build_value_write({key: True}) or profile.build_value_write({key: False}))
+        if profile.build_value_write({key: True}) or profile.build_value_write({key: False}):
+            return True
+        if (
+            getattr(profile, "supports_climate_write", False)
+            and key in C0_CLIMATE_SWITCH_KEYS
+        ):
+            return True
+        return False
     if (
         getattr(profile, "supports_climate_write", False)
         and key in C0_CLIMATE_SWITCH_KEYS
@@ -113,7 +118,12 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
             await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
             async_call_later(self.hass, 2.0, _do_refresh)
             return
-        if getattr(self._profile, "supports_value_write", False):
+        if (
+            getattr(self._profile, "supports_climate_write", False)
+            and self._key in C0_CLIMATE_SWITCH_KEYS
+        ):
+            await self.hass.async_add_executor_job(self._client.set_values, overrides)
+        elif getattr(self._profile, "supports_value_write", False):
             return
         else:
             await self.hass.async_add_executor_job(self._client.set_values, overrides)

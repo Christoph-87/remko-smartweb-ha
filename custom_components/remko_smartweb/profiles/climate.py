@@ -208,6 +208,7 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         vertical = (payload[7] & 0x03) > 0
         horizontal = (payload[7] & 0x0C) > 0
         eco = ((payload[9] & 0x10) >> 4) > 0
+        bioclean = ((payload[9] & 0x20) >> 5) > 0
         turbo = ((payload[10] & 0x02) >> 1) > 0
         sleep = (payload[10] & 0x01) > 0
         display = ((payload[10] & 0x10) >> 4) > 0
@@ -254,6 +255,7 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             "fan": fan,
             "swing": swing,
             "eco": eco,
+            "bioclean": bioclean,
             "turbo": turbo,
             "sleep": sleep,
             "display": display,
