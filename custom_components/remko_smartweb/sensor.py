@@ -37,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
     entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
+    if getattr(client, "uses_local_mqtt", False):
+        entities.append(RemkoSmartWebLocalPortalStatusSensor(coordinator, client, device_name))
     entities.append(RemkoSmartWebLastSyncSensor(coordinator, device_name))
     async_add_entities(entities)
 
@@ -161,4 +163,33 @@ class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
             key.lower().replace(" ", "_"): value
             for key, value in self._client.diagnostic_metadata().items()
             if value not in (None, "")
+        }
+
+
+class RemkoSmartWebLocalPortalStatusSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, coordinator, client, device_name: str):
+        super().__init__(coordinator)
+        self._client = client
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "local_portal_status"
+        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_local_portal_status"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_name)},
+            name=device_name,
+            manufacturer="REMKO",
+            model="SmartWeb",
+        )
+
+    @property
+    def native_value(self):
+        return self._client.local_portal_diagnostics().get("status")
+
+    @property
+    def extra_state_attributes(self):
+        diagnostics = self._client.local_portal_diagnostics()
+        return {
+            key: value
+            for key, value in diagnostics.items()
+            if key != "status" and value not in (None, "")
         }

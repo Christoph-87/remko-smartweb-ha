@@ -280,6 +280,9 @@
       "diagnostics": {
         "name": "Diagnose"
       },
+      "local_portal_status": {
+        "name": "Lokaler Portalstatus"
+      },
       "last_sync": {
         "name": "Letzte Synchronisation"
       }

@@ -50,6 +50,22 @@ class CoordinatorEntity:
         self.hass = coordinator.hass
 
 
+class DataUpdateCoordinator:
+    def __class_getitem__(cls, item):
+        return cls
+
+    def __init__(self, hass, logger, name, update_interval):
+        self.hass = hass
+        self.logger = logger
+        self.name = name
+        self.update_interval = update_interval
+        self.data = None
+
+
+class UpdateFailed(Exception):
+    pass
+
+
 class HomeAssistant:
     pass
 
@@ -98,7 +114,10 @@ ha_entity.DeviceInfo = DeviceInfo
 ha_entity.EntityCategory = EntityCategory
 ha_entity_registry.async_get = async_get_entity_registry
 ha_update_coordinator.CoordinatorEntity = CoordinatorEntity
+ha_update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+ha_update_coordinator.UpdateFailed = UpdateFailed
 ha_const.PERCENTAGE = "%"
+ha_const.ATTR_TEMPERATURE = "temperature"
 ha_const.UnitOfTemperature = UnitOfTemperature
 
 sys.modules.setdefault("homeassistant", homeassistant)
@@ -121,13 +140,17 @@ sys.modules["homeassistant.helpers.entity"].DeviceInfo = DeviceInfo
 sys.modules["homeassistant.helpers.entity"].EntityCategory = EntityCategory
 sys.modules["homeassistant.helpers.entity_registry"].async_get = async_get_entity_registry
 sys.modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = CoordinatorEntity
+sys.modules["homeassistant.helpers.update_coordinator"].DataUpdateCoordinator = DataUpdateCoordinator
+sys.modules["homeassistant.helpers.update_coordinator"].UpdateFailed = UpdateFailed
 sys.modules["homeassistant.const"].PERCENTAGE = "%"
+sys.modules["homeassistant.const"].ATTR_TEMPERATURE = "temperature"
 sys.modules["homeassistant.const"].UnitOfTemperature = UnitOfTemperature
 
 from custom_components.remko_smartweb.const import DOMAIN
 from custom_components.remko_smartweb.sensor import (
     LEGACY_DIAGNOSTIC_KEYS,
     RemkoSmartWebDiagnosticSensor,
+    RemkoSmartWebLocalPortalStatusSensor,
     RemkoSmartWebSensor,
     async_setup_entry,
 )
@@ -139,16 +162,26 @@ class EmptyProfile:
 
 
 class MutableDiagnosticClient:
-    def __init__(self):
+    uses_local_mqtt = False
+
+    def __init__(self, local_portal_diagnostics=None):
         self.metadata = {
             "Detected Profile": "Diagnostics",
             "Profile Class": "DiagnosticsDeviceProfile",
             "Profile Protocol": "unsupported_or_unknown",
             "Profile Write Support": "no",
         }
+        self._local_portal_diagnostics = local_portal_diagnostics or {
+            "status": "cloud",
+            "guidance": "Local MQTT options are not enabled for this device.",
+            "checks": {"local_mqtt_configured": False},
+        }
 
     def diagnostic_metadata(self):
         return dict(self.metadata)
+
+    def local_portal_diagnostics(self):
+        return dict(self._local_portal_diagnostics)
 
 
 class SensorSetupTests(unittest.TestCase):
@@ -239,6 +272,51 @@ class SensorSetupTests(unittest.TestCase):
 
         self.assertEqual(diagnostics.extra_state_attributes["portal_type"], "MXW 204 - 524")
         self.assertIn("portal_type", LEGACY_DIAGNOSTIC_KEYS)
+
+    def test_setup_adds_local_portal_status_sensor_for_local_mqtt(self):
+        hass = HomeAssistant()
+        entry = ConfigEntry()
+        client = MutableDiagnosticClient(
+            {
+                "status": "ready",
+                "guidance": "Local portal setup looks ready.",
+                "checks": {
+                    "local_mqtt_configured": True,
+                    "local_broker_connected": True,
+                    "smartweb_device_resolved": True,
+                    "local_topic_discovered": True,
+                    "command_topic_resolved": True,
+                    "stick_seen": True,
+                    "status_readback_seen": True,
+                },
+                "local_broker": "192.168.2.4:1883",
+            }
+        )
+        client.uses_local_mqtt = True
+        coordinator = types.SimpleNamespace(hass=hass, data={})
+        hass.entity_registry = EntityRegistry()
+        hass.data = {
+            DOMAIN: {
+                entry.entry_id: {
+                    "coordinator": coordinator,
+                    "client": client,
+                    "device_name": "SmartWeb",
+                    "device_profile": EmptyProfile(),
+                }
+            }
+        }
+        entities = []
+
+        asyncio.run(async_setup_entry(hass, entry, entities.extend))
+
+        local_status_entities = [
+            entity for entity in entities if isinstance(entity, RemkoSmartWebLocalPortalStatusSensor)
+        ]
+        self.assertEqual(len(local_status_entities), 1)
+        local_status = local_status_entities[0]
+        self.assertEqual(local_status.native_value, "ready")
+        self.assertEqual(local_status.extra_state_attributes["local_broker"], "192.168.2.4:1883")
+        self.assertTrue(local_status.extra_state_attributes["checks"]["stick_seen"])
 
 
 if __name__ == "__main__":

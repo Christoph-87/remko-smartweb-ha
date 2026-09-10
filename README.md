@@ -81,6 +81,20 @@ The local mode is intended for advanced installations where a single WiFi stick 
 
 The integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
 
+Home Assistant exposes a diagnostic **Local portal status** sensor for devices with local MQTT options enabled. Use it as the first setup checklist:
+
+| Check | Meaning |
+|-------|---------|
+| `local_mqtt_configured` | Local MQTT options are enabled for this Config Entry. |
+| `local_broker_connected` | Home Assistant connected to the configured MQTT broker and subscribed successfully. |
+| `smartweb_device_resolved` | SmartWeb login and device metadata resolution succeeded, so the account still contains the device. |
+| `local_topic_discovered` | The redirected stick was discovered on its local `V04P27/SMT...` announcement topic. |
+| `command_topic_resolved` | The SID-based `V04P27/<SID>` command topic was resolved for ESP commands. |
+| `stick_seen` | The local broker has recently seen stick announcements such as `HOST2PORTAL`. |
+| `status_readback_seen` | A status payload or ESP `RESP` has been seen since startup. |
+
+If the sensor state is `incomplete`, open its attributes and follow the first guidance message. Most local setup problems are broker reachability, SmartWeb account/device resolution, MQTT ACL/listener separation, or DNS redirect scope.
+
 Important infrastructure notes:
 
 - Redirect only the intended local stick, not the whole network.

@@ -226,6 +226,7 @@ class _MqttSession:
         self._pending_set_done = threading.Event()
         self._last_c2h_time: float = 0.0
         self._no_c2h_warned: bool = False
+        self._last_connack_rc: int | None = None
 
         # Derive client_id from sid when available
         _sid = getattr(broker, "_sid", None) or "0000"
@@ -250,8 +251,10 @@ class _MqttSession:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        self._last_connack_rc = int(rc) if str(rc).isdigit() else None
         if rc != 0:
             _LOGGER.warning("MQTT connect failed rc=%s", rc)
+            self._closed = True
             self._connected.set()
             return
         subscriptions = [
@@ -509,6 +512,8 @@ class _MqttSession:
                 "subscribed_topics": list(self._subscribed_topics),
                 "local_portal": self._local_portal,
                 "local_host2portal_mode": self._local_host2portal_mode,
+                "last_connack_rc": self._last_connack_rc,
+                "mqtt_connected": self._last_connack_rc == 0 and not self._closed,
                 "last_c2h_age_s": round(age_s, 1) if age_s is not None else None,
                 "pending_set": self._pending_set_tx is not None,
             }

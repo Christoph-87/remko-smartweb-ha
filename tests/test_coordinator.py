@@ -769,6 +769,31 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("V04P27/SIDABC/ESP", topics)
         self.assertIn("V04P27/SIDABC/HOST2CLIENT", topics)
 
+    def test_mqtt_session_records_failed_connack_for_diagnostics(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._connected = threading.Event()
+        session._closed = False
+        session._recent_messages = deque(maxlen=20)
+        session._last_tx_echo = None
+        session._last_seen_values = None
+        session._received_non_tx_count = 0
+        session._subscribed_topics = []
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._last_c2h_time = 0
+        session._pending_set_tx = None
+
+        session._on_connect(None, None, None, 5)
+
+        snapshot = session.diagnostic_snapshot()
+        self.assertTrue(session._connected.is_set())
+        self.assertTrue(session._closed)
+        self.assertEqual(snapshot["last_connack_rc"], 5)
+        self.assertFalse(snapshot["mqtt_connected"])
+
     def test_mqtt_session_local_host2portal_answers_client2host_polls(self):
         class FakeMqttClient:
             def __init__(self):

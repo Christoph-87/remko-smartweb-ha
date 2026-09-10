@@ -279,6 +279,102 @@ class RemkoSmartWebClient:
             metadata["Connection Mode"] = "cloud"
         return metadata
 
+    def local_portal_diagnostics(self) -> dict:
+        """Return Home Assistant-visible local portal setup checks."""
+        local_mqtt_host = getattr(self, "_local_mqtt_host", None)
+        local_mqtt_port = getattr(self, "_local_mqtt_port", None)
+        local_mqtt_command_topic = getattr(self, "_local_mqtt_command_topic", None)
+        if not local_mqtt_host:
+            return {
+                "status": "cloud",
+                "guidance": "Local MQTT options are not enabled for this device.",
+                "checks": {
+                    "local_mqtt_configured": False,
+                    "local_broker_connected": False,
+                    "smartweb_device_resolved": self._mqtt_credentials_ready(),
+                    "local_topic_discovered": False,
+                    "command_topic_resolved": False,
+                    "stick_seen": False,
+                    "status_readback_seen": False,
+                },
+            }
+
+        mqtt_diagnostics = self._mqtt_diagnostic_snapshot()
+        subscribed_topics = (
+            mqtt_diagnostics.get("subscribed_topics", [])
+            if isinstance(mqtt_diagnostics, dict)
+            else []
+        )
+        recent_messages = (
+            mqtt_diagnostics.get("recent_messages", [])
+            if isinstance(mqtt_diagnostics, dict)
+            else []
+        )
+        last_rx = (
+            mqtt_diagnostics.get("last_tx_echo")
+            if isinstance(mqtt_diagnostics, dict)
+            else None
+        )
+        topic = getattr(self, "topic", None)
+        local_topic_discovered = bool(topic)
+        command_topic_resolved = bool(local_mqtt_command_topic)
+        broker_connected = bool(
+            mqtt_diagnostics.get("mqtt_connected")
+            if isinstance(mqtt_diagnostics, dict)
+            else False
+        )
+        stick_seen = any(
+            isinstance(message, dict)
+            and str(message.get("topic", "")).endswith("/HOST2PORTAL")
+            for message in recent_messages
+        )
+        status_readback_seen = (
+            isinstance(getattr(self, "_last_status", None), dict)
+            and not self._last_status.get("_status_pending")
+        ) or bool(last_rx)
+        smartweb_device_resolved = bool(command_topic_resolved or self._mqtt_credentials_ready())
+        checks = {
+            "local_mqtt_configured": True,
+            "local_broker_connected": broker_connected,
+            "smartweb_device_resolved": smartweb_device_resolved,
+            "local_topic_discovered": local_topic_discovered,
+            "command_topic_resolved": command_topic_resolved,
+            "stick_seen": stick_seen,
+            "status_readback_seen": status_readback_seen,
+        }
+        missing = [name for name, ok in checks.items() if not ok]
+        status = "ready" if not missing else "incomplete"
+        guidance_by_check = {
+            "local_broker_connected": "Verify the local MQTT host, port, username, password and ACL.",
+            "smartweb_device_resolved": "Verify the SmartWeb account login and that /rest/liste contains this device.",
+            "local_topic_discovered": "Verify that the redirected stick reaches the local broker and publishes HOST2PORTAL.",
+            "command_topic_resolved": "Verify SmartWeb metadata can be loaded so the SID command topic is known.",
+            "stick_seen": "Verify DNS redirects only this stick to the local broker and the stick is online.",
+            "status_readback_seen": "Wait for the next poll or verify the stick can answer SID ESP status requests.",
+        }
+        guidance = "Local portal setup looks ready."
+        if missing:
+            guidance = guidance_by_check.get(missing[0], "Complete the missing local portal setup checks.")
+        return {
+            "status": status,
+            "guidance": guidance,
+            "checks": checks,
+            "local_broker": f"{local_mqtt_host}:{local_mqtt_port}",
+            "local_topic": _redact_debug_text(topic) if topic else None,
+            "command_topic": (
+                _redact_debug_text(local_mqtt_command_topic)
+                if local_mqtt_command_topic
+                else None
+            ),
+            "mqtt_connack_rc": (
+                mqtt_diagnostics.get("last_connack_rc")
+                if isinstance(mqtt_diagnostics, dict)
+                else None
+            ),
+            "subscribed_topics_count": len(subscribed_topics),
+            "recent_messages_count": len(recent_messages),
+        }
+
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
         self.account.ensure_login(force=force)
