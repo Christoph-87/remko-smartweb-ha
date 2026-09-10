@@ -307,7 +307,11 @@ class RemkoSmartWebClient:
                 )
             else:
                 broker = _CloudBrokerConfig(self.sid, self.sk)
-            self._mqtt = _MqttSession(topic=self.topic, broker=broker)
+            self._mqtt = _MqttSession(
+                topic=self.topic,
+                broker=broker,
+                command_topic=self._local_mqtt_command_topic if self._local_mqtt_host else None,
+            )
             if not self._mqtt.ensure_connected():
                 raise DeviceResolveError("MQTT connect failed")
 
@@ -516,7 +520,7 @@ class RemkoSmartWebClient:
         poll = {
             "FORCE_RESPONSE": True,
             "query_list": _api_module._value_query_list(),
-            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid or 'LOCAL'}",
+            "CLIENT_ID": f"SMTHA{random.randint(0,9999):04d}",
             "LASTWRITE": 0,
             "ISTOUCH": False,
             "DEVID": "",
@@ -538,7 +542,7 @@ class RemkoSmartWebClient:
             "values": {str(key): str(value) for key, value in values.items()},
             "query_list": _api_module._value_query_list(values),
             "FORCE_RESPONSE": True,
-            "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid or 'LOCAL'}",
+            "CLIENT_ID": f"SMTHA{random.randint(0,9999):04d}",
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
             "DEVID": "",

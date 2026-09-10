@@ -196,8 +196,14 @@ def discover_local_topic(
 # ---------------------------------------------------------------------------
 
 class _MqttSession:
-    def __init__(self, topic: str, broker: _BrokerConfig) -> None:
+    def __init__(
+        self,
+        topic: str,
+        broker: _BrokerConfig,
+        command_topic: str | None = None,
+    ) -> None:
         self.topic = topic
+        self._command_topic = command_topic
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._connected = threading.Event()
@@ -253,6 +259,17 @@ class _MqttSession:
             (f"{self.topic}/RESP", 2),
             (f"{self.topic}/ESP", 2),
         ]
+        command_topic = getattr(self, "_command_topic", None)
+        if command_topic and command_topic != self.topic:
+            subscriptions.extend(
+                [
+                    (f"{command_topic}/HOST2CLIENT", 2),
+                    (f"{command_topic}/PORTAL2CLIENT", 2),
+                    (f"{command_topic}/RESP", 2),
+                    (f"{command_topic}/ESP", 2),
+                    (f"{command_topic}/CLIENT2HOST", 2),
+                ]
+            )
         if self._local_portal:
             subscriptions.extend(
                 [
@@ -276,6 +293,8 @@ class _MqttSession:
                 text = msg.payload.decode("utf-8", errors="replace")
             except Exception:
                 text = repr(msg.payload)
+            _c2h_needs_reply = False
+            _h2p_needs_reply = False
             summary = _mqtt_message_summary(msg.topic, text)
             with self._cond:
                 if summary.get("kind") == "tx_echo":
@@ -314,6 +333,12 @@ class _MqttSession:
                 if _c2h_needs_reply:
                     self._last_c2h_time = time.time()
                     self._no_c2h_warned = False
+                _h2p_needs_reply = (
+                    isinstance(obj, dict)
+                    and str(msg.topic).endswith("/HOST2PORTAL")
+                    and getattr(self, "_local_portal", False)
+                    and "SMT_ID" in obj
+                )
             if _c2h_needs_reply:
                 reply_topic = msg.topic.replace("/CLIENT2HOST", "/HOST2CLIENT")
                 reply = json.dumps(
@@ -327,8 +352,9 @@ class _MqttSession:
                     pending_tx = self._pending_set_tx
                     if pending_tx is not None:
                         self._pending_set_tx = None
+                        esp_base = getattr(self, "_command_topic", None) or self.topic
                         self.client.publish(
-                            f"{self.topic}/ESP",
+                            f"{esp_base}/ESP",
                             json.dumps({"Tx": pending_tx,
                                         "CLIENT_ID": "SMTACUARTTEST"}),
                             qos=2, retain=False,
@@ -346,6 +372,22 @@ class _MqttSession:
                                         "CLIENT_ID": "SMTACUARTTEST"}),
                             qos=2, retain=False,
                         )
+                except Exception:
+                    pass
+            if _h2p_needs_reply:
+                reply_topic = msg.topic.replace("/HOST2PORTAL", "/PORTAL2HOST")
+                try:
+                    self.client.publish(
+                        reply_topic,
+                        json.dumps({"WSID": ""}),
+                        qos=0,
+                        retain=False,
+                    )
+                    _LOGGER.debug(
+                        "REMKO SmartWeb local portal: answered HOST2PORTAL "
+                        "heartbeat on %s",
+                        reply_topic,
+                    )
                 except Exception:
                     pass
         except Exception:

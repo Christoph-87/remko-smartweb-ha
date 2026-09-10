@@ -85,6 +85,7 @@ Important infrastructure notes:
 
 - Redirect only the intended local stick, not the whole network.
 - The stick-side TLS listener commonly uses port `8883` with a certificate for `smartweb.remko.media`.
+- If the same Mosquitto instance also serves Home Assistant or other authenticated clients, keep listener authentication separated, for example with `per_listener_settings true`. Otherwise the unauthenticated stick listener can intermittently inherit ACL rules and reject the stick's subscriptions.
 - Do not broadly redirect port `8083`. Home Assistant uses `smartweb.remko.media:8083` for REMKO cloud WebSocket sessions; redirecting that port can make cloud devices connect to the local broker instead of REMKO.
 - Local mode may not provide an immediate status readback. Commands can therefore be accepted with pending confirmation while the Home Assistant entity updates optimistically.
 
@@ -100,7 +101,7 @@ Cloud-only installations do not need any local MQTT options.
 | Entities unavailable | Check internet access · reduce the polling interval in options |
 | `SmartWeb returned an empty or unparseable device list from /rest/liste` | Update to the latest version and restart Home Assistant. REMKO may block non-browser HTTP clients; current versions keep a browser-like user agent on the full SmartWeb session, not only during login. |
 | `SET readback mismatch` after a climate command | The device may report the old state for a few seconds after accepting a command. Current versions retry the immediate readback and log pending confirmation instead of warning too early. |
-| Local MQTT device accepts commands slowly or times out | Update to a local-portal build that sends ESP SET frames to the SID-based command topic and treats local readback as pending. |
+| Local MQTT device accepts commands slowly or times out | Update to a local-portal build that sends ESP SET frames to the SID-based command topic and treats local readback as pending. Also verify Mosquitto listener authentication is separated so the stick's `8883` subscriptions are not denied by the authenticated HA listener. |
 | Commands feel slow | SmartWeb is cloud-based — a few seconds of delay is normal |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
 

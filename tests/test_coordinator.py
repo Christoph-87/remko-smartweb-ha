@@ -667,6 +667,7 @@ class CoordinatorTests(unittest.TestCase):
         session._no_c2h_warned = False
         session._local_portal = False
         session._local_host2portal_mode = False
+        session._command_topic = None
         session._recent_messages = deque(maxlen=20)
         session._received_non_tx_count = 0
         session._pending_set_tx = None
@@ -699,6 +700,7 @@ class CoordinatorTests(unittest.TestCase):
         session._local_portal = False
         session._local_host2portal_mode = False
         session._subscribed_topics = []
+        session._command_topic = None
         client = FakeMqttClient()
 
         session._on_connect(client, None, None, 0)
@@ -730,6 +732,7 @@ class CoordinatorTests(unittest.TestCase):
         session._local_portal = True
         session._local_host2portal_mode = True
         session._subscribed_topics = []
+        session._command_topic = None
         client = FakeMqttClient()
 
         session._on_connect(client, None, None, 0)
@@ -738,6 +741,33 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("V04P27/SMTABC/HOST2PORTAL", topics)
         self.assertIn("V04P27/SMTABC/PORTAL2HOST", topics)
         self.assertIn("V04P27/SMTABC/CLIENT2HOST", topics)
+
+    def test_mqtt_session_local_command_topic_subscribes_sid_responses(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.subscriptions = None
+
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session._command_topic = "V04P27/SIDABC"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._subscribed_topics = []
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+
+        topics = [topic for topic, _qos in client.subscriptions]
+        self.assertIn("V04P27/SMTABC/HOST2PORTAL", topics)
+        self.assertIn("V04P27/SIDABC/RESP", topics)
+        self.assertIn("V04P27/SIDABC/ESP", topics)
+        self.assertIn("V04P27/SIDABC/HOST2CLIENT", topics)
 
     def test_mqtt_session_local_host2portal_answers_client2host_polls(self):
         class FakeMqttClient:
@@ -749,6 +779,51 @@ class CoordinatorTests(unittest.TestCase):
 
         session = _MqttSession.__new__(_MqttSession)
         session.topic = "V04P27/SMTABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._command_topic = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = "AABBCC"
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SMTABC/CLIENT2HOST",
+                payload=b'{"CLIENT_ID":"stick","query_list":[1194]}',
+            ),
+        )
+
+        self.assertEqual(len(session.client.published), 2)
+        self.assertEqual(session.client.published[0][0], "V04P27/SMTABC/HOST2CLIENT")
+        self.assertEqual(session.client.published[1][0], "V04P27/SMTABC/ESP")
+        self.assertEqual(session.client.published[1][1]["Tx"], "AABBCC")
+        self.assertTrue(session._pending_set_done.is_set())
+        self.assertIsNone(session._pending_set_tx)
+
+    def test_mqtt_session_local_pending_set_uses_command_topic(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session._command_topic = "V04P27/SIDABC"
         session.client = FakeMqttClient()
         session._lock = threading.Lock()
         session._cond = threading.Condition(session._lock)
@@ -775,12 +850,50 @@ class CoordinatorTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(len(session.client.published), 2)
-        self.assertEqual(session.client.published[0][0], "V04P27/SMTABC/HOST2CLIENT")
-        self.assertEqual(session.client.published[1][0], "V04P27/SMTABC/ESP")
+        self.assertEqual(session.client.published[1][0], "V04P27/SIDABC/ESP")
         self.assertEqual(session.client.published[1][1]["Tx"], "AABBCC")
-        self.assertTrue(session._pending_set_done.is_set())
-        self.assertIsNone(session._pending_set_tx)
+
+    def test_mqtt_session_local_host2portal_answers_with_empty_wsid(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session._command_topic = "V04P27/SIDABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._last_c2h_time = None
+        session._no_c2h_warned = False
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._pending_set_tx = None
+        session._pending_set_done = threading.Event()
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SMTABC/HOST2PORTAL",
+                payload=b'{"SMT_ID":"SIDABC","SMT_MAC":"ABC","SMT_DEV":"256"}',
+            ),
+        )
+
+        self.assertEqual(
+            session.client.published,
+            [("V04P27/SMTABC/PORTAL2HOST", {"WSID": ""}, 0, False)],
+        )
 
     def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
         self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
@@ -809,8 +922,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn(1333, payload["query_list"])
         self.assertGreater(len(payload["query_list"]), 1)
         self.assertEqual(payload["SMT_USER"], 12345)
-        self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
-        self.assertIn("0123456789ABCDEF", payload["CLIENT_ID"])
+        self.assertTrue(payload["CLIENT_ID"].startswith("SMTHA"))
+        self.assertNotIn("0123456789ABCDEF", payload["CLIENT_ID"])
 
     def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
