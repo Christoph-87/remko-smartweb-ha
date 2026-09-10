@@ -1240,7 +1240,10 @@ class CoordinatorTests(unittest.TestCase):
         topic, payload = client._mqtt.published[0]
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
         self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
-        self.assertIn("Tx", payload)
+        self.assertEqual(
+            payload["Tx"],
+            "AA24AC000000000003024003453C7F7F003000000000000000000000000000000000004EEB",
+        )
 
     def test_local_host2portal_climate_set_publishes_without_readback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
