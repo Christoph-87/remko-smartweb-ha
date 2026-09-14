@@ -317,11 +317,6 @@ class RemkoSmartWebClient:
             if isinstance(mqtt_diagnostics, dict)
             else []
         )
-        last_rx = (
-            mqtt_diagnostics.get("last_tx_echo")
-            if isinstance(mqtt_diagnostics, dict)
-            else None
-        )
         topic = getattr(self, "topic", None)
         local_topic_discovered = bool(topic)
         command_topic_resolved = bool(local_mqtt_command_topic)
@@ -330,15 +325,42 @@ class RemkoSmartWebClient:
             if isinstance(mqtt_diagnostics, dict)
             else False
         )
-        stick_seen = any(
+        last_host2portal_age_s = (
+            mqtt_diagnostics.get("last_host2portal_age_s")
+            if isinstance(mqtt_diagnostics, dict)
+            else None
+        )
+        stick_seen = (
+            isinstance(last_host2portal_age_s, (int, float))
+            and last_host2portal_age_s <= 300
+        ) or any(
             isinstance(message, dict)
             and str(message.get("topic", "")).endswith("/HOST2PORTAL")
             for message in recent_messages
         )
+        last_status_source = getattr(self, "_last_status_source", None)
+        last_status_cached = last_status_source == "cached_last_status"
+        last_resp_age_s = (
+            mqtt_diagnostics.get("last_resp_age_s")
+            if isinstance(mqtt_diagnostics, dict)
+            else None
+        )
+        last_resp_after_last_esp = (
+            mqtt_diagnostics.get("last_resp_after_last_esp")
+            if isinstance(mqtt_diagnostics, dict)
+            else None
+        )
         status_readback_seen = (
-            isinstance(getattr(self, "_last_status", None), dict)
-            and not self._last_status.get("_status_pending")
-        ) or bool(last_rx)
+            last_status_source
+            in {
+                "esp_rx",
+                "esp_rx_retry",
+                "client2host_values",
+                "rbw_esp",
+                "kwt_esp",
+                "wpm_esp",
+            }
+        ) or isinstance(last_resp_age_s, (int, float))
         smartweb_device_resolved = bool(command_topic_resolved or self._mqtt_credentials_ready())
         checks = {
             "local_mqtt_configured": True,
@@ -362,6 +384,9 @@ class RemkoSmartWebClient:
         guidance = "Local portal setup looks ready."
         if missing:
             guidance = guidance_by_check.get(missing[0], "Complete the missing local portal setup checks.")
+        elif last_status_cached or last_resp_after_last_esp is False:
+            status = "degraded"
+            guidance = "Last command/status is not freshly confirmed; verify the stick is subscribed to SID ESP and returns SID RESP."
         return {
             "status": status,
             "guidance": guidance,
@@ -380,6 +405,38 @@ class RemkoSmartWebClient:
             ),
             "subscribed_topics_count": len(subscribed_topics),
             "recent_messages_count": len(recent_messages),
+            "last_status_source": last_status_source,
+            "last_status_cached": last_status_cached,
+            "last_esp_publish_age_s": (
+                mqtt_diagnostics.get("last_esp_publish_age_s")
+                if isinstance(mqtt_diagnostics, dict)
+                else None
+            ),
+            "last_esp_publish_topic": (
+                _redact_debug_text(mqtt_diagnostics.get("last_esp_publish_topic"))
+                if isinstance(mqtt_diagnostics, dict)
+                and mqtt_diagnostics.get("last_esp_publish_topic")
+                else None
+            ),
+            "last_resp_age_s": last_resp_age_s,
+            "last_resp_topic": (
+                _redact_debug_text(mqtt_diagnostics.get("last_resp_topic"))
+                if isinstance(mqtt_diagnostics, dict)
+                and mqtt_diagnostics.get("last_resp_topic")
+                else None
+            ),
+            "last_resp_after_last_esp": last_resp_after_last_esp,
+            "last_values_age_s": (
+                mqtt_diagnostics.get("last_values_age_s")
+                if isinstance(mqtt_diagnostics, dict)
+                else None
+            ),
+            "last_host2portal_age_s": last_host2portal_age_s,
+            "last_portal2host_age_s": (
+                mqtt_diagnostics.get("last_portal2host_age_s")
+                if isinstance(mqtt_diagnostics, dict)
+                else None
+            ),
         }
 
     def _ensure_login(self, force: bool = False) -> None:

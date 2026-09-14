@@ -811,6 +811,53 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(snapshot["last_connack_rc"], 5)
         self.assertFalse(snapshot["mqtt_connected"])
 
+    def test_mqtt_session_records_esp_resp_freshness_for_diagnostics(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, json.loads(payload), qos, retain))
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/SMTABC"
+        session.client = FakeMqttClient()
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._subscribed_topics = ["V04P27/SIDABC/RESP", "V04P27/SIDABC/ESP"]
+        session._local_portal = True
+        session._local_host2portal_mode = True
+        session._last_c2h_time = 0
+        session._pending_set_tx = None
+        session._last_connack_rc = 0
+        session._closed = False
+
+        session.publish("V04P27/SIDABC/ESP", {"Tx": "AA", "CLIENT_ID": "SMTACUARTTEST"})
+        snapshot = session.diagnostic_snapshot()
+        self.assertEqual(snapshot["last_esp_publish_topic"], "V04P27/SIDABC/ESP")
+        self.assertFalse(snapshot["last_resp_after_last_esp"])
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SIDABC/RESP",
+                payload=b'{"Rx":"aa22ac"}',
+            ),
+        )
+        snapshot = session.diagnostic_snapshot()
+
+        self.assertEqual(snapshot["last_resp_topic"], "V04P27/SIDABC/RESP")
+        self.assertTrue(snapshot["last_resp_after_last_esp"])
+        self.assertIsNotNone(snapshot["last_resp_age_s"])
+
     def test_mqtt_session_local_host2portal_answers_client2host_polls(self):
         class FakeMqttClient:
             def __init__(self):
@@ -1025,6 +1072,47 @@ class CoordinatorTests(unittest.TestCase):
         _topic, payload = client._mqtt.published[0]
         self.assertTrue(payload["CLIENT_ID"].startswith("SMTHA"))
         self.assertNotIn("0123456789ABCDEF", payload["CLIENT_ID"])
+
+    def test_local_portal_diagnostics_marks_cached_status_degraded(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/SMTABC"
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_command_topic = "V04P27/0123456789ABCDEF"
+        client._last_status = {"power": "OFF"}
+        client._last_status_source = "cached_last_status"
+        client._mqtt_diagnostic_snapshot = lambda: {
+            "mqtt_connected": True,
+            "subscribed_topics": [
+                "V04P27/SMTABC/HOST2PORTAL",
+                "V04P27/0123456789ABCDEF/ESP",
+                "V04P27/0123456789ABCDEF/RESP",
+            ],
+            "recent_messages": [],
+            "last_connack_rc": 0,
+            "last_host2portal_age_s": 20.0,
+            "last_portal2host_age_s": 19.5,
+            "last_esp_publish_age_s": 4.0,
+            "last_esp_publish_topic": "V04P27/0123456789ABCDEF/ESP",
+            "last_resp_age_s": 300.0,
+            "last_resp_topic": "V04P27/0123456789ABCDEF/RESP",
+            "last_resp_after_last_esp": False,
+            "last_values_age_s": None,
+        }
+
+        diagnostics = client.local_portal_diagnostics()
+
+        self.assertEqual(diagnostics["status"], "degraded")
+        self.assertIn("not freshly confirmed", diagnostics["guidance"])
+        self.assertTrue(diagnostics["checks"]["status_readback_seen"])
+        self.assertTrue(diagnostics["last_status_cached"])
+        self.assertFalse(diagnostics["last_resp_after_last_esp"])
+        self.assertEqual(
+            diagnostics["last_esp_publish_topic"],
+            "V04P27/0123456789ABCDEF/ESP",
+        )
 
     def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

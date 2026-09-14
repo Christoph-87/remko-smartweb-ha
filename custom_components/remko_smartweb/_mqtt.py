@@ -213,6 +213,15 @@ class _MqttSession:
         self._last_values = None
         self._last_seen_values = None
         self._last_tx_echo = None
+        self._last_tx_echo_time: float | None = None
+        self._last_esp_publish_time: float | None = None
+        self._last_esp_publish_topic: str | None = None
+        self._last_rx_time: float | None = None
+        self._last_rx_topic: str | None = None
+        self._last_values_time: float | None = None
+        self._last_values_topic: str | None = None
+        self._last_host2portal_time: float | None = None
+        self._last_portal2host_time: float | None = None
         self._last_smt_user = None
         self._recent_messages: deque = deque(maxlen=20)
         self._received_non_tx_count = 0
@@ -291,6 +300,11 @@ class _MqttSession:
         self._closed = True
         self._connected.set()
 
+    def _record_esp_publish(self, topic: str) -> None:
+        with self._lock:
+            self._last_esp_publish_time = time.time()
+            self._last_esp_publish_topic = str(topic)
+
     def _on_message(self, client, userdata, msg):
         try:
             try:
@@ -301,11 +315,18 @@ class _MqttSession:
             _h2p_needs_reply = False
             summary = _mqtt_message_summary(msg.topic, text)
             with self._cond:
+                now = time.time()
                 if summary.get("kind") == "tx_echo":
                     self._last_tx_echo = summary
+                    self._last_tx_echo_time = now
                 else:
                     self._received_non_tx_count += 1
                     self._recent_messages.append(summary)
+                topic_text = str(msg.topic)
+                if topic_text.endswith("/HOST2PORTAL"):
+                    self._last_host2portal_time = now
+                if topic_text.endswith("/PORTAL2HOST"):
+                    self._last_portal2host_time = now
                 # Rx hex for ESP status
                 obj = _json_loads_maybe_wrapped(text)
                 is_own_client2host = False
@@ -318,6 +339,8 @@ class _MqttSession:
                     )
                     if obj.get("Rx"):
                         self._last_rx = json.dumps(obj)
+                        self._last_rx_time = now
+                        self._last_rx_topic = topic_text
                         self._cond.notify_all()
                     smt_user = obj.get("SMT_USER")
                     if str(smt_user or "").isdigit():
@@ -326,6 +349,8 @@ class _MqttSession:
                 if isinstance(values, dict) and str(msg.topic).endswith(("/HOST2CLIENT", "/PORTAL2CLIENT")):
                     self._last_values = values
                     self._last_seen_values = values
+                    self._last_values_time = now
+                    self._last_values_topic = topic_text
                     self._cond.notify_all()
                 _c2h_needs_reply = (
                     isinstance(obj, dict)
@@ -357,8 +382,10 @@ class _MqttSession:
                     if pending_tx is not None:
                         self._pending_set_tx = None
                         esp_base = getattr(self, "_command_topic", None) or self.topic
+                        esp_topic = f"{esp_base}/ESP"
+                        self._record_esp_publish(esp_topic)
                         self.client.publish(
-                            f"{esp_base}/ESP",
+                            esp_topic,
                             json.dumps({"Tx": pending_tx,
                                         "CLIENT_ID": "SMTACUARTTEST"}),
                             qos=2, retain=False,
@@ -370,8 +397,10 @@ class _MqttSession:
                             self.topic,
                         )
                     else:
+                        esp_topic = f"{self.topic}/ESP"
+                        self._record_esp_publish(esp_topic)
                         self.client.publish(
-                            f"{self.topic}/ESP",
+                            esp_topic,
                             json.dumps({"Tx": _build_status_cmd(),
                                         "CLIENT_ID": "SMTACUARTTEST"}),
                             qos=2, retain=False,
@@ -409,6 +438,8 @@ class _MqttSession:
                     if not hasattr(self, "_outgoing_client_ids"):
                         self._outgoing_client_ids = deque(maxlen=20)
                     self._outgoing_client_ids.append(client_id)
+        if str(topic).endswith("/ESP"):
+            self._record_esp_publish(str(topic))
         self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
 
     def clear_values(self) -> None:
@@ -503,10 +534,29 @@ class _MqttSession:
 
     def diagnostic_snapshot(self):
         with self._cond:
+            now = time.time()
+            def _age(timestamp: float | None) -> float | None:
+                return round(now - timestamp, 1) if timestamp is not None else None
+
             age_s = (time.time() - self._last_c2h_time) if self._last_c2h_time else None
+            last_resp_after_last_esp = (
+                getattr(self, "_last_rx_time", None) is not None
+                and getattr(self, "_last_esp_publish_time", None) is not None
+                and self._last_rx_time >= self._last_esp_publish_time
+            )
             return {
                 "recent_messages": list(self._recent_messages),
                 "last_tx_echo": self._last_tx_echo,
+                "last_tx_echo_age_s": _age(getattr(self, "_last_tx_echo_time", None)),
+                "last_esp_publish_age_s": _age(getattr(self, "_last_esp_publish_time", None)),
+                "last_esp_publish_topic": getattr(self, "_last_esp_publish_topic", None),
+                "last_resp_age_s": _age(getattr(self, "_last_rx_time", None)),
+                "last_resp_topic": getattr(self, "_last_rx_topic", None),
+                "last_resp_after_last_esp": last_resp_after_last_esp,
+                "last_values_age_s": _age(getattr(self, "_last_values_time", None)),
+                "last_values_topic": getattr(self, "_last_values_topic", None),
+                "last_host2portal_age_s": _age(getattr(self, "_last_host2portal_time", None)),
+                "last_portal2host_age_s": _age(getattr(self, "_last_portal2host_time", None)),
                 "last_values": self._last_seen_values,
                 "received_non_tx_count": self._received_non_tx_count,
                 "subscribed_topics": list(self._subscribed_topics),
