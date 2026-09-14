@@ -26,6 +26,7 @@ ha_components = types.ModuleType("homeassistant.components")
 ha_climate = types.ModuleType("homeassistant.components.climate")
 ha_climate_const = types.ModuleType("homeassistant.components.climate.const")
 ha_date = types.ModuleType("homeassistant.components.date")
+ha_number = types.ModuleType("homeassistant.components.number")
 ha_switch = types.ModuleType("homeassistant.components.switch")
 ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
@@ -45,6 +46,11 @@ class WaterHeaterEntity:
 
 
 class DateEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class NumberEntity:
     def async_write_ha_state(self):
         self.wrote_state = True
 
@@ -171,6 +177,7 @@ def async_call_later(hass, delay, callback):
 
 
 ha_date.DateEntity = DateEntity
+ha_number.NumberEntity = NumberEntity
 ha_climate.ClimateEntity = ClimateEntity
 ha_climate_const.HVACMode = HVACMode
 ha_climate_const.HVACAction = HVACAction
@@ -187,6 +194,7 @@ ha_update_coordinator.CoordinatorEntity = CoordinatorEntity
 ha_update_coordinator.UpdateFailed = UpdateFailed
 ha_storage.Store = Store
 ha_const.ATTR_TEMPERATURE = "temperature"
+ha_const.PERCENTAGE = "%"
 ha_const.UnitOfTemperature = UnitOfTemperature
 ha_exceptions.HomeAssistantError = HomeAssistantError
 
@@ -195,6 +203,7 @@ sys.modules.setdefault("homeassistant.components", ha_components)
 sys.modules.setdefault("homeassistant.components.climate", ha_climate)
 sys.modules.setdefault("homeassistant.components.climate.const", ha_climate_const)
 sys.modules.setdefault("homeassistant.components.date", ha_date)
+sys.modules.setdefault("homeassistant.components.number", ha_number)
 sys.modules.setdefault("homeassistant.components.switch", ha_switch)
 sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
@@ -222,6 +231,7 @@ import custom_components.remko_smartweb.api as api_module
 import custom_components.remko_smartweb.client as client_module
 import custom_components.remko_smartweb.coordinator as coordinator_module
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
+from custom_components.remko_smartweb.number import RemkoSmartWebNumber
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebAccount,
     RemkoSmartWebClient,
@@ -238,6 +248,8 @@ from custom_components.remko_smartweb.switch import RemkoSmartWebSwitch, _should
 from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfile
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
+from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
+from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
 
 CoordinatorUpdateFailed = coordinator_module.UpdateFailed
@@ -323,6 +335,14 @@ class WriteFailureClient:
     def set_value_ids(self, values):
         self.values = values
         raise UnsupportedPayload("SmartWeb value write was not confirmed")
+
+
+class ValueCaptureClient:
+    def __init__(self):
+        self.values = None
+
+    def set_value_ids(self, values):
+        self.values = values
 
 
 class FakeResponse:
@@ -1467,6 +1487,57 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.value_writes, [])
         self.assertEqual(client.state_writes, [{"turbo": True}])
         self.assertTrue(coordinator.data["turbo"])
+
+    def test_lte_number_entity_writes_target_humidity_value_id(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"target_humidity": 45},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        profile = LteDeviceProfile()
+        entity = RemkoSmartWebNumber(
+            coordinator,
+            client,
+            "WIFI Stick - Luftentfeuchter",
+            profile,
+            profile.number_descriptions[0],
+        )
+
+        asyncio.run(entity.async_set_native_value(55))
+
+        self.assertEqual(client.values, {"1302": "37"})
+        self.assertEqual(coordinator.data["target_humidity"], 55)
+        self.assertTrue(entity.wrote_state)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_wpm_number_entity_writes_setpoint_value_id(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_setpoint_ch": 42},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        profile = WpmDeviceProfile()
+        description = next(
+            item for item in profile.number_descriptions if item[0] == "wpm_setpoint_ch"
+        )
+        entity = RemkoSmartWebNumber(
+            coordinator,
+            client,
+            "WIFI Stick - Waermepumpe",
+            profile,
+            description,
+        )
+
+        asyncio.run(entity.async_set_native_value(45))
+
+        self.assertEqual(client.values, {"1352": "002D"})
+        self.assertEqual(coordinator.data["wpm_setpoint_ch"], 45)
+        self.assertTrue(entity.wrote_state)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
 
     def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:
