@@ -220,6 +220,7 @@ sys.modules.setdefault("requests", requests)
 
 import custom_components.remko_smartweb.api as api_module
 import custom_components.remko_smartweb.client as client_module
+import custom_components.remko_smartweb.coordinator as coordinator_module
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebAccount,
@@ -238,6 +239,8 @@ from custom_components.remko_smartweb.profiles.climate import ClimateDeviceProfi
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
+
+CoordinatorUpdateFailed = coordinator_module.UpdateFailed
 
 
 class FailingClient:
@@ -404,7 +407,7 @@ class CoordinatorTests(unittest.TestCase):
             scan_interval=30,
         )
 
-        with self.assertRaises(UpdateFailed):
+        with self.assertRaises(CoordinatorUpdateFailed):
             asyncio.run(coordinator._async_update_data())
 
     def test_unsupported_payload_can_start_with_pending_initial_data(self):

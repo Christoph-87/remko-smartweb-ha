@@ -23,6 +23,13 @@ LEGACY_DIAGNOSTIC_KEYS = (
 )
 
 
+def _client_uses_local_mqtt(client) -> bool:
+    uses_local_mqtt = getattr(client, "uses_local_mqtt", False)
+    if callable(uses_local_mqtt):
+        return bool(uses_local_mqtt())
+    return bool(uses_local_mqtt)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -37,7 +44,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
     entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
-    if getattr(client, "uses_local_mqtt", False):
+    entities.append(RemkoSmartWebCommunicationStatusSensor(coordinator, client, device_name))
+    if _client_uses_local_mqtt(client):
         entities.append(RemkoSmartWebLocalPortalStatusSensor(coordinator, client, device_name))
     entities.append(RemkoSmartWebLastSyncSensor(coordinator, device_name))
     async_add_entities(entities)
@@ -163,6 +171,35 @@ class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
             key.lower().replace(" ", "_"): value
             for key, value in self._client.diagnostic_metadata().items()
             if value not in (None, "")
+        }
+
+
+class RemkoSmartWebCommunicationStatusSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, coordinator, client, device_name: str):
+        super().__init__(coordinator)
+        self._client = client
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "communication_status"
+        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_communication_status"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_name)},
+            name=device_name,
+            manufacturer="REMKO",
+            model="SmartWeb",
+        )
+
+    @property
+    def native_value(self):
+        return self._client.communication_diagnostics().get("status")
+
+    @property
+    def extra_state_attributes(self):
+        diagnostics = self._client.communication_diagnostics()
+        return {
+            key: value
+            for key, value in diagnostics.items()
+            if key != "status" and value not in (None, "")
         }
 
 

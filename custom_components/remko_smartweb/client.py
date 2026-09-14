@@ -439,6 +439,88 @@ class RemkoSmartWebClient:
             ),
         }
 
+    def communication_diagnostics(self) -> dict:
+        """Return Home Assistant-visible MQTT/write/readback health checks."""
+        mqtt_diagnostics = self._mqtt_diagnostic_snapshot()
+        if not isinstance(mqtt_diagnostics, dict):
+            mqtt_diagnostics = {}
+
+        local_mqtt_host = getattr(self, "_local_mqtt_host", None)
+        local_mqtt_command_topic = getattr(self, "_local_mqtt_command_topic", None)
+        command_topic = local_mqtt_command_topic if local_mqtt_host else self.topic
+        mqtt_connected = bool(mqtt_diagnostics.get("mqtt_connected"))
+        last_status_source = getattr(self, "_last_status_source", None)
+        last_status_cached = last_status_source == "cached_last_status"
+        last_resp_age_s = mqtt_diagnostics.get("last_resp_age_s")
+        last_values_age_s = mqtt_diagnostics.get("last_values_age_s")
+        last_resp_after_last_esp = mqtt_diagnostics.get("last_resp_after_last_esp")
+        status_readback_seen = (
+            last_status_source
+            in {
+                "esp_rx",
+                "esp_rx_retry",
+                "client2host_values",
+                "rbw_esp",
+                "kwt_esp",
+                "wpm_esp",
+            }
+        ) or isinstance(last_resp_age_s, (int, float)) or isinstance(last_values_age_s, (int, float))
+        checks = {
+            "mqtt_credentials_resolved": self._mqtt_credentials_ready() or bool(command_topic),
+            "mqtt_connected": mqtt_connected,
+            "command_topic_resolved": bool(command_topic),
+            "status_readback_seen": status_readback_seen,
+        }
+        missing = [name for name, ok in checks.items() if not ok]
+        status = "ready" if not missing else "incomplete"
+        guidance = "MQTT communication and status readback look healthy."
+        if missing:
+            guidance_by_check = {
+                "mqtt_credentials_resolved": "Verify SmartWeb login and device MQTT metadata resolution.",
+                "mqtt_connected": "Verify the MQTT broker connection and credentials.",
+                "command_topic_resolved": "Verify the SmartWeb topic/SID command topic is known.",
+                "status_readback_seen": "Wait for the next poll or verify the device returns RESP/values after writes.",
+            }
+            guidance = guidance_by_check.get(missing[0], "Complete the missing communication checks.")
+        elif last_status_cached or last_resp_after_last_esp is False:
+            status = "degraded"
+            guidance = "Last command/status is not freshly confirmed; inspect ESP/RESP or values freshness."
+
+        return {
+            "status": status,
+            "guidance": guidance,
+            "checks": checks,
+            "connection_mode": self.diagnostic_metadata().get("Connection Mode"),
+            "topic": _redact_debug_text(self.topic) if self.topic else None,
+            "command_topic": _redact_debug_text(command_topic) if command_topic else None,
+            "mqtt_connack_rc": mqtt_diagnostics.get("last_connack_rc"),
+            "subscribed_topics_count": len(mqtt_diagnostics.get("subscribed_topics", []) or []),
+            "recent_messages_count": len(mqtt_diagnostics.get("recent_messages", []) or []),
+            "last_status_source": last_status_source,
+            "last_status_cached": last_status_cached,
+            "last_esp_publish_age_s": mqtt_diagnostics.get("last_esp_publish_age_s"),
+            "last_esp_publish_topic": (
+                _redact_debug_text(mqtt_diagnostics.get("last_esp_publish_topic"))
+                if mqtt_diagnostics.get("last_esp_publish_topic")
+                else None
+            ),
+            "last_resp_age_s": last_resp_age_s,
+            "last_resp_topic": (
+                _redact_debug_text(mqtt_diagnostics.get("last_resp_topic"))
+                if mqtt_diagnostics.get("last_resp_topic")
+                else None
+            ),
+            "last_resp_after_last_esp": last_resp_after_last_esp,
+            "last_values_age_s": last_values_age_s,
+            "last_values_count": (
+                len(mqtt_diagnostics["last_values"])
+                if isinstance(mqtt_diagnostics.get("last_values"), dict)
+                else None
+            ),
+            "last_host2portal_age_s": mqtt_diagnostics.get("last_host2portal_age_s"),
+            "last_portal2host_age_s": mqtt_diagnostics.get("last_portal2host_age_s"),
+        }
+
     def _ensure_login(self, force: bool = False) -> None:
         """Ensure a logged-in session is available, reusing it within a TTL."""
         self.account.ensure_login(force=force)

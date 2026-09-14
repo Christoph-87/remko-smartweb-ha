@@ -206,6 +206,9 @@
       },
       "diagnostics": {
         "default": "mdi:clipboard-pulse-outline"
+      },
+      "communication_status": {
+        "default": "mdi:access-point-network"
       }
     },
     "switch": {

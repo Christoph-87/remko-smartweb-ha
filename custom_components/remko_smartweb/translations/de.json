@@ -280,6 +280,9 @@
       "diagnostics": {
         "name": "Diagnose"
       },
+      "communication_status": {
+        "name": "Kommunikationsstatus"
+      },
       "local_portal_status": {
         "name": "Lokaler Portalstatus"
       },

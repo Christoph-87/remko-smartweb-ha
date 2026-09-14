@@ -61,6 +61,9 @@ class DataUpdateCoordinator:
         self.update_interval = update_interval
         self.data = None
 
+    def async_set_updated_data(self, data):
+        self.data = data
+
 
 class UpdateFailed(Exception):
     pass
@@ -149,6 +152,7 @@ sys.modules["homeassistant.const"].UnitOfTemperature = UnitOfTemperature
 from custom_components.remko_smartweb.const import DOMAIN
 from custom_components.remko_smartweb.sensor import (
     LEGACY_DIAGNOSTIC_KEYS,
+    RemkoSmartWebCommunicationStatusSensor,
     RemkoSmartWebDiagnosticSensor,
     RemkoSmartWebLocalPortalStatusSensor,
     RemkoSmartWebSensor,
@@ -176,12 +180,31 @@ class MutableDiagnosticClient:
             "guidance": "Local MQTT options are not enabled for this device.",
             "checks": {"local_mqtt_configured": False},
         }
+        self._communication_diagnostics = {
+            "status": "ready",
+            "guidance": "MQTT communication and status readback look healthy.",
+            "checks": {
+                "mqtt_credentials_resolved": True,
+                "mqtt_connected": True,
+                "command_topic_resolved": True,
+                "status_readback_seen": True,
+            },
+            "connection_mode": "cloud",
+            "topic": "V04P27/SIDABC",
+            "command_topic": "V04P27/SIDABC",
+            "last_status_source": "esp_rx",
+            "last_status_cached": False,
+            "last_resp_after_last_esp": True,
+        }
 
     def diagnostic_metadata(self):
         return dict(self.metadata)
 
     def local_portal_diagnostics(self):
         return dict(self._local_portal_diagnostics)
+
+    def communication_diagnostics(self):
+        return dict(self._communication_diagnostics)
 
 
 class SensorSetupTests(unittest.TestCase):
@@ -263,6 +286,10 @@ class SensorSetupTests(unittest.TestCase):
             entity for entity in entities if isinstance(entity, RemkoSmartWebDiagnosticSensor)
         ]
         self.assertEqual(len(diagnostic_entities), 1)
+        communication_entities = [
+            entity for entity in entities if isinstance(entity, RemkoSmartWebCommunicationStatusSensor)
+        ]
+        self.assertEqual(len(communication_entities), 1)
         diagnostics = diagnostic_entities[0]
         self.assertEqual(diagnostics.native_value, "Diagnostics")
         self.assertNotIn("portal_type", diagnostics.extra_state_attributes)
@@ -272,6 +299,52 @@ class SensorSetupTests(unittest.TestCase):
 
         self.assertEqual(diagnostics.extra_state_attributes["portal_type"], "MXW 204 - 524")
         self.assertIn("portal_type", LEGACY_DIAGNOSTIC_KEYS)
+
+    def test_communication_status_sensor_is_added_for_cloud_entries(self):
+        hass = HomeAssistant()
+        entry = ConfigEntry()
+        client = MutableDiagnosticClient()
+        client._communication_diagnostics = {
+            "status": "degraded",
+            "guidance": "Last command/status is not freshly confirmed.",
+            "checks": {
+                "mqtt_credentials_resolved": True,
+                "mqtt_connected": True,
+                "command_topic_resolved": True,
+                "status_readback_seen": True,
+            },
+            "connection_mode": "cloud",
+            "topic": "V04P27/SIDABC",
+            "command_topic": "V04P27/SIDABC",
+            "last_status_source": "cached_last_status",
+            "last_status_cached": True,
+            "last_resp_after_last_esp": False,
+        }
+        coordinator = types.SimpleNamespace(hass=hass, data={})
+        hass.entity_registry = EntityRegistry()
+        hass.data = {
+            DOMAIN: {
+                entry.entry_id: {
+                    "coordinator": coordinator,
+                    "client": client,
+                    "device_name": "SmartWeb",
+                    "device_profile": EmptyProfile(),
+                }
+            }
+        }
+        entities = []
+
+        asyncio.run(async_setup_entry(hass, entry, entities.extend))
+
+        communication_entities = [
+            entity for entity in entities if isinstance(entity, RemkoSmartWebCommunicationStatusSensor)
+        ]
+        self.assertEqual(len(communication_entities), 1)
+        communication = communication_entities[0]
+        self.assertEqual(communication.native_value, "degraded")
+        self.assertEqual(communication.extra_state_attributes["connection_mode"], "cloud")
+        self.assertTrue(communication.extra_state_attributes["last_status_cached"])
+        self.assertFalse(communication.extra_state_attributes["last_resp_after_last_esp"])
 
     def test_setup_adds_local_portal_status_sensor_for_local_mqtt(self):
         hass = HomeAssistant()
