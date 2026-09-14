@@ -1414,6 +1414,29 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.state_writes, [])
         self.assertEqual(coordinator.data["power"], "ON")
 
+    def test_local_generic_ac_power_switch_uses_c0_set_values(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"power": "OFF", "mode": "auto", "setpoint": 21.0, "unit": "C"},
+        )
+        client = ClimateWriteClient()
+        client.uses_local_mqtt = lambda: True
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Schlafzimmer Dachgeschoss",
+            "power",
+            "Power",
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertEqual(client.value_writes, [])
+        self.assertEqual(client.state_writes, [{"power": True}])
+        self.assertEqual(coordinator.data["power"], "ON")
+
     def test_generic_ac_extended_switch_falls_back_to_c0_set_values(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(

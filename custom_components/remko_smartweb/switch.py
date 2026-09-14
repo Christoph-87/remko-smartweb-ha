@@ -31,6 +31,13 @@ C0_CLIMATE_SWITCH_KEYS = {
 }
 
 
+def _client_uses_local_mqtt(client) -> bool:
+    uses_local_mqtt = getattr(client, "uses_local_mqtt", False)
+    if callable(uses_local_mqtt):
+        return bool(uses_local_mqtt())
+    return bool(uses_local_mqtt)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -133,7 +140,12 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         async def _do_refresh(_now):
             await self.coordinator.async_request_refresh()
 
-        value_write = self._profile.build_value_write(overrides)
+        prefer_c0_write = (
+            _client_uses_local_mqtt(self._client)
+            and getattr(self._profile, "supports_climate_write", False)
+            and self._key in C0_CLIMATE_SWITCH_KEYS
+        )
+        value_write = None if prefer_c0_write else self._profile.build_value_write(overrides)
         if value_write:
             await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
             async_call_later(self.hass, 2.0, _do_refresh)
