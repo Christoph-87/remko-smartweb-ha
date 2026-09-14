@@ -1373,6 +1373,99 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.state_writes, [])
         self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
 
+    def test_kwt_climate_entity_writes_main_value_ids_for_temperature(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "ON",
+                "mode": "cool",
+                "setpoint": 20.0,
+                "room": 24.0,
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "KWT 240",
+            16,
+            30,
+            KwtDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_temperature(temperature=21.5))
+
+        self.assertEqual(client.value_writes, [{"1190": "2B"}])
+        self.assertEqual(client.state_writes, [])
+        self.assertEqual(coordinator.data["setpoint"], 20.0)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_kwt_climate_entity_writes_main_value_ids_for_power_and_mode(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "OFF",
+                "mode": "auto",
+                "setpoint": 20.0,
+                "room": 24.0,
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "KWT 240",
+            16,
+            30,
+            KwtDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_hvac_mode(HVACMode.COOL))
+
+        self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
+        self.assertEqual(client.state_writes, [])
+        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertEqual(coordinator.data["mode"], "cool")
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_kwt_climate_entity_writes_main_value_ids_for_fan_and_swing(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={
+                "power": "ON",
+                "mode": "cool",
+                "setpoint": 20.0,
+                "fan": "auto",
+                "swing": "off",
+                "unit": "C",
+            },
+            async_request_refresh=lambda: None,
+        )
+        client = ClimateWriteClient()
+        entity = RemkoSmartWebClimate(
+            coordinator,
+            client,
+            "KWT 240",
+            16,
+            30,
+            KwtDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_set_fan_mode("high"))
+        asyncio.run(entity.async_set_swing_mode("vertical"))
+
+        self.assertEqual(client.value_writes, [{"1191": "05"}, {"1193": "04"}])
+        self.assertEqual(client.state_writes, [])
+        self.assertEqual(coordinator.data["fan"], "high")
+        self.assertEqual(coordinator.data["swing"], "vertical")
+
     def test_generic_ac_extended_switches_are_available_without_value_write_specs(self):
         profile = ClimateDeviceProfile()
         present = {"power", "mode", "setpoint"}
@@ -1460,33 +1553,83 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.state_writes, [{"power": True}])
         self.assertEqual(coordinator.data["power"], "ON")
 
-    def test_generic_ac_extended_switch_falls_back_to_c0_set_values(self):
+    def test_generic_ac_extended_switches_fall_back_to_c0_set_values(self):
+        for key in ("eco", "frost_protection", "turbo", "sleep", "bioclean"):
+            with self.subTest(key=key):
+                hass = HomeAssistant()
+                coordinator = types.SimpleNamespace(
+                    hass=hass,
+                    data={
+                        "power": "ON",
+                        "mode": "cool",
+                        "setpoint": 21.0,
+                        key: False,
+                        "unit": "C",
+                    },
+                )
+                client = ClimateWriteClient()
+                entity = RemkoSmartWebSwitch(
+                    coordinator,
+                    client,
+                    "WIFI Stick - Arbeitszimmer Obergeschoss",
+                    key,
+                    key,
+                    ClimateDeviceProfile(),
+                )
+
+                asyncio.run(entity.async_turn_on())
+
+                self.assertEqual(client.value_writes, [])
+                self.assertEqual(client.state_writes, [{key: True}])
+                self.assertTrue(coordinator.data[key])
+
+    def test_wpm_switch_entity_writes_heat_cool_mode_value_id(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(
             hass=hass,
-            data={
-                "power": "ON",
-                "mode": "cool",
-                "setpoint": 21.0,
-                "turbo": False,
-                "unit": "C",
-            },
+            data={"wpm_heat_cool_mode": 0},
+            async_request_refresh=lambda: None,
         )
-        client = ClimateWriteClient()
+        client = ValueCaptureClient()
         entity = RemkoSmartWebSwitch(
             coordinator,
             client,
-            "WIFI Stick - Arbeitszimmer Obergeschoss",
-            "turbo",
-            "Turbo",
-            ClimateDeviceProfile(),
+            "WIFI Stick - Waermepumpe",
+            "wpm_heat_cool_mode",
+            "WPM Heat/Cool Mode",
+            WpmDeviceProfile(),
         )
 
         asyncio.run(entity.async_turn_on())
 
-        self.assertEqual(client.value_writes, [])
-        self.assertEqual(client.state_writes, [{"turbo": True}])
-        self.assertTrue(coordinator.data["turbo"])
+        self.assertEqual(client.values, {"4110": "01"})
+        self.assertEqual(coordinator.data["wpm_heat_cool_mode"], True)
+        self.assertTrue(entity.wrote_state)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_wpm_switch_entity_writes_manual_defrost_value_id(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_manual_defrost": 1},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Waermepumpe",
+            "wpm_manual_defrost",
+            "WPM Manual Defrost",
+            WpmDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_off())
+
+        self.assertEqual(client.values, {"4113": "00"})
+        self.assertEqual(coordinator.data["wpm_manual_defrost"], False)
+        self.assertTrue(entity.wrote_state)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
 
     def test_lte_number_entity_writes_target_humidity_value_id(self):
         hass = HomeAssistant()
