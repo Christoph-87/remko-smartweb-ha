@@ -2,6 +2,12 @@
 
 Goal: keep `main` cloud behaviour stable while adding local portal support. Every HA control must have an explicit write path, readback path, and contract test.
 
+Local connection variants and onboarding goals are tracked in
+[`local_connection_modes.md`](local_connection_modes.md). The short version:
+profiles should produce the same semantic write/read plans regardless of cloud
+or local transport; only the transport adapter should handle cloud, local portal
+broker, or direct local MQTT differences.
+
 ## Profiles
 
 | Profile | Device family | Cloud status path | Cloud write path in main | Feature cloud contract | Local override |

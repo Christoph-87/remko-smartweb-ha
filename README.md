@@ -72,6 +72,13 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 
 This branch also contains experimental support for running a REMKO WiFi stick against a local MQTT broker while other devices continue to use the REMKO cloud.
 
+There are multiple REMKO local-MQTT architectures. Some sticks connect outbound
+to a redirected local broker, while some SmartControl/SmartCom devices expose a
+local MQTT path directly or through a bridge. The integration should ultimately
+detect the usable mode during onboarding so users do not need to choose between
+protocol names. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
+for the current architecture and onboarding plan.
+
 The local mode is intended for advanced installations where a single WiFi stick is redirected from `smartweb.remko.media` to a local broker. Enable it per device in the integration options:
 
 - `Local MQTT host`
