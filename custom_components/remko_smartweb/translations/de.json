@@ -56,6 +56,13 @@
           "beep": "Bestätigungston (Gerät piept bei jedem Befehl)"
         }
       },
+      "local_candidate": {
+        "title": "Lokaler MQTT-Kandidat",
+        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. Wähle einen Kandidaten, um den lokalen MQTT-Host vorzubelegen, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt prüft den gewählten Host.",
+        "data": {
+          "local_mqtt_candidate": "Kandidaten-IP"
+        }
+      },
       "local_broker": {
         "title": "Lokaler MQTT-Broker (optional)",
         "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Ausfüllen, wenn dieses Gerät über lokales MQTT erreichbar ist. Die automatische Prüfung testet den eingetragenen Host oder Broker; sie ist keine breite Netzwerksuche.",

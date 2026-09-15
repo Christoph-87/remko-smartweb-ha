@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import random
 import logging
+import socket
+import struct
+from pathlib import Path
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -24,6 +28,7 @@ from .const import (
     CONF_LOCAL_MQTT_MODE,
     CONF_LOCAL_MQTT_LAST_PROBE,
     CONF_LOCAL_MQTT_CLOUD_BRIDGE,
+    CONF_LOCAL_MQTT_CANDIDATE,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
@@ -41,6 +46,8 @@ from .profiles import looks_like_dhw_name
 
 _LOGGER = logging.getLogger(__name__)
 
+_MANUAL_LOCAL_MQTT_HOST = "__manual__"
+
 DEVICE_KIND_OPTIONS = {
     DEVICE_KIND_AUTO: "Auto-detect",
     DEVICE_KIND_CLIMATE: "Air conditioner / climate",
@@ -53,6 +60,136 @@ LOCAL_MQTT_MODE_OPTIONS = {
     LOCAL_MQTT_MODE_PORTAL_BROKER: "Redirected WiFi stick / local portal broker",
     LOCAL_MQTT_MODE_DEVICE_MQTT: "Direct device MQTT / SmartControl bridge",
 }
+
+
+def _candidate_label(ip: str, sources: set[str]) -> str:
+    suffix = ", ".join(sorted(sources))
+    return f"{ip} ({suffix})" if suffix else ip
+
+
+def _resolver_search_domains() -> list[str]:
+    domains: list[str] = []
+    try:
+        text = Path("/etc/resolv.conf").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return domains
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "search":
+            domains.extend(part for part in parts[1:] if part)
+        elif parts[0] == "domain" and len(parts) > 1:
+            domains.append(parts[1])
+    seen = set()
+    return [domain for domain in domains if not (domain in seen or seen.add(domain))]
+
+
+def _default_gateway_ip() -> str | None:
+    try:
+        text = Path("/proc/net/route").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 3 or parts[1] != "00000000":
+            continue
+        try:
+            raw = bytes.fromhex(parts[2])[::-1]
+        except ValueError:
+            continue
+        return socket.inet_ntoa(raw)
+    return None
+
+
+def _dns_query_a(server: str, name: str, timeout: float = 1.2) -> set[str]:
+    def _qname(hostname: str) -> bytes:
+        return b"".join(
+            bytes([len(part)]) + part.encode("idna")
+            for part in hostname.rstrip(".").split(".")
+            if part
+        ) + b"\0"
+
+    try:
+        query_id = random.randrange(65536)
+        packet = (
+            struct.pack("!HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
+            + _qname(name)
+            + struct.pack("!HH", 1, 1)
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+        try:
+            sock.sendto(packet, (server, 53))
+            data, _addr = sock.recvfrom(2048)
+        finally:
+            sock.close()
+    except Exception:
+        return set()
+
+    if len(data) < 12:
+        return set()
+    _rid, _flags, qd_count, an_count, _ns_count, _ar_count = struct.unpack(
+        "!HHHHHH", data[:12]
+    )
+    offset = 12
+    for _ in range(qd_count):
+        while offset < len(data) and data[offset] != 0:
+            label_len = data[offset]
+            if label_len & 0xC0 == 0xC0:
+                offset += 2
+                break
+            offset += 1 + label_len
+        else:
+            return set()
+        offset += 5
+
+    results: set[str] = set()
+    for _ in range(an_count):
+        if offset >= len(data):
+            break
+        if data[offset] & 0xC0 == 0xC0:
+            offset += 2
+        else:
+            while offset < len(data) and data[offset] != 0:
+                offset += 1 + data[offset]
+            offset += 1
+        if offset + 10 > len(data):
+            break
+        answer_type, _answer_class, _ttl, rd_len = struct.unpack(
+            "!HHIH", data[offset: offset + 10]
+        )
+        offset += 10
+        rdata = data[offset: offset + rd_len]
+        offset += rd_len
+        if answer_type == 1 and rd_len == 4:
+            results.add(socket.inet_ntoa(rdata))
+    return results
+
+
+def discover_local_mqtt_host_candidates() -> dict[str, str]:
+    """Return best-effort local REMKO stick IP candidates from hostname hints."""
+    hostnames = {"espressif", "espressif.local"}
+    for domain in _resolver_search_domains():
+        hostnames.add(f"espressif.{domain.strip('.')}")
+
+    candidates: dict[str, set[str]] = {}
+    for hostname in hostnames:
+        try:
+            infos = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
+        except Exception:
+            infos = []
+        for info in infos:
+            ip = info[4][0]
+            candidates.setdefault(ip, set()).add(f"{hostname} via resolver")
+
+    gateway = _default_gateway_ip()
+    if gateway:
+        for hostname in hostnames:
+            for ip in _dns_query_a(gateway, hostname):
+                candidates.setdefault(ip, set()).add(f"{hostname} via gateway DNS")
+
+    return {ip: _candidate_label(ip, sources) for ip, sources in sorted(candidates.items())}
 
 
 class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -406,7 +543,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             self._options.pop(CONF_MODEL, None)
             self._options.pop(CONF_MIN_TEMP, None)
             self._options.pop(CONF_MAX_TEMP, None)
-            return await self.async_step_local_broker()
+            return await self.async_step_local_candidate()
 
         device_kind = self._config_entry.options.get(
             CONF_DEVICE_KIND,
@@ -426,7 +563,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
     async def async_step_climate(self, user_input=None):
         if user_input is not None:
             self._options.update(user_input)
-            return await self.async_step_local_broker()
+            return await self.async_step_local_candidate()
 
         model = self._options.get(CONF_MODEL, "other")
         model_defaults = {
@@ -463,6 +600,44 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         })
         return self.async_show_form(step_id="climate", data_schema=schema)
 
+    async def async_step_local_candidate(self, user_input=None):
+        """Offer best-effort local stick IP candidates before manual MQTT setup."""
+        if user_input is not None:
+            selected = user_input.get(CONF_LOCAL_MQTT_CANDIDATE, _MANUAL_LOCAL_MQTT_HOST)
+            self._pending_local_mqtt_host = (
+                "" if selected == _MANUAL_LOCAL_MQTT_HOST else selected
+            )
+            self._options[CONF_LOCAL_MQTT_CANDIDATE] = selected
+            return await self.async_step_local_broker()
+
+        candidates = await self.hass.async_add_executor_job(
+            discover_local_mqtt_host_candidates
+        )
+        self._local_mqtt_host_candidates = candidates
+
+        options = dict(candidates)
+        current_host = self._options.get(CONF_LOCAL_MQTT_HOST)
+        if current_host and current_host not in options:
+            options[current_host] = f"{current_host} (current)"
+        options[_MANUAL_LOCAL_MQTT_HOST] = "Enter IP or broker host manually"
+
+        default = current_host if current_host in options else None
+        if default is None and candidates:
+            default = next(iter(candidates))
+        if default is None:
+            default = _MANUAL_LOCAL_MQTT_HOST
+
+        schema = vol.Schema({
+            vol.Required(CONF_LOCAL_MQTT_CANDIDATE, default=default): vol.In(options),
+        })
+        return self.async_show_form(
+            step_id="local_candidate",
+            data_schema=schema,
+            description_placeholders={
+                "candidate_count": str(len(candidates)),
+            },
+        )
+
     async def async_step_local_broker(self, user_input=None):
         """Optional step: configure and probe local MQTT for this device."""
         errors = {}
@@ -494,6 +669,8 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 self._options[CONF_LOCAL_MQTT_HOST] = host
                 self._options[CONF_LOCAL_MQTT_PORT] = port
                 self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
+                if getattr(self, "_pending_local_mqtt_host", "") == host:
+                    self._options[CONF_LOCAL_MQTT_CANDIDATE] = host
                 self._options[CONF_LOCAL_MQTT_CLOUD_BRIDGE] = bool(
                     user_input.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
                 )
@@ -512,6 +689,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                     CONF_LOCAL_MQTT_MODE,
                     CONF_LOCAL_MQTT_LAST_PROBE,
                     CONF_LOCAL_MQTT_CLOUD_BRIDGE,
+                    CONF_LOCAL_MQTT_CANDIDATE,
                 ):
                     self._options.pop(k, None)
             return self.async_create_entry(title="", data=self._options)
@@ -529,7 +707,10 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
             vol.Optional(
                 CONF_LOCAL_MQTT_HOST,
-                default=(user_input or self._options).get(CONF_LOCAL_MQTT_HOST, ""),
+                default=(user_input or self._options).get(
+                    CONF_LOCAL_MQTT_HOST,
+                    getattr(self, "_pending_local_mqtt_host", ""),
+                ),
             ): str,
             vol.Optional(
                 CONF_LOCAL_MQTT_PORT,
