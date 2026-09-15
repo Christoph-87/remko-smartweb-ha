@@ -2293,6 +2293,16 @@ def _refresh_neighbor(host: str | None) -> None:
         socket.inet_aton(host)
     except OSError:
         return
+    for port in (9, 80, 1883):
+        try:
+            sock = socket.create_connection((host, port), timeout=0.2)
+            try:
+                sock.close()
+            finally:
+                pass
+            break
+        except OSError:
+            continue
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -2302,3 +2312,4 @@ def _refresh_neighbor(host: str | None) -> None:
             sock.close()
     except OSError:
         return
+    time.sleep(0.05)
