@@ -185,11 +185,14 @@ class RemkoSmartWebClient:
     def _ensure_local_topic(self) -> bool:
         if not self._local_mqtt_host:
             return False
-        if self.topic:
-            return True
         expected_topic = _stick_topic_from_host(
             getattr(self, "_local_mqtt_stick_host", None)
         )
+        if self.topic:
+            if not self._local_topic_matches_configured_stick(expected_topic):
+                self.topic = None
+                return False
+            return True
         if getattr(self, "_local_mqtt_stick_host", None) and not expected_topic:
             _LOGGER.warning(
                 "REMKO SmartWeb local MQTT for %r has stick IP %s, but no ARP "
@@ -243,6 +246,32 @@ class RemkoSmartWebClient:
             self._local_mqtt_mode,
         )
         return True
+
+    def _local_topic_matches_configured_stick(self, expected_topic: str | None) -> bool:
+        """Return whether an existing local topic is safe for the configured stick IP."""
+        stick_host = getattr(self, "_local_mqtt_stick_host", None)
+        if not stick_host:
+            return True
+        if not expected_topic:
+            _LOGGER.warning(
+                "REMKO SmartWeb local MQTT for %r has stored topic %s and stick IP %s, "
+                "but no ARP MAC/topic could be inferred yet; refusing the stored topic",
+                self.device_name,
+                _redact_debug_text(self.topic),
+                stick_host,
+            )
+            return False
+        if self.topic == expected_topic:
+            return True
+        _LOGGER.warning(
+            "REMKO SmartWeb local MQTT for %r has stored topic %s, but the configured "
+            "stick IP %s maps to %s; refusing this mismatched topic",
+            self.device_name,
+            _redact_debug_text(self.topic),
+            stick_host,
+            _redact_debug_text(expected_topic),
+        )
+        return False
 
     def _ensure_local_command_topic(self) -> None:
         """Resolve the SID-based ESP command topic while keeping the local topic.
