@@ -83,6 +83,37 @@
       }
     }
   },
+  "selector": {
+    "account": {
+      "options": {
+        "new": "Neue Zugangsdaten verwenden"
+      }
+    },
+    "device_kind": {
+      "options": {
+        "auto": "Automatisch erkennen",
+        "climate": "Klimagerät",
+        "dhw": "Warmwasser",
+        "diagnostics": "Nur Diagnose"
+      }
+    },
+    "local_mqtt_mode": {
+      "options": {
+        "auto": "Automatisch prüfen",
+        "portal_broker": "Umgeleiteter WiFi-Stick / lokaler Portal-Broker",
+        "device_mqtt": "Direktes Geräte-MQTT / SmartControl-Bridge"
+      }
+    },
+    "model": {
+      "options": {
+        "mxw_204": "MXW 204",
+        "mxw_264": "MXW 264",
+        "mxw_354": "MXW 354",
+        "mxw_524": "MXW 524",
+        "other": "Andere / unbekannt"
+      }
+    }
+  },
   "entity": {
     "climate": {
       "climate": {

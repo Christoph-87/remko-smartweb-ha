@@ -8,6 +8,11 @@ from pathlib import Path
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     DOMAIN,
@@ -49,18 +54,39 @@ _LOGGER = logging.getLogger(__name__)
 
 _MANUAL_LOCAL_MQTT_HOST = "__manual__"
 
-DEVICE_KIND_OPTIONS = {
-    DEVICE_KIND_AUTO: "Auto-detect",
-    DEVICE_KIND_CLIMATE: "Air conditioner / climate",
-    DEVICE_KIND_DHW: "Domestic hot water",
-    DEVICE_KIND_DIAGNOSTICS: "Diagnostics only",
-}
+DEVICE_KIND_OPTIONS = (
+    DEVICE_KIND_AUTO,
+    DEVICE_KIND_CLIMATE,
+    DEVICE_KIND_DHW,
+    DEVICE_KIND_DIAGNOSTICS,
+)
 
-LOCAL_MQTT_MODE_OPTIONS = {
-    LOCAL_MQTT_MODE_AUTO: "Automatic probe",
-    LOCAL_MQTT_MODE_PORTAL_BROKER: "Redirected WiFi stick / local portal broker",
-    LOCAL_MQTT_MODE_DEVICE_MQTT: "Direct device MQTT / SmartControl bridge",
-}
+LOCAL_MQTT_MODE_OPTIONS = (
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+)
+
+CLIMATE_MODEL_OPTIONS = (
+    "mxw_204",
+    "mxw_264",
+    "mxw_354",
+    "mxw_524",
+    "other",
+)
+
+
+def _select_selector(
+    options: list[str] | tuple[str, ...],
+    translation_key: str,
+) -> SelectSelector:
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=list(options),
+            translation_key=translation_key,
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
 
 
 def _candidate_label(ip: str, sources: set[str]) -> str:
@@ -250,10 +276,19 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not existing:
             return await self.async_step_user()
 
-        options = dict(existing)
-        options["new"] = "Use new credentials"
+        options = [
+            {"value": entry_id, "label": label}
+            for entry_id, label in existing.items()
+        ]
+        options.append({"value": "new", "label": "new"})
         schema = vol.Schema({
-            vol.Required("account"): vol.In(options),
+            vol.Required("account"): SelectSelector(
+                SelectSelectorConfig(
+                    options=options,
+                    translation_key="account",
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
         })
 
         if user_input is not None:
@@ -303,10 +338,15 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_device()
 
         detected_kind = self._suggest_device_kind(data[CONF_DEVICE_NAME])
-        options = self._device_kind_options(detected_kind)
         default_kind = detected_kind if detected_kind != DEVICE_KIND_AUTO else DEVICE_KIND_AUTO
         schema = vol.Schema({
-            vol.Required(CONF_DEVICE_KIND, default=default_kind): vol.In(options),
+            vol.Required(
+                CONF_DEVICE_KIND,
+                default=default_kind,
+            ): _select_selector(
+                self._device_kind_options(detected_kind),
+                CONF_DEVICE_KIND,
+            ),
         })
 
         if user_input is not None:
@@ -484,7 +524,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_LOCAL_MQTT_MODE,
                     LOCAL_MQTT_MODE_AUTO,
                 ),
-            ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
+            ): _select_selector(LOCAL_MQTT_MODE_OPTIONS, CONF_LOCAL_MQTT_MODE),
             vol.Optional(
                 CONF_LOCAL_MQTT_HOST,
                 default=(user_input or self._options).get(CONF_LOCAL_MQTT_HOST, ""),
@@ -565,8 +605,12 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             self._suggest_device_kind(self._config_entry.data.get(CONF_DEVICE_NAME, "")),
         )
         schema = vol.Schema({
-            vol.Optional(CONF_DEVICE_KIND, default=device_kind): vol.In(
-                self._device_kind_options(device_kind)
+            vol.Optional(
+                CONF_DEVICE_KIND,
+                default=device_kind,
+            ): _select_selector(
+                self._device_kind_options(device_kind),
+                CONF_DEVICE_KIND,
             ),
             vol.Optional(
                 CONF_SCAN_INTERVAL,
@@ -591,14 +635,9 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         d_min, d_max = model_defaults.get(model, (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP))
 
         schema = vol.Schema({
-            vol.Optional(CONF_MODEL, default=model): vol.In(
-                {
-                    "mxw_204": "MXW 204",
-                    "mxw_264": "MXW 264",
-                    "mxw_354": "MXW 354",
-                    "mxw_524": "MXW 524",
-                    "other": "Other / Unknown",
-                }
+            vol.Optional(CONF_MODEL, default=model): _select_selector(
+                CLIMATE_MODEL_OPTIONS,
+                CONF_MODEL,
             ),
             vol.Optional(
                 CONF_MIN_TEMP,
@@ -756,7 +795,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                     CONF_LOCAL_MQTT_MODE,
                     LOCAL_MQTT_MODE_AUTO,
                 ),
-            ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
+            ): _select_selector(LOCAL_MQTT_MODE_OPTIONS, CONF_LOCAL_MQTT_MODE),
             vol.Optional(
                 CONF_LOCAL_MQTT_STICK_HOST,
                 default=(user_input or self._options).get(

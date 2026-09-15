@@ -885,6 +885,24 @@ class ProfileParsingTests(unittest.TestCase):
                 )
                 self.assertEqual(leaf_paths(translation), expected_paths)
 
+    def test_config_flow_static_option_labels_use_translations(self):
+        source = (COMPONENT_PATH / "config_flow.py").read_text(encoding="utf-8")
+        forbidden = (
+            "Auto-detect",
+            "Air conditioner / climate",
+            "Domestic hot water",
+            "Diagnostics only",
+            "Automatic probe",
+            "Redirected WiFi stick / local portal broker",
+            "Direct device MQTT / SmartControl bridge",
+            "Use new credentials",
+            "Other / Unknown",
+        )
+
+        for label in forbidden:
+            with self.subTest(label=label):
+                self.assertNotIn(label, source)
+
 
 if __name__ == "__main__":
     unittest.main()
