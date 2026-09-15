@@ -35,7 +35,7 @@ broker, or direct local MQTT differences.
 | `number.*` | LTE/WPM/etc. | `set_value_ids(build_value_write)` | values | Entity contracts added for LTE humidity and all WPM number keys |
 | `date.vacation_end` | DHW | value-write RBW registers | values | Covered |
 | `water_heater` controls | DHW | value-write/direct RBW ESP | values/ESP | Covered for key paths |
-| `set_mxw_timer_slots` service | Generic AC/MXW | value-write timer IDs | values | Profile covered; service write path needs contract |
+| `set_mxw_timer_slots` service | Generic AC/MXW | value-write timer IDs | values | Service-level contract covers timer value IDs |
 
 ## Required next tests before considering main
 
@@ -44,5 +44,5 @@ broker, or direct local MQTT differences.
 3. Cloud contract: KWT climate service methods write expected value IDs or ESP path unchanged from `main`. Done for temperature, power/mode, fan/swing.
 4. Entity contract: LTE number/power writes expected value IDs. Done for humidity number and LTE power switch.
 5. Entity contract: WPM number/switch writes expected value IDs. Done for all WPM number keys, heat/cool switch, and manual defrost switch.
-6. Service contract: MXW timer service writes expected timer value IDs.
+6. Service contract: MXW timer service writes expected timer value IDs. Done.
 7. Negative contract: local-only behaviour must require `client.uses_local_mqtt() == True`; cloud entries must not use `SMTHA` IDs or local command topics.

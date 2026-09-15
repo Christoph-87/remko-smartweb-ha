@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 from collections import deque
 from datetime import date, timedelta
@@ -262,6 +263,22 @@ from custom_components.remko_smartweb.const import (
 )
 
 CoordinatorUpdateFailed = coordinator_module.UpdateFailed
+
+
+def _load_integration_module():
+    module = sys.modules["custom_components.remko_smartweb"]
+    if hasattr(module, "_async_register_services"):
+        return module
+    spec = importlib.util.spec_from_file_location(
+        "custom_components.remko_smartweb",
+        COMPONENT_PATH / "__init__.py",
+        submodule_search_locations=[str(COMPONENT_PATH)],
+    )
+    module.__file__ = str(COMPONENT_PATH / "__init__.py")
+    module.__package__ = "custom_components.remko_smartweb"
+    module.__spec__ = spec
+    spec.loader.exec_module(module)
+    return module
 
 
 class FailingClient:
@@ -1858,6 +1875,69 @@ class CoordinatorTests(unittest.TestCase):
                 self.assertEqual(coordinator.data[key], updated)
                 self.assertTrue(entity.wrote_state)
                 self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_mxw_timer_service_writes_main_timer_value_ids(self):
+        class Services:
+            def __init__(self):
+                self.handlers = {}
+
+            def async_register(self, domain, service, handler):
+                self.handlers[(domain, service)] = handler
+
+        class Coordinator:
+            def __init__(self):
+                self.refreshed = False
+
+            async def async_request_refresh(self):
+                self.refreshed = True
+
+        hass = HomeAssistant()
+        hass.services = Services()
+        client = ValueCaptureClient()
+        coordinator = Coordinator()
+        integration_module = _load_integration_module()
+        hass.data = {
+            "remko_smartweb": {
+                "entry": {
+                    "client": client,
+                    "coordinator": coordinator,
+                    "device_name": "WIFI Stick - Arbeitszimmer Obergeschoss",
+                }
+            }
+        }
+
+        integration_module._async_register_services(hass)
+        handler = hass.services.handlers[
+            ("remko_smartweb", integration_module.SERVICE_SET_MXW_TIMER_SLOTS)
+        ]
+        call = types.SimpleNamespace(
+            data={
+                "device_name": "WIFI Stick - Arbeitszimmer Obergeschoss",
+                "slots": [
+                    {
+                        "id": "1195",
+                        "active": True,
+                        "start_day": 1,
+                        "end_day": 5,
+                        "time": "08:00",
+                        "mode_value": 21,
+                    },
+                    {
+                        "id": "1196",
+                        "active": True,
+                        "start_day": 1,
+                        "end_day": 5,
+                        "time": "18:00",
+                        "mode": "off",
+                    },
+                ],
+            }
+        )
+
+        asyncio.run(handler(call))
+
+        self.assertEqual(client.values, {"1195": "152015", "1196": "154802", "1200": "02"})
+        self.assertTrue(coordinator.refreshed)
 
     def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:
