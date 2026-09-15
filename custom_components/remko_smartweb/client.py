@@ -100,6 +100,7 @@ class RemkoSmartWebClient:
         local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
         local_mqtt_last_probe: dict | None = None,
         local_mqtt_cloud_bridge: bool = False,
+        local_mqtt_stick_host: str | None = None,
     ):
         self.email = email
         self.password = password
@@ -135,6 +136,7 @@ class RemkoSmartWebClient:
         self._local_mqtt_port = local_mqtt_port
         self._local_mqtt_user = local_mqtt_user
         self._local_mqtt_password = local_mqtt_password
+        self._local_mqtt_stick_host = local_mqtt_stick_host
         self._local_mqtt_command_topic = None
         self._local_mqtt_mode = local_mqtt_mode or LOCAL_MQTT_MODE_AUTO
         self._local_mqtt_last_probe = (
@@ -388,6 +390,14 @@ class RemkoSmartWebClient:
         )
         topic = getattr(self, "topic", None)
         local_topic_discovered = bool(topic)
+        expected_stick_topic = _stick_topic_from_host(
+            getattr(self, "_local_mqtt_stick_host", None)
+        )
+        stick_topic_matches_expected = (
+            None
+            if not expected_stick_topic or not topic
+            else topic == expected_stick_topic
+        )
         device_mqtt_mode = local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
         command_topic_resolved = bool(local_mqtt_command_topic) or device_mqtt_mode
         broker_connected = bool(
@@ -493,6 +503,11 @@ class RemkoSmartWebClient:
             "guidance": guidance,
             "checks": checks,
             "local_broker": f"{local_mqtt_host}:{local_mqtt_port}",
+            "stick_host": getattr(self, "_local_mqtt_stick_host", None),
+            "expected_stick_topic": _redact_debug_text(expected_stick_topic)
+            if expected_stick_topic
+            else None,
+            "stick_topic_matches_expected": stick_topic_matches_expected,
             "local_mqtt_mode": local_mqtt_mode,
             "last_probe": getattr(self, "_local_mqtt_last_probe", None),
             "local_topic": _redact_debug_text(topic) if topic else None,
@@ -2182,4 +2197,25 @@ def _mac_from_stick_topic(topic: str | None) -> str | None:
     mac = stick[3:]
     if len(mac) == 12 and all(ch in "0123456789ABCDEF" for ch in mac):
         return mac
+    return None
+
+
+def _stick_topic_from_host(host: str | None) -> str | None:
+    """Infer the local V04P27/SMT<mac> topic for a remembered stick IP."""
+    if not host:
+        return None
+    try:
+        arp = Path("/proc/net/arp").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in arp.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ip, _hw_type, flags, mac = parts[:4]
+        if ip != host or flags != "0x2":
+            continue
+        compact = "".join(ch for ch in mac.upper() if ch in "0123456789ABCDEF")
+        if len(compact) == 12:
+            return f"V04P27/SMT{compact}"
     return None
