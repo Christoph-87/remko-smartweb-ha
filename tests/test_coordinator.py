@@ -910,6 +910,41 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(bridge._forward_counts["local_to_cloud"], 1)
 
+    def test_cloud_local_bridge_forwards_local_host2portal_to_cloud(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, payload, qos, retain))
+
+        bridge = _CloudLocalMqttBridge.__new__(_CloudLocalMqttBridge)
+        bridge.cloud_topic = "V04P27/SIDABC"
+        bridge.local_topic = "V04P27/SMTABC"
+        bridge.local_command_topic = "V04P27/SIDABC"
+        bridge._lock = threading.Lock()
+        bridge._last_cloud_to_local_time = None
+        bridge._last_local_to_cloud_time = None
+        bridge._last_cloud_to_local_topic = None
+        bridge._last_local_to_cloud_topic = None
+        bridge._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
+        bridge.cloud_client = FakeMqttClient()
+
+        bridge._on_local_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SMTABC/HOST2PORTAL",
+                payload=b'{"SMT_ID":"SMTABC"}',
+            ),
+        )
+
+        self.assertEqual(
+            bridge.cloud_client.published,
+            [("V04P27/SMTABC/HOST2PORTAL", b'{"SMT_ID":"SMTABC"}', 2, False)],
+        )
+        self.assertEqual(bridge._forward_counts["local_to_cloud"], 1)
+
     def test_local_mqtt_probe_classifies_portal_and_direct_topics(self):
         self.assertEqual(
             _classify_local_mqtt_topic(

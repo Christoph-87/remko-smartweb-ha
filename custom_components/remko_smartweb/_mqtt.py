@@ -847,6 +847,7 @@ class _CloudLocalMqttBridge:
                 (f"{self.local_command_topic}/RESP", 2),
                 (f"{self.local_command_topic}/HOST2CLIENT", 2),
                 (f"{self.local_command_topic}/PORTAL2CLIENT", 2),
+                (f"{self.local_topic}/HOST2PORTAL", 2),
                 (f"{self.local_topic}/HOST2CLIENT", 2),
                 (f"{self.local_topic}/PORTAL2CLIENT", 2),
             ]
@@ -886,6 +887,8 @@ class _CloudLocalMqttBridge:
             target = f"{self.cloud_topic}/RESP"
         elif topic.endswith("/HOST2CLIENT"):
             target = f"{self.cloud_topic}/HOST2CLIENT"
+        elif topic.endswith("/HOST2PORTAL"):
+            target = f"{self.local_topic}/HOST2PORTAL"
         elif topic.endswith("/PORTAL2CLIENT"):
             target = f"{self.cloud_topic}/PORTAL2CLIENT"
         else:
