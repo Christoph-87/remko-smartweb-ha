@@ -778,13 +778,23 @@ class _CloudLocalMqttBridge:
         self._last_local_to_cloud_topic: str | None = None
         self._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
         self._last_cloud_connack_rc: int | None = None
+        self._last_cloud_stick_connack_rc: int | None = None
         self._last_local_connack_rc: int | None = None
+        self._last_cloud_portal2host_time: float | None = None
+        self._last_cloud_portal2host_topic: str | None = None
 
         _sid = getattr(cloud_broker, "_sid", None) or "0000"
+        cloud_stick_client_id = _stick_client_id_from_topic(local_topic)
         self.cloud_client = mqtt.Client(
             client_id=f"SMTBR{random.randint(0, 9999):04d}{_sid}",
             protocol=mqtt.MQTTv311,
             transport="websockets",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        self.cloud_stick_client = mqtt.Client(
+            client_id=cloud_stick_client_id or f"SMTBRSTICK{random.randint(0, 9999):04d}",
+            protocol=mqtt.MQTTv311,
+            transport="tcp",
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         )
         self.local_client = mqtt.Client(
@@ -795,18 +805,29 @@ class _CloudLocalMqttBridge:
         )
 
         cloud_host, cloud_port = cloud_broker.apply(self.cloud_client, cloud_topic)
+        from . import api as _api_module
+
+        cloud_stick_host = _api_module.WSS_HOST
+        cloud_stick_port = 8883
+        self.cloud_stick_client.tls_set(cert_reqs=ssl.CERT_NONE)
+        self.cloud_stick_client.tls_insecure_set(True)
         local_host, local_port = local_broker.apply(self.local_client, local_topic)
 
         self.cloud_client.on_connect = self._on_cloud_connect
         self.cloud_client.on_message = self._on_cloud_message
         self.cloud_client.on_disconnect = self._on_disconnect
+        self.cloud_stick_client.on_connect = self._on_cloud_stick_connect
+        self.cloud_stick_client.on_message = self._on_cloud_stick_message
+        self.cloud_stick_client.on_disconnect = self._on_disconnect
         self.local_client.on_connect = self._on_local_connect
         self.local_client.on_message = self._on_local_message
         self.local_client.on_disconnect = self._on_disconnect
 
         self.cloud_client.connect(cloud_host, cloud_port, keepalive=60)
+        self.cloud_stick_client.connect(cloud_stick_host, cloud_stick_port, keepalive=60)
         self.local_client.connect(local_host, local_port, keepalive=60)
         self.cloud_client.loop_start()
+        self.cloud_stick_client.loop_start()
         self.local_client.loop_start()
 
     def _on_disconnect(self, client, userdata, *args):
@@ -830,6 +851,19 @@ class _CloudLocalMqttBridge:
                 (f"{self.cloud_topic}/CLIENT2HOST", 2),
             ]
         )
+        self._connected.set()
+
+    def _on_cloud_stick_connect(self, client, userdata, flags, reason_code, properties=None):
+        rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        try:
+            self._last_cloud_stick_connack_rc = int(rc)
+        except Exception:
+            self._last_cloud_stick_connack_rc = None
+        if rc != 0:
+            _LOGGER.warning("REMKO SmartWeb cloud bridge stick MQTT connect failed rc=%s", rc)
+            self._connected.set()
+            return
+        client.subscribe([(f"{self.local_topic}/PORTAL2HOST", 2)])
         self._connected.set()
 
     def _on_local_connect(self, client, userdata, flags, reason_code, properties=None):
@@ -881,14 +915,28 @@ class _CloudLocalMqttBridge:
         )
         self._forward(self.local_client, target, msg.payload, "cloud_to_local", topic)
 
+    def _on_cloud_stick_message(self, client, userdata, msg):
+        topic = str(msg.topic)
+        if not topic.endswith("/PORTAL2HOST"):
+            return
+        with self._lock:
+            self._last_cloud_portal2host_time = time.time()
+            self._last_cloud_portal2host_topic = topic
+        _LOGGER.debug(
+            "REMKO SmartWeb cloud bridge saw cloud %s",
+            _redact_topic(topic),
+        )
+
     def _on_local_message(self, client, userdata, msg):
         topic = str(msg.topic)
+        target_client = self.cloud_client
         if topic.endswith("/RESP"):
             target = f"{self.cloud_topic}/RESP"
         elif topic.endswith("/HOST2CLIENT"):
             target = f"{self.cloud_topic}/HOST2CLIENT"
         elif topic.endswith("/HOST2PORTAL"):
             target = f"{self.local_topic}/HOST2PORTAL"
+            target_client = self.cloud_stick_client
         elif topic.endswith("/PORTAL2CLIENT"):
             target = f"{self.cloud_topic}/PORTAL2CLIENT"
         else:
@@ -898,7 +946,7 @@ class _CloudLocalMqttBridge:
             _redact_topic(topic),
             _redact_topic(target),
         )
-        self._forward(self.cloud_client, target, msg.payload, "local_to_cloud", topic)
+        self._forward(target_client, target, msg.payload, "local_to_cloud", topic)
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
         self._connected.wait(timeout=timeout)
@@ -906,6 +954,7 @@ class _CloudLocalMqttBridge:
             return (
                 not self._closed
                 and self._last_cloud_connack_rc == 0
+                and self._last_cloud_stick_connack_rc == 0
                 and self._last_local_connack_rc == 0
             )
 
@@ -921,9 +970,11 @@ class _CloudLocalMqttBridge:
                 "connected": (
                     not self._closed
                     and self._last_cloud_connack_rc == 0
+                    and self._last_cloud_stick_connack_rc == 0
                     and self._last_local_connack_rc == 0
                 ),
                 "cloud_connack_rc": self._last_cloud_connack_rc,
+                "cloud_stick_connack_rc": self._last_cloud_stick_connack_rc,
                 "local_connack_rc": self._last_local_connack_rc,
                 "cloud_to_local_count": self._forward_counts.get("cloud_to_local", 0),
                 "local_to_cloud_count": self._forward_counts.get("local_to_cloud", 0),
@@ -931,17 +982,28 @@ class _CloudLocalMqttBridge:
                 "last_cloud_to_local_topic": _redact_topic(self._last_cloud_to_local_topic),
                 "last_local_to_cloud_age_s": _age(self._last_local_to_cloud_time),
                 "last_local_to_cloud_topic": _redact_topic(self._last_local_to_cloud_topic),
+                "last_cloud_portal2host_age_s": _age(self._last_cloud_portal2host_time),
+                "last_cloud_portal2host_topic": _redact_topic(self._last_cloud_portal2host_topic),
             }
 
     def close(self):
         with self._lock:
             self._closed = True
-        for client in (self.cloud_client, self.local_client):
+        for client in (self.cloud_client, self.cloud_stick_client, self.local_client):
             try:
                 client.loop_stop()
                 client.disconnect()
             except Exception:
                 pass
+
+
+def _stick_client_id_from_topic(topic: str | None) -> str | None:
+    if not topic:
+        return None
+    parts = str(topic).split("/")
+    if len(parts) >= 2 and parts[1].upper().startswith("SMT"):
+        return parts[1]
+    return None
 
 
 def _redact_topic(topic: str | None) -> str | None:

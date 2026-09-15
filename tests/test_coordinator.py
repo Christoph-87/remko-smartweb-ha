@@ -894,6 +894,7 @@ class CoordinatorTests(unittest.TestCase):
         bridge._last_local_to_cloud_topic = None
         bridge._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
         bridge.cloud_client = FakeMqttClient()
+        bridge.cloud_stick_client = FakeMqttClient()
 
         bridge._on_local_message(
             None,
@@ -929,6 +930,7 @@ class CoordinatorTests(unittest.TestCase):
         bridge._last_local_to_cloud_topic = None
         bridge._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
         bridge.cloud_client = FakeMqttClient()
+        bridge.cloud_stick_client = FakeMqttClient()
 
         bridge._on_local_message(
             None,
@@ -940,9 +942,10 @@ class CoordinatorTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            bridge.cloud_client.published,
+            bridge.cloud_stick_client.published,
             [("V04P27/SMTABC/HOST2PORTAL", b'{"SMT_ID":"SMTABC"}', 2, False)],
         )
+        self.assertEqual(bridge.cloud_client.published, [])
         self.assertEqual(bridge._forward_counts["local_to_cloud"], 1)
 
     def test_local_mqtt_probe_classifies_portal_and_direct_topics(self):
