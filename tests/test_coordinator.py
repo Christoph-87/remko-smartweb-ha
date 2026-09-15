@@ -251,6 +251,7 @@ from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
 from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
+from custom_components.remko_smartweb.const import LOCAL_MQTT_MODE_DEVICE_MQTT
 
 CoordinatorUpdateFailed = coordinator_module.UpdateFailed
 
@@ -782,6 +783,34 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("V04P27/SMTABC/PORTAL2HOST", topics)
         self.assertIn("V04P27/SMTABC/CLIENT2HOST", topics)
 
+    def test_mqtt_session_direct_local_device_mqtt_does_not_subscribe_portal_topics(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.subscriptions = None
+
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P28/SMTID"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._local_portal = True
+        session._local_host2portal_mode = False
+        session._local_mqtt_mode = LOCAL_MQTT_MODE_DEVICE_MQTT
+        session._subscribed_topics = []
+        session._command_topic = None
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+
+        topics = [topic for topic, _qos in client.subscriptions]
+        self.assertIn("V04P28/SMTID/HOST2CLIENT", topics)
+        self.assertIn("V04P28/SMTID/CLIENT2HOST", topics)
+        self.assertNotIn("V04P28/SMTID/HOST2PORTAL", topics)
+        self.assertNotIn("V04P28/SMTID/PORTAL2HOST", topics)
+
     def test_mqtt_session_local_command_topic_subscribes_sid_responses(self):
         class FakeMqttClient:
             def __init__(self):
@@ -1055,6 +1084,25 @@ class CoordinatorTests(unittest.TestCase):
         _topic, payload = client._mqtt.published[0]
         self.assertTrue(payload["CLIENT_ID"].startswith("SMTHA"))
         self.assertNotIn("0123456789ABCDEF", payload["CLIENT_ID"])
+
+    def test_local_device_mqtt_write_values_uses_smartcontrol_client_id(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = None
+        client.sk = None
+        client.topic = "V04P28/SMTID"
+        client.smt_user = None
+        client.device_name = "SmartControl"
+        client._local_mqtt_host = "192.168.2.50"
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_DEVICE_MQTT
+        client._mqtt = FakeMqtt({"1194": "01"})
+        client._ensure_mqtt = lambda: None
+
+        client._mqtt_write_values({"1194": "01"}, timeout=1)
+
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P28/SMTID/CLIENT2HOST")
+        self.assertRegex(payload["CLIENT_ID"], r"^SMT[12][0-9]{2}I0{16}$")
+        self.assertFalse(payload["CLIENT_ID"].startswith("SMTHA"))
 
     def test_cloud_mqtt_poll_values_matches_main_client_id(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
@@ -1551,6 +1599,30 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [])
         self.assertEqual(client.state_writes, [{"power": True}])
+        self.assertEqual(coordinator.data["power"], "ON")
+
+    def test_local_device_mqtt_power_switch_uses_value_write(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"power": "OFF", "mode": "auto", "setpoint": 21.0, "unit": "C"},
+        )
+        client = ClimateWriteClient()
+        client.uses_local_mqtt = lambda: True
+        client.uses_local_portal_broker = lambda: False
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "SmartControl",
+            "power",
+            "Power",
+            ClimateDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertEqual(client.value_writes, [{"1194": "01"}])
+        self.assertEqual(client.state_writes, [])
         self.assertEqual(coordinator.data["power"], "ON")
 
     def test_generic_ac_extended_switches_fall_back_to_c0_set_values(self):

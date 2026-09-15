@@ -25,6 +25,12 @@ CONF_LOCAL_MQTT_PORT = "local_mqtt_port"
 CONF_LOCAL_MQTT_USER = "local_mqtt_user"
 CONF_LOCAL_MQTT_PASSWORD = "local_mqtt_password"
 CONF_LOCAL_MQTT_TOPIC = "local_mqtt_topic"
+CONF_LOCAL_MQTT_MODE = "local_mqtt_mode"
+CONF_LOCAL_MQTT_DETECTED_MODE = "local_mqtt_detected_mode"
+
+LOCAL_MQTT_MODE_AUTO = "auto"
+LOCAL_MQTT_MODE_PORTAL_BROKER = "portal_broker"
+LOCAL_MQTT_MODE_DEVICE_MQTT = "device_mqtt"
 
 DEFAULT_LOCAL_MQTT_PORT = 1883
 

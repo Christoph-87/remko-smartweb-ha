@@ -21,7 +21,11 @@ from .const import (
     CONF_LOCAL_MQTT_PORT,
     CONF_LOCAL_MQTT_USER,
     CONF_LOCAL_MQTT_PASSWORD,
+    CONF_LOCAL_MQTT_MODE,
     DEFAULT_LOCAL_MQTT_PORT,
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
     DEVICE_KIND_AUTO,
     DEVICE_KIND_CLIMATE,
     DEVICE_KIND_DHW,
@@ -40,6 +44,12 @@ DEVICE_KIND_OPTIONS = {
     DEVICE_KIND_CLIMATE: "Air conditioner / climate",
     DEVICE_KIND_DHW: "Domestic hot water",
     DEVICE_KIND_DIAGNOSTICS: "Diagnostics only",
+}
+
+LOCAL_MQTT_MODE_OPTIONS = {
+    LOCAL_MQTT_MODE_AUTO: "Automatic detection",
+    LOCAL_MQTT_MODE_PORTAL_BROKER: "Redirected WiFi stick / local portal broker",
+    LOCAL_MQTT_MODE_DEVICE_MQTT: "Direct device MQTT / SmartControl bridge",
 }
 
 
@@ -264,6 +274,10 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
             if host:
+                self._options[CONF_LOCAL_MQTT_MODE] = user_input.get(
+                    CONF_LOCAL_MQTT_MODE,
+                    LOCAL_MQTT_MODE_AUTO,
+                )
                 self._options[CONF_LOCAL_MQTT_HOST] = host
                 self._options[CONF_LOCAL_MQTT_PORT] = int(
                     user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT
@@ -280,12 +294,17 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 # User cleared the host → remove all local broker settings
                 for k in (CONF_LOCAL_MQTT_HOST, CONF_LOCAL_MQTT_PORT,
-                          CONF_LOCAL_MQTT_USER, CONF_LOCAL_MQTT_PASSWORD):
+                          CONF_LOCAL_MQTT_USER, CONF_LOCAL_MQTT_PASSWORD,
+                          CONF_LOCAL_MQTT_MODE):
                     self._options.pop(k, None)
             return self.async_create_entry(title="", data=self._options)
 
         import voluptuous as vol  # already imported at module level, but safe to re-reference
         schema = vol.Schema({
+            vol.Optional(
+                CONF_LOCAL_MQTT_MODE,
+                default=self._options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO),
+            ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
             vol.Optional(
                 CONF_LOCAL_MQTT_HOST,
                 default=self._options.get(CONF_LOCAL_MQTT_HOST, ""),

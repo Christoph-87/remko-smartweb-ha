@@ -22,7 +22,12 @@ from .const import (
     CONF_LOCAL_MQTT_USER,
     CONF_LOCAL_MQTT_PASSWORD,
     CONF_LOCAL_MQTT_TOPIC,
+    CONF_LOCAL_MQTT_MODE,
+    CONF_LOCAL_MQTT_DETECTED_MODE,
     DEFAULT_LOCAL_MQTT_PORT,
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
     DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
     PLATFORMS,
@@ -85,6 +90,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     local_mqtt_user = entry.options.get(CONF_LOCAL_MQTT_USER) or None
     local_mqtt_password = entry.options.get(CONF_LOCAL_MQTT_PASSWORD) or None
     local_mqtt_topic = entry.data.get(CONF_LOCAL_MQTT_TOPIC) or None
+    configured_local_mqtt_mode = entry.options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
+    local_mqtt_mode = configured_local_mqtt_mode
+    if configured_local_mqtt_mode == LOCAL_MQTT_MODE_AUTO:
+        local_mqtt_mode = (
+            entry.data.get(CONF_LOCAL_MQTT_DETECTED_MODE)
+            or _infer_local_mqtt_mode_from_topic(local_mqtt_topic)
+            or LOCAL_MQTT_MODE_AUTO
+        )
     account = _get_or_create_account(hass, email, password)
 
     client = RemkoSmartWebClient(
@@ -100,6 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         local_mqtt_user=local_mqtt_user,
         local_mqtt_password=local_mqtt_password,
         local_mqtt_topic=local_mqtt_topic,
+        local_mqtt_mode=local_mqtt_mode,
     )
     coordinator = RemkoSmartWebCoordinator(
         hass,
@@ -125,6 +139,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         changed_entry_data = True
     if local_mqtt_host and client.topic and client.topic != local_mqtt_topic:
         entry_data_update[CONF_LOCAL_MQTT_TOPIC] = client.topic
+        changed_entry_data = True
+    detected_local_mqtt_mode = getattr(client, "local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
+    if (
+        local_mqtt_host
+        and configured_local_mqtt_mode == LOCAL_MQTT_MODE_AUTO
+        and detected_local_mqtt_mode != LOCAL_MQTT_MODE_AUTO
+        and entry.data.get(CONF_LOCAL_MQTT_DETECTED_MODE) != detected_local_mqtt_mode
+    ):
+        entry_data_update[CONF_LOCAL_MQTT_DETECTED_MODE] = detected_local_mqtt_mode
         changed_entry_data = True
     if changed_entry_data:
         hass.config_entries.async_update_entry(
@@ -177,6 +200,18 @@ async def _async_register_static_path(hass: HomeAssistant) -> None:
     except Exception:
         hass.data[DOMAIN].pop("frontend_registered", None)
         raise
+
+
+def _infer_local_mqtt_mode_from_topic(topic: str | None) -> str | None:
+    """Infer a stored local topic's transport mode when auto-discovery has run before."""
+    if not topic:
+        return None
+    parts = topic.split("/")
+    if len(parts) >= 2 and (parts[0] == "V04P28" or parts[-1] == "SMTID"):
+        return LOCAL_MQTT_MODE_DEVICE_MQTT
+    if len(parts) >= 2 and parts[0] == "V04P27" and parts[1].upper().startswith("SMT"):
+        return LOCAL_MQTT_MODE_PORTAL_BROKER
+    return None
 
 
 def _async_register_services(hass: HomeAssistant) -> None:

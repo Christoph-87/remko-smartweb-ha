@@ -40,6 +40,18 @@ def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
     return DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 
+def _client_uses_local_portal_broker(client) -> bool:
+    uses_local_portal_broker = getattr(client, "uses_local_portal_broker", False)
+    if callable(uses_local_portal_broker):
+        return bool(uses_local_portal_broker())
+    if uses_local_portal_broker:
+        return True
+    uses_local_mqtt = getattr(client, "uses_local_mqtt", False)
+    if callable(uses_local_mqtt):
+        return bool(uses_local_mqtt())
+    return bool(uses_local_mqtt)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -229,7 +241,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
             return
         use_value_write = (
             bool(value_write)
-            and not getattr(self._client, "uses_local_mqtt", False)
+            and not _client_uses_local_portal_broker(self._client)
             and getattr(self._profile, "protocol_name", "") != "default_ac_uart"
         )
         # HA calls can arrive quickly; we use a single read->write cycle per call.
@@ -247,7 +259,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
             await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
         else:
             if (
-                getattr(self._client, "uses_local_mqtt", False)
+                _client_uses_local_portal_broker(self._client)
                 or getattr(self._profile, "protocol_name", "") == "default_ac_uart"
             ):
                 self._client.prime_status_cache(self.coordinator.data)

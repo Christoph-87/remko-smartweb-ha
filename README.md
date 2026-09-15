@@ -74,21 +74,24 @@ This branch also contains experimental support for running a REMKO WiFi stick ag
 
 There are multiple REMKO local-MQTT architectures. Some sticks connect outbound
 to a redirected local broker, while some SmartControl/SmartCom devices expose a
-local MQTT path directly or through a bridge. The integration should ultimately
-detect the usable mode during onboarding so users do not need to choose between
-protocol names. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
+local MQTT path directly or through a bridge. The integration can distinguish
+these modes in the local MQTT options; automatic detection is recommended where
+possible. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
 for the current architecture and onboarding plan.
 
 The local mode is intended for advanced installations where a single WiFi stick is redirected from `smartweb.remko.media` to a local broker. Enable it per device in the integration options:
 
 - `Local MQTT host`
 - `Local MQTT port`
+- `Local MQTT mode` (`Automatic detection`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
 - `Local MQTT username`
 - `Local MQTT password`
 
-The integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
+For redirected WiFi sticks, the integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
 
-Home Assistant exposes a diagnostic **Local portal status** sensor for devices with local MQTT options enabled. Use it as the first setup checklist:
+For direct/bridged SmartControl MQTT devices, the integration listens for `HOST2CLIENT`/`CLIENT2HOST` topics such as `V04P28/SMTID/...` and uses the value-based `CLIENT2HOST` path directly. This path is implemented as an experimental transport mode and needs real-device testers before it should be considered broadly supported.
+
+Home Assistant exposes a diagnostic **Local MQTT status** sensor for devices with local MQTT options enabled. Use it as the first setup checklist:
 
 | Check | Meaning |
 |-------|---------|
@@ -96,8 +99,8 @@ Home Assistant exposes a diagnostic **Local portal status** sensor for devices w
 | `local_broker_connected` | Home Assistant connected to the configured MQTT broker and subscribed successfully. |
 | `smartweb_device_resolved` | SmartWeb login and device metadata resolution succeeded, so the account still contains the device. |
 | `local_topic_discovered` | The redirected stick was discovered on its local `V04P27/SMT...` announcement topic. |
-| `command_topic_resolved` | The SID-based `V04P27/<SID>` command topic was resolved for ESP commands. |
-| `stick_seen` | The local broker has recently seen stick announcements such as `HOST2PORTAL`. |
+| `command_topic_resolved` | The SID-based `V04P27/<SID>` command topic was resolved for ESP commands, or direct local MQTT uses the discovered command topic. |
+| `stick_seen` | The local broker has recently seen stick/device messages such as `HOST2PORTAL` or `HOST2CLIENT`. |
 | `status_readback_seen` | A status payload or ESP `RESP` has been seen since startup. |
 
 If the sensor state is `incomplete`, open its attributes and follow the first guidance message. Most local setup problems are broker reachability, SmartWeb account/device resolution, MQTT ACL/listener separation, or DNS redirect scope.

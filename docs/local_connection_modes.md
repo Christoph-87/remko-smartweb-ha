@@ -50,6 +50,19 @@ Known shape from that project and issue reports:
 This should be implemented as another transport adapter, not as separate HA
 entities or duplicated profile logic.
 
+Initial support in `feature/local-portal-support`:
+
+- options include an explicit `local_mqtt_mode`
+- automatic discovery can classify `HOST2PORTAL` as `local_portal_broker`
+- automatic discovery can classify `HOST2CLIENT`/`CLIENT2HOST` topics as
+  `local_device_mqtt`
+- `local_device_mqtt` uses value-based `CLIENT2HOST` writes directly instead
+  of forcing AC C0/ESP writes
+- `local_device_mqtt` reads values before trying the cloud-style ESP status path
+
+This still needs real hardware testing because topic prefixes and payload fields
+can differ between SmartControl installations.
+
 ## Product Onboarding
 
 The UI should avoid protocol names as the first user-facing choice. A good flow:

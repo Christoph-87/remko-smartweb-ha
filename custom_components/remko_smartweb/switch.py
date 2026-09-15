@@ -38,6 +38,15 @@ def _client_uses_local_mqtt(client) -> bool:
     return bool(uses_local_mqtt)
 
 
+def _client_uses_local_portal_broker(client) -> bool:
+    uses_local_portal_broker = getattr(client, "uses_local_portal_broker", False)
+    if callable(uses_local_portal_broker):
+        return bool(uses_local_portal_broker())
+    if uses_local_portal_broker:
+        return True
+    return _client_uses_local_mqtt(client)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -141,7 +150,7 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
             await self.coordinator.async_request_refresh()
 
         prefer_c0_write = (
-            _client_uses_local_mqtt(self._client)
+            _client_uses_local_portal_broker(self._client)
             and getattr(self._profile, "supports_climate_write", False)
             and self._key in C0_CLIMATE_SWITCH_KEYS
         )

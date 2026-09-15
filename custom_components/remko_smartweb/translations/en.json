@@ -56,12 +56,16 @@
       },
       "local_broker": {
         "title": "Local MQTT Broker (optional)",
-        "description": "Leave 'Local MQTT host' empty to use the REMKO cloud portal. Fill it in when this device's WiFi stick is DNS-redirected to a local Mosquitto broker (e.g. via AdGuard). HA will connect directly to that broker, send ESP commands to the stick's SmartWeb command topic, and treat local readback as pending when needed.",
+        "description": "Leave 'Local MQTT host' empty to use the REMKO cloud portal. Fill it in when this device is reachable through local MQTT. Automatic detection tries both redirected WiFi-stick portal brokers and direct/bridged SmartControl MQTT topics.",
         "data": {
+          "local_mqtt_mode": "Local MQTT mode",
           "local_mqtt_host": "Local MQTT host (e.g. 192.168.2.4)",
           "local_mqtt_port": "Local MQTT port",
           "local_mqtt_user": "Local MQTT username",
           "local_mqtt_password": "Local MQTT password"
+        },
+        "data_description": {
+          "local_mqtt_mode": "Automatic is recommended. Use direct device MQTT only for devices exposing HOST2CLIENT/CLIENT2HOST locally or through a Mosquitto bridge."
         }
       }
     }
@@ -284,7 +288,7 @@
         "name": "Communication status"
       },
       "local_portal_status": {
-        "name": "Local portal status"
+        "name": "Local MQTT status"
       },
       "last_sync": {
         "name": "Last Synchronisation"

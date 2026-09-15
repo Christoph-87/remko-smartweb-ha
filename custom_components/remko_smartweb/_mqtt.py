@@ -12,6 +12,11 @@ from collections import deque
 
 import paho.mqtt.client as mqtt
 
+from .const import (
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
+)
 from ._helpers import (
     _extract_values_from_payload,
     _json_loads_maybe_wrapped,
@@ -130,18 +135,16 @@ def discover_local_topic(
     port: int,
     user: str | None,
     password: str | None,
+    mode: str = LOCAL_MQTT_MODE_AUTO,
     timeout: float = 20.0,
-) -> str | None:
+) -> tuple[str, str] | None:
     """Discover the REMKO topic from a local MQTT broker.
 
-    A local portal setup may not have current SID/SK credentials from the cloud.
-    The stick still announces itself below V04P27/<stick>/...; older setups
-    emit CLIENT2HOST while newer/local portal firmware has been observed to
-    emit HOST2PORTAL.  Either direction is enough to derive the local
-    announcement topic.  ESP commands may still use the SID-based command topic
-    resolved from SmartWeb metadata.
+    Local portal-broker setups announce below V04P27/<stick>/HOST2PORTAL.
+    Direct/bridge SmartControl MQTT setups expose HOST2CLIENT/CLIENT2HOST
+    topics, often below a literal SMTID segment.  Return (base_topic, mode).
     """
-    found: list[str] = []
+    found: list[tuple[str, str]] = []
     done = threading.Event()
     client = mqtt.Client(
         client_id=f"SMT_DISCOVERY_{random.randint(0, 9999):04d}",
@@ -155,24 +158,54 @@ def discover_local_topic(
     def _on_connect(client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
         if rc == 0:
-            client.subscribe(
-                [
-                    ("V04P27/+/CLIENT2HOST", 2),
-                    ("V04P27/+/HOST2PORTAL", 2),
-                ]
-            )
+            subscriptions: list[tuple[str, int]] = []
+            if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER):
+                subscriptions.extend(
+                    [
+                        ("V04P27/+/HOST2PORTAL", 2),
+                        ("V04P27/+/CLIENT2HOST", 2),
+                    ]
+                )
+            if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT):
+                subscriptions.extend(
+                    [
+                        ("V04P27/+/HOST2CLIENT", 2),
+                        ("V04P27/+/CLIENT2HOST", 2),
+                        ("V04P28/+/HOST2CLIENT", 2),
+                        ("V04P28/+/CLIENT2HOST", 2),
+                        ("+/SMTID/HOST2CLIENT", 2),
+                        ("+/SMTID/CLIENT2HOST", 2),
+                    ]
+                )
+            client.subscribe(subscriptions)
             return
         _LOGGER.warning("REMKO SmartWeb local MQTT discovery connect failed rc=%s", rc)
         done.set()
 
     def _on_message(client, userdata, msg):
         parts = str(msg.topic).split("/")
+        if len(parts) < 3:
+            return
+        direction = parts[-1]
+        base_topic = "/".join(parts[:-1])
         if (
-            len(parts) == 3
+            mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER)
+            and len(parts) == 3
             and parts[0] == "V04P27"
-            and parts[2] in {"CLIENT2HOST", "HOST2PORTAL"}
+            and direction == "HOST2PORTAL"
         ):
-            found.append("/".join(parts[:2]))
+            found.append((base_topic, LOCAL_MQTT_MODE_PORTAL_BROKER))
+            done.set()
+            return
+        if (
+            mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT)
+            and direction in {"HOST2CLIENT", "CLIENT2HOST"}
+            and (
+                parts[0] in {"V04P27", "V04P28"}
+                or (len(parts) >= 3 and parts[-2] == "SMTID")
+            )
+        ):
+            found.append((base_topic, LOCAL_MQTT_MODE_DEVICE_MQTT))
             done.set()
 
     client.on_connect = _on_connect
@@ -202,9 +235,11 @@ class _MqttSession:
         topic: str,
         broker: _BrokerConfig,
         command_topic: str | None = None,
+        local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
     ) -> None:
         self.topic = topic
         self._command_topic = command_topic
+        self._local_mqtt_mode = local_mqtt_mode
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._connected = threading.Event()
@@ -230,7 +265,11 @@ class _MqttSession:
         # Local-portal state
         self._local_portal: bool = broker.is_local()
         topic_device = topic.split("/", 2)[1].upper() if "/" in topic else ""
-        self._local_host2portal_mode: bool = self._local_portal and topic_device.startswith("SMT")
+        self._local_host2portal_mode: bool = (
+            self._local_portal
+            and local_mqtt_mode != LOCAL_MQTT_MODE_DEVICE_MQTT
+            and topic_device.startswith("SMT")
+        )
         self._pending_set_tx: str | None = None
         self._pending_set_done = threading.Event()
         self._last_c2h_time: float = 0.0
@@ -283,7 +322,11 @@ class _MqttSession:
                     (f"{command_topic}/CLIENT2HOST", 2),
                 ]
             )
-        if self._local_portal:
+        if (
+            self._local_portal
+            and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
+            != LOCAL_MQTT_MODE_DEVICE_MQTT
+        ):
             subscriptions.extend(
                 [
                     (f"{self.topic}/HOST2PORTAL", 2),
@@ -352,10 +395,19 @@ class _MqttSession:
                     self._last_values_time = now
                     self._last_values_topic = topic_text
                     self._cond.notify_all()
+                local_portal_responder = getattr(
+                    self,
+                    "_local_mqtt_mode",
+                    LOCAL_MQTT_MODE_AUTO,
+                ) != LOCAL_MQTT_MODE_DEVICE_MQTT and getattr(
+                    self,
+                    "_local_portal",
+                    False,
+                )
                 _c2h_needs_reply = (
                     isinstance(obj, dict)
                     and str(msg.topic).endswith("/CLIENT2HOST")
-                    and getattr(self, "_local_portal", False)
+                    and local_portal_responder
                     and not is_own_client2host
                     and "query_list" in obj
                 )
@@ -365,7 +417,7 @@ class _MqttSession:
                 _h2p_needs_reply = (
                     isinstance(obj, dict)
                     and str(msg.topic).endswith("/HOST2PORTAL")
-                    and getattr(self, "_local_portal", False)
+                    and local_portal_responder
                     and "SMT_ID" in obj
                 )
             if _c2h_needs_reply:
@@ -483,7 +535,7 @@ class _MqttSession:
 
     def check_local_portal_health(self, device_name: str) -> None:
         """Emit a one-shot warning when local-mode prerequisites appear unmet."""
-        if not self._local_portal:
+        if not self._local_host2portal_mode:
             return
         age_s = (time.time() - self._last_c2h_time) if self._last_c2h_time else None
         stale = age_s is None or age_s > 300

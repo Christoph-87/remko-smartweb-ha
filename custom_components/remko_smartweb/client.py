@@ -62,7 +62,13 @@ from ._account import (
     SmartWebLoginError,
     UnsupportedPayload,
 )
-from .const import DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE
+from .const import (
+    DEVICE_KIND_AUTO,
+    DEVICE_KIND_CLIMATE,
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
+)
 from .profiles import (
     DomesticHotWaterDeviceProfile,
     KwtDeviceProfile,
@@ -90,6 +96,7 @@ class RemkoSmartWebClient:
         local_mqtt_user: str | None = None,
         local_mqtt_password: str | None = None,
         local_mqtt_topic: str | None = None,
+        local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
     ):
         self.email = email
         self.password = password
@@ -124,10 +131,23 @@ class RemkoSmartWebClient:
         self._local_mqtt_user = local_mqtt_user
         self._local_mqtt_password = local_mqtt_password
         self._local_mqtt_command_topic = None
+        self._local_mqtt_mode = local_mqtt_mode or LOCAL_MQTT_MODE_AUTO
 
     @property
     def uses_local_mqtt(self) -> bool:
         return bool(self._local_mqtt_host)
+
+    @property
+    def local_mqtt_mode(self) -> str:
+        return self._local_mqtt_mode
+
+    @property
+    def uses_local_portal_broker(self) -> bool:
+        return bool(self._local_mqtt_host) and self._local_mqtt_mode != LOCAL_MQTT_MODE_DEVICE_MQTT
+
+    @property
+    def uses_local_device_mqtt(self) -> bool:
+        return bool(self._local_mqtt_host) and self._local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
 
     @property
     def beep_enabled(self) -> bool:
@@ -148,22 +168,38 @@ class RemkoSmartWebClient:
             return False
         if self.topic:
             return True
-        topic = discover_local_topic(
-            self._local_mqtt_host,
-            self._local_mqtt_port,
-            self._local_mqtt_user,
-            self._local_mqtt_password,
-        )
-        if not topic:
+        try:
+            discovery = discover_local_topic(
+                self._local_mqtt_host,
+                self._local_mqtt_port,
+                self._local_mqtt_user,
+                self._local_mqtt_password,
+                mode=getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO),
+            )
+        except TypeError:
+            discovery = discover_local_topic(
+                self._local_mqtt_host,
+                self._local_mqtt_port,
+                self._local_mqtt_user,
+                self._local_mqtt_password,
+            )
+        if not discovery:
             return False
+        if isinstance(discovery, tuple):
+            topic, detected_mode = discovery
+        else:
+            topic, detected_mode = discovery, LOCAL_MQTT_MODE_PORTAL_BROKER
         self.topic = topic
+        if getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO) == LOCAL_MQTT_MODE_AUTO:
+            self._local_mqtt_mode = detected_mode
         parts = topic.split("/")
-        if len(parts) >= 2:
+        if len(parts) >= 2 and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO) != LOCAL_MQTT_MODE_DEVICE_MQTT:
             self.sid = parts[1]
         _LOGGER.info(
-            "Resolved REMKO SmartWeb local MQTT topic for %r: %s",
+            "Resolved REMKO SmartWeb local MQTT topic for %r: %s (mode=%s)",
             self.device_name,
             _redact_debug_text(topic),
+            self._local_mqtt_mode,
         )
         return True
 
@@ -173,7 +209,11 @@ class RemkoSmartWebClient:
         Local sticks announce themselves below V04P27/SMT<mac>/HOST2PORTAL, but
         broker logs show they subscribe to ESP frames below the normal SID topic.
         """
-        if not self._local_mqtt_host or self._local_mqtt_command_topic:
+        if (
+            not self._local_mqtt_host
+            or self._local_mqtt_command_topic
+            or self._local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
+        ):
             return
         local_topic = self.topic
         try:
@@ -198,7 +238,10 @@ class RemkoSmartWebClient:
     def _esp_topic(self) -> str:
         base_topic = (
             getattr(self, "_local_mqtt_command_topic", None)
-            if getattr(self, "_local_mqtt_host", None)
+            if (
+                getattr(self, "_local_mqtt_host", None)
+                and getattr(self, "_local_mqtt_mode", None) != LOCAL_MQTT_MODE_DEVICE_MQTT
+            )
             else None
         )
         return f"{base_topic or self.topic}/ESP"
@@ -215,6 +258,8 @@ class RemkoSmartWebClient:
 
     def _client2host_client_id(self) -> str:
         """Return the frontend CLIENT_ID, preserving cloud behavior from main."""
+        if getattr(self, "_local_mqtt_mode", None) == LOCAL_MQTT_MODE_DEVICE_MQTT:
+            return f"SMT{random.randint(100,299):03d}I0000000000000000"
         if getattr(self, "_local_mqtt_host", None):
             return f"SMTHA{random.randint(0,9999):04d}"
         return f"SMT{random.randint(0,9999):04d}{self.sid}"
@@ -278,7 +323,7 @@ class RemkoSmartWebClient:
         if self.topic:
             metadata["MQTT Topic"] = _redact_debug_text(self.topic)
         if self._local_mqtt_host:
-            metadata["Connection Mode"] = "local"
+            metadata["Connection Mode"] = self._local_mqtt_mode
             metadata["Local Broker"] = f"{self._local_mqtt_host}:{self._local_mqtt_port}"
         elif self._mqtt is not None and self._mqtt.local_portal:
             metadata["Connection Mode"] = "local (auto-detected)"
@@ -291,6 +336,7 @@ class RemkoSmartWebClient:
         local_mqtt_host = getattr(self, "_local_mqtt_host", None)
         local_mqtt_port = getattr(self, "_local_mqtt_port", None)
         local_mqtt_command_topic = getattr(self, "_local_mqtt_command_topic", None)
+        local_mqtt_mode = getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
         if not local_mqtt_host:
             return {
                 "status": "cloud",
@@ -319,7 +365,8 @@ class RemkoSmartWebClient:
         )
         topic = getattr(self, "topic", None)
         local_topic_discovered = bool(topic)
-        command_topic_resolved = bool(local_mqtt_command_topic)
+        device_mqtt_mode = local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
+        command_topic_resolved = bool(local_mqtt_command_topic) or device_mqtt_mode
         broker_connected = bool(
             mqtt_diagnostics.get("mqtt_connected")
             if isinstance(mqtt_diagnostics, dict)
@@ -331,8 +378,24 @@ class RemkoSmartWebClient:
             else None
         )
         stick_seen = (
-            isinstance(last_host2portal_age_s, (int, float))
-            and last_host2portal_age_s <= 300
+            (
+                isinstance(last_host2portal_age_s, (int, float))
+                and last_host2portal_age_s <= 300
+            )
+            if not device_mqtt_mode
+            else (
+                isinstance(
+                    mqtt_diagnostics.get("last_values_age_s")
+                    if isinstance(mqtt_diagnostics, dict)
+                    else None,
+                    (int, float),
+                )
+                or any(
+                    isinstance(message, dict)
+                    and str(message.get("topic", "")).endswith("/HOST2CLIENT")
+                    for message in recent_messages
+                )
+            )
         ) or any(
             isinstance(message, dict)
             and str(message.get("topic", "")).endswith("/HOST2PORTAL")
@@ -376,27 +439,37 @@ class RemkoSmartWebClient:
         guidance_by_check = {
             "local_broker_connected": "Verify the local MQTT host, port, username, password and ACL.",
             "smartweb_device_resolved": "Verify the SmartWeb account login and that /rest/liste contains this device.",
-            "local_topic_discovered": "Verify that the redirected stick reaches the local broker and publishes HOST2PORTAL.",
-            "command_topic_resolved": "Verify SmartWeb metadata can be loaded so the SID command topic is known.",
-            "stick_seen": "Verify DNS redirects only this stick to the local broker and the stick is online.",
-            "status_readback_seen": "Wait for the next poll or verify the stick can answer SID ESP status requests.",
+            "local_topic_discovered": (
+                "Verify the local MQTT topic or bridge prefix; direct devices should publish HOST2CLIENT, "
+                "redirected sticks should publish HOST2PORTAL."
+            ),
+            "command_topic_resolved": (
+                "Verify SmartWeb metadata can be loaded so the SID command topic is known."
+            ),
+            "stick_seen": "Verify the device or redirected stick is online and publishing local MQTT messages.",
+            "status_readback_seen": "Wait for the next poll or verify the device answers local MQTT status requests.",
         }
-        guidance = "Local portal setup looks ready."
+        guidance = "Local MQTT setup looks ready."
         if missing:
             guidance = guidance_by_check.get(missing[0], "Complete the missing local portal setup checks.")
         elif last_status_cached or last_resp_after_last_esp is False:
             status = "degraded"
-            guidance = "Last command/status is not freshly confirmed; verify the stick is subscribed to SID ESP and returns SID RESP."
+            guidance = "Last command/status is not freshly confirmed; inspect the local MQTT write and readback topics."
         return {
             "status": status,
             "guidance": guidance,
             "checks": checks,
             "local_broker": f"{local_mqtt_host}:{local_mqtt_port}",
+            "local_mqtt_mode": local_mqtt_mode,
             "local_topic": _redact_debug_text(topic) if topic else None,
             "command_topic": (
-                _redact_debug_text(local_mqtt_command_topic)
-                if local_mqtt_command_topic
-                else None
+                _redact_debug_text(topic)
+                if device_mqtt_mode and topic
+                else (
+                    _redact_debug_text(local_mqtt_command_topic)
+                    if local_mqtt_command_topic
+                    else None
+                )
             ),
             "mqtt_connack_rc": (
                 mqtt_diagnostics.get("last_connack_rc")
@@ -558,7 +631,15 @@ class RemkoSmartWebClient:
             self._mqtt = _MqttSession(
                 topic=self.topic,
                 broker=broker,
-                command_topic=self._local_mqtt_command_topic if self._local_mqtt_host else None,
+                command_topic=(
+                    self._local_mqtt_command_topic
+                    if self._local_mqtt_host
+                    and self._local_mqtt_mode != LOCAL_MQTT_MODE_DEVICE_MQTT
+                    else None
+                ),
+                local_mqtt_mode=(
+                    self._local_mqtt_mode if self._local_mqtt_host else LOCAL_MQTT_MODE_AUTO
+                ),
             )
             if not self._mqtt.ensure_connected():
                 raise DeviceResolveError("MQTT connect failed")
@@ -1248,6 +1329,36 @@ class RemkoSmartWebClient:
         self._ensure_device()
         self._ensure_mqtt()
         protocol_name = getattr(self.profile, "protocol_name", "")
+        if self.uses_local_device_mqtt:
+            values = self._mqtt_poll_values(timeout=10)
+            if isinstance(values, dict):
+                self._log_mapping_snapshot("local_device_values", values)
+            parsed_values = self.profile.parse_values_status(values) if values else None
+            if parsed_values:
+                self._last_status = parsed_values
+                self._last_status_source = "local_device_values"
+                self._log_poll_summary(
+                    "local_device_values",
+                    parsed=parsed_values,
+                    values=values,
+                    duration=time.monotonic() - started,
+                )
+                return parsed_values
+            self._log_unsupported_payload(
+                "local_device_values",
+                values=values,
+                mqtt_diagnostics=self._mqtt_diagnostic_snapshot(),
+            )
+            if self._last_status:
+                self._last_status_source = "cached_last_status"
+                self._log_poll_summary(
+                    "cached_last_status",
+                    parsed=self._last_status,
+                    values=values,
+                    duration=time.monotonic() - started,
+                )
+                return self._last_status
+
         if protocol_name == "rbw_modbus":
             parsed_rbw = self._read_status_rbw_modbus(started)
             if parsed_rbw:
