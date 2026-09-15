@@ -16,7 +16,6 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
     CONF_DEVICE_KIND,
-    CONF_SCAN_INTERVAL,
     CONF_BEEP,
     CONF_LOCAL_MQTT_HOST,
     CONF_LOCAL_MQTT_PORT,
@@ -90,7 +89,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_name = entry.data[CONF_DEVICE_NAME]
     device_path = entry.data.get(CONF_DEVICE_PATH)
     device_kind = entry.options.get(CONF_DEVICE_KIND, DEVICE_KIND_AUTO)
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     beep = entry.options.get(CONF_BEEP, False)
     local_mqtt_topic = entry.data.get(CONF_LOCAL_MQTT_TOPIC) or None
     local_mqtt_cloud_bridge = entry.options.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
@@ -138,7 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         client,
         entry_id=entry.entry_id,
-        scan_interval=scan_interval,
+        scan_interval=DEFAULT_SCAN_INTERVAL,
     )
 
     try:

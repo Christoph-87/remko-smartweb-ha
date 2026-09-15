@@ -55,16 +55,9 @@
           "beep": "Bestätigungston (Gerät piept bei jedem Befehl)"
         }
       },
-      "local_candidate": {
-        "title": "Lokaler MQTT-Kandidat",
-        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. IPs, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Wähle einen Kandidaten, um ihn zur Prüfung zu merken, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt fragt weiterhin den MQTT-Verbindungshost ab.",
-        "data": {
-          "local_mqtt_candidate": "Stick-IP-Kandidat"
-        }
-      },
       "local_broker": {
         "title": "Lokale Verbindung",
-        "description": "Wähle, wie dieses Gerät verbunden werden soll. Der Modus für umgeleitete WiFi-Sticks nutzt die gemeinsamen lokalen Broker-Einstellungen aus dem nächsten Schritt.",
+        "description": "Wähle, wie dieses Gerät verbunden werden soll. Vorgeschlagene Stick-IPs: {candidate_list}. Vorschläge, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Du kannst die Stick-IP immer manuell eintragen oder korrigieren.",
         "data": {
           "local_mqtt_mode": "Lokaler MQTT-Modus",
           "local_mqtt_stick_host": "Stick-IP-Kandidat (zur Prüfung)",

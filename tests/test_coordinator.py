@@ -1891,7 +1891,7 @@ class CoordinatorTests(unittest.TestCase):
         client = ClimateWriteClient()
         client.set_beep_enabled = lambda enabled: setattr(client, "beep_enabled", bool(enabled))
         client.beep_enabled = False
-        entry = ConfigEntry(options={"scan_interval": 30, "beep": False})
+        entry = ConfigEntry(options={"beep": False, "device_kind": "climate"})
         entity = RemkoSmartWebSwitch(
             coordinator,
             client,
@@ -1907,7 +1907,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(client.beep_enabled)
         self.assertTrue(entity.is_on)
         self.assertEqual(entry.options["beep"], True)
-        self.assertEqual(entry.options["scan_interval"], 30)
+        self.assertEqual(entry.options["device_kind"], "climate")
         self.assertEqual(client.value_writes, [])
         self.assertEqual(client.state_writes, [])
         self.assertTrue(entity.wrote_state)

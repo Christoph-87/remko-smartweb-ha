@@ -55,16 +55,9 @@
           "beep": "Beep on command (unit confirms each command with a beep)"
         }
       },
-      "local_candidate": {
-        "title": "Local MQTT candidate",
-        "description": "Home Assistant found {candidate_count} possible ESP/REMKO stick IP candidates from local hostname hints. IPs already used by another REMKO entry are hidden. Choose one to remember it for validation, or continue with manual entry. This is only a suggestion; the next step still asks for the MQTT connection host.",
-        "data": {
-          "local_mqtt_candidate": "Stick IP candidate"
-        }
-      },
       "local_broker": {
         "title": "Local connection",
-        "description": "Choose how this device should connect. The redirected WiFi-stick mode uses the shared local broker settings from the next step.",
+        "description": "Choose how this device should connect. Suggested stick IPs: {candidate_list}. Suggestions already used by another REMKO entry are hidden. You can always enter or correct the stick IP manually.",
         "data": {
           "local_mqtt_mode": "Local MQTT mode",
           "local_mqtt_stick_host": "Stick IP candidate (for validation)",
