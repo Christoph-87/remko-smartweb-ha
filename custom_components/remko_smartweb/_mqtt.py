@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import abc
+from dataclasses import dataclass
 import json
 import logging
 import random
+import socket
 import ssl
 import threading
 import time
@@ -25,6 +27,55 @@ from ._helpers import (
 from ._frames import _build_status_cmd
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LocalMqttProbeResult:
+    """Read-only local MQTT probe result for onboarding and diagnostics."""
+
+    host: str
+    port: int
+    mode_requested: str
+    tcp_connected: bool = False
+    mqtt_connected: bool = False
+    connack_rc: int | None = None
+    detected_mode: str | None = None
+    topic: str | None = None
+    subscriptions: tuple[str, ...] = ()
+    sample_topics: tuple[str, ...] = ()
+    error: str | None = None
+
+    @property
+    def status(self) -> str:
+        if self.error == "tcp_connect_failed":
+            return "tcp_failed"
+        if not self.tcp_connected:
+            return "tcp_failed"
+        if self.connack_rc not in (None, 0):
+            return "mqtt_auth_or_acl_failed"
+        if not self.mqtt_connected:
+            return "mqtt_failed"
+        if self.detected_mode == LOCAL_MQTT_MODE_DEVICE_MQTT:
+            return "direct_device_mqtt_detected"
+        if self.detected_mode == LOCAL_MQTT_MODE_PORTAL_BROKER:
+            return "portal_broker_detected"
+        return "mqtt_reachable_no_remko_topics"
+
+    def as_dict(self) -> dict:
+        return {
+            "host": self.host,
+            "port": self.port,
+            "mode_requested": self.mode_requested,
+            "status": self.status,
+            "tcp_connected": self.tcp_connected,
+            "mqtt_connected": self.mqtt_connected,
+            "connack_rc": self.connack_rc,
+            "detected_mode": self.detected_mode,
+            "topic": self.topic,
+            "subscriptions": list(self.subscriptions),
+            "sample_topics": list(self.sample_topics),
+            "error": self.error,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -144,10 +195,90 @@ def discover_local_topic(
     Direct/bridge SmartControl MQTT setups expose HOST2CLIENT/CLIENT2HOST
     topics, often below a literal SMTID segment.  Return (base_topic, mode).
     """
+    probe = probe_local_mqtt(host, port, user, password, mode=mode, timeout=timeout)
+    if probe.topic and probe.detected_mode:
+        return probe.topic, probe.detected_mode
+    return None
+
+
+def _local_probe_subscriptions(mode: str) -> list[tuple[str, int]]:
+    subscriptions: list[tuple[str, int]] = []
+    if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER):
+        subscriptions.extend(
+            [
+                ("V04P27/+/HOST2PORTAL", 2),
+                ("V04P27/+/CLIENT2HOST", 2),
+            ]
+        )
+    if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT):
+        subscriptions.extend(
+            [
+                ("V04P27/+/HOST2CLIENT", 2),
+                ("V04P27/+/CLIENT2HOST", 2),
+                ("V04P28/+/HOST2CLIENT", 2),
+                ("V04P28/+/CLIENT2HOST", 2),
+                ("+/SMTID/HOST2CLIENT", 2),
+                ("+/SMTID/CLIENT2HOST", 2),
+            ]
+        )
+    return subscriptions
+
+
+def _classify_local_mqtt_topic(topic: str, mode: str) -> tuple[str, str] | None:
+    parts = topic.split("/")
+    if len(parts) < 3:
+        return None
+    direction = parts[-1]
+    base_topic = "/".join(parts[:-1])
+    if (
+        mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER)
+        and len(parts) == 3
+        and parts[0] == "V04P27"
+        and direction == "HOST2PORTAL"
+    ):
+        return base_topic, LOCAL_MQTT_MODE_PORTAL_BROKER
+    if (
+        mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT)
+        and direction in {"HOST2CLIENT", "CLIENT2HOST"}
+        and (
+            parts[0] in {"V04P27", "V04P28"}
+            or (len(parts) >= 3 and parts[-2] == "SMTID")
+        )
+    ):
+        return base_topic, LOCAL_MQTT_MODE_DEVICE_MQTT
+    return None
+
+
+def probe_local_mqtt(
+    host: str,
+    port: int,
+    user: str | None,
+    password: str | None,
+    mode: str = LOCAL_MQTT_MODE_AUTO,
+    timeout: float = 8.0,
+    tcp_timeout: float = 2.0,
+) -> LocalMqttProbeResult:
+    """Probe a user-selected local MQTT target without sending device commands."""
+    subscriptions = tuple(topic for topic, _qos in _local_probe_subscriptions(mode))
+    try:
+        with socket.create_connection((host, int(port)), timeout=tcp_timeout):
+            pass
+    except Exception as err:
+        return LocalMqttProbeResult(
+            host=host,
+            port=int(port),
+            mode_requested=mode,
+            subscriptions=subscriptions,
+            error="tcp_connect_failed",
+            sample_topics=(type(err).__name__,),
+        )
+
     found: list[tuple[str, str]] = []
+    sample_topics: list[str] = []
+    connack_rc: list[int | None] = [None]
     done = threading.Event()
     client = mqtt.Client(
-        client_id=f"SMT_DISCOVERY_{random.randint(0, 9999):04d}",
+        client_id=f"SMT_PROBE_{random.randint(0, 9999):04d}",
         protocol=mqtt.MQTTv311,
         transport="tcp",
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -157,72 +288,59 @@ def discover_local_topic(
 
     def _on_connect(client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        connack_rc[0] = int(rc) if isinstance(rc, int) or str(rc).isdigit() else None
         if rc == 0:
-            subscriptions: list[tuple[str, int]] = []
-            if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER):
-                subscriptions.extend(
-                    [
-                        ("V04P27/+/HOST2PORTAL", 2),
-                        ("V04P27/+/CLIENT2HOST", 2),
-                    ]
-                )
-            if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT):
-                subscriptions.extend(
-                    [
-                        ("V04P27/+/HOST2CLIENT", 2),
-                        ("V04P27/+/CLIENT2HOST", 2),
-                        ("V04P28/+/HOST2CLIENT", 2),
-                        ("V04P28/+/CLIENT2HOST", 2),
-                        ("+/SMTID/HOST2CLIENT", 2),
-                        ("+/SMTID/CLIENT2HOST", 2),
-                    ]
-                )
-            client.subscribe(subscriptions)
+            client.subscribe(_local_probe_subscriptions(mode))
             return
         _LOGGER.warning("REMKO SmartWeb local MQTT discovery connect failed rc=%s", rc)
         done.set()
 
     def _on_message(client, userdata, msg):
-        parts = str(msg.topic).split("/")
-        if len(parts) < 3:
-            return
-        direction = parts[-1]
-        base_topic = "/".join(parts[:-1])
-        if (
-            mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_PORTAL_BROKER)
-            and len(parts) == 3
-            and parts[0] == "V04P27"
-            and direction == "HOST2PORTAL"
-        ):
-            found.append((base_topic, LOCAL_MQTT_MODE_PORTAL_BROKER))
-            done.set()
-            return
-        if (
-            mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT)
-            and direction in {"HOST2CLIENT", "CLIENT2HOST"}
-            and (
-                parts[0] in {"V04P27", "V04P28"}
-                or (len(parts) >= 3 and parts[-2] == "SMTID")
-            )
-        ):
-            found.append((base_topic, LOCAL_MQTT_MODE_DEVICE_MQTT))
+        topic = str(msg.topic)
+        if len(sample_topics) < 5:
+            sample_topics.append(topic)
+        classified = _classify_local_mqtt_topic(topic, mode)
+        if classified:
+            found.append(classified)
             done.set()
 
     client.on_connect = _on_connect
     client.on_message = _on_message
     try:
-        client.connect(host, port, keepalive=30)
+        client.connect(host, int(port), keepalive=30)
         client.loop_start()
         done.wait(timeout=timeout)
     except Exception as err:
-        _LOGGER.warning("REMKO SmartWeb local MQTT topic discovery failed: %s", err)
+        _LOGGER.warning("REMKO SmartWeb local MQTT probe failed: %s", err)
+        return LocalMqttProbeResult(
+            host=host,
+            port=int(port),
+            mode_requested=mode,
+            tcp_connected=True,
+            connack_rc=connack_rc[0],
+            subscriptions=subscriptions,
+            sample_topics=tuple(sample_topics),
+            error=type(err).__name__,
+        )
     finally:
         try:
             client.loop_stop()
             client.disconnect()
         except Exception:
             pass
-    return found[0] if found else None
+    topic, detected_mode = found[0] if found else (None, None)
+    return LocalMqttProbeResult(
+        host=host,
+        port=int(port),
+        mode_requested=mode,
+        tcp_connected=True,
+        mqtt_connected=connack_rc[0] == 0,
+        connack_rc=connack_rc[0],
+        detected_mode=detected_mode,
+        topic=topic,
+        subscriptions=subscriptions,
+        sample_topics=tuple(sample_topics),
+    )
 
 
 # ---------------------------------------------------------------------------

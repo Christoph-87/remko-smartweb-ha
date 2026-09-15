@@ -242,6 +242,10 @@ from custom_components.remko_smartweb.api import (
     _build_rbw_set_cmd,
     _smartweb_value_matches,
 )
+from custom_components.remko_smartweb._mqtt import (
+    LocalMqttProbeResult,
+    _classify_local_mqtt_topic,
+)
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
 from custom_components.remko_smartweb.switch import RemkoSmartWebSwitch, _should_add_switch
@@ -251,7 +255,11 @@ from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
 from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
-from custom_components.remko_smartweb.const import LOCAL_MQTT_MODE_DEVICE_MQTT
+from custom_components.remko_smartweb.const import (
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
+)
 
 CoordinatorUpdateFailed = coordinator_module.UpdateFailed
 
@@ -810,6 +818,72 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("V04P28/SMTID/CLIENT2HOST", topics)
         self.assertNotIn("V04P28/SMTID/HOST2PORTAL", topics)
         self.assertNotIn("V04P28/SMTID/PORTAL2HOST", topics)
+
+    def test_local_mqtt_probe_classifies_portal_and_direct_topics(self):
+        self.assertEqual(
+            _classify_local_mqtt_topic(
+                "V04P27/SMT1C9DC263C758/HOST2PORTAL",
+                LOCAL_MQTT_MODE_AUTO,
+            ),
+            ("V04P27/SMT1C9DC263C758", LOCAL_MQTT_MODE_PORTAL_BROKER),
+        )
+        self.assertEqual(
+            _classify_local_mqtt_topic("V04P28/SMTID/HOST2CLIENT", LOCAL_MQTT_MODE_AUTO),
+            ("V04P28/SMTID", LOCAL_MQTT_MODE_DEVICE_MQTT),
+        )
+        self.assertEqual(
+            _classify_local_mqtt_topic("bridge/SMTID/CLIENT2HOST", LOCAL_MQTT_MODE_AUTO),
+            ("bridge/SMTID", LOCAL_MQTT_MODE_DEVICE_MQTT),
+        )
+        self.assertIsNone(
+            _classify_local_mqtt_topic(
+                "V04P27/SMT1C9DC263C758/HOST2PORTAL",
+                LOCAL_MQTT_MODE_DEVICE_MQTT,
+            )
+        )
+
+    def test_local_mqtt_probe_result_statuses_are_actionable(self):
+        self.assertEqual(
+            LocalMqttProbeResult(
+                host="192.168.2.50",
+                port=1883,
+                mode_requested=LOCAL_MQTT_MODE_AUTO,
+                error="tcp_connect_failed",
+            ).status,
+            "tcp_failed",
+        )
+        self.assertEqual(
+            LocalMqttProbeResult(
+                host="192.168.2.50",
+                port=1883,
+                mode_requested=LOCAL_MQTT_MODE_AUTO,
+                tcp_connected=True,
+                connack_rc=5,
+            ).status,
+            "mqtt_auth_or_acl_failed",
+        )
+        self.assertEqual(
+            LocalMqttProbeResult(
+                host="192.168.2.50",
+                port=1883,
+                mode_requested=LOCAL_MQTT_MODE_AUTO,
+                tcp_connected=True,
+                mqtt_connected=True,
+            ).status,
+            "mqtt_reachable_no_remko_topics",
+        )
+        self.assertEqual(
+            LocalMqttProbeResult(
+                host="192.168.2.50",
+                port=1883,
+                mode_requested=LOCAL_MQTT_MODE_AUTO,
+                tcp_connected=True,
+                mqtt_connected=True,
+                detected_mode=LOCAL_MQTT_MODE_DEVICE_MQTT,
+                topic="V04P28/SMTID",
+            ).as_dict()["status"],
+            "direct_device_mqtt_detected",
+        )
 
     def test_mqtt_session_local_command_topic_subscribes_sid_responses(self):
         class FakeMqttClient:

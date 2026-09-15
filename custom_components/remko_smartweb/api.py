@@ -296,6 +296,8 @@ from ._mqtt import (  # noqa: E402, F401
     _LocalBrokerConfig,
     _MqttSession,
     _detect_local_portal_ip,
+    LocalMqttProbeResult,
+    probe_local_mqtt,
 )
 
 from ._account import (  # noqa: E402, F401

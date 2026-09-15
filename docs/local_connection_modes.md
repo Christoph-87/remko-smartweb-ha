@@ -54,6 +54,8 @@ entities or duplicated profile logic.
 Initial technical support in `feature/local-portal-support`:
 
 - options include an explicit `local_mqtt_mode`
+- `_mqtt.probe_local_mqtt()` returns a structured read-only probe result for a
+  user-selected host/broker
 - automatic discovery can classify `HOST2PORTAL` as `local_portal_broker`
 - automatic discovery can classify `HOST2CLIENT`/`CLIENT2HOST` topics as
   `local_device_mqtt`
@@ -109,6 +111,7 @@ device from random MQTT traffic. A good flow:
    - Redirected local portal broker detected
    - Local MQTT reachable but no REMKO topics seen
    - MQTT auth/ACL failed
+   - TCP connect failed
    - Waiting for redirected stick heartbeat
 10. Create or update the entry only after the user sees the detected mode and
     guidance. Keep cloud as the fallback until local readback is observed.
