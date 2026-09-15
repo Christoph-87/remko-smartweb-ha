@@ -64,8 +64,7 @@ LOCAL_MQTT_MODE_OPTIONS = {
 
 
 def _candidate_label(ip: str, sources: set[str]) -> str:
-    suffix = ", ".join(sorted(sources))
-    return f"{ip} ({suffix})" if suffix else ip
+    return ip
 
 
 def _compact_mac(value: str | None) -> str | None:
@@ -204,13 +203,13 @@ def discover_local_mqtt_host_candidates() -> dict[str, str]:
             infos = []
         for info in infos:
             ip = info[4][0]
-            candidates.setdefault(ip, set()).add(f"{hostname} via resolver")
+            candidates.setdefault(ip, set()).add(hostname)
 
     gateway = _default_gateway_ip()
     if gateway:
         for hostname in hostnames:
             for ip in _dns_query_a(gateway, hostname):
-                candidates.setdefault(ip, set()).add(f"{hostname} via gateway DNS")
+                candidates.setdefault(ip, set()).add(hostname)
 
     return {ip: _candidate_label(ip, sources) for ip, sources in sorted(candidates.items())}
 
@@ -514,9 +513,6 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="local_broker",
             data_schema=schema,
             errors=errors or {},
-            description_placeholders={
-                "broker_hint": "e.g. 192.168.2.4 or leave empty for REMKO cloud"
-            },
         )
 
     async def _async_probe_local_mqtt(self, host, port, user, password, mode):
@@ -539,11 +535,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return DEVICE_KIND_AUTO
 
     def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
-        options = dict(DEVICE_KIND_OPTIONS)
-        if detected_kind and detected_kind != DEVICE_KIND_AUTO:
-            label = options.get(detected_kind, detected_kind)
-            options[detected_kind] = f"{label} (detected)"
-        return options
+        return dict(DEVICE_KIND_OPTIONS)
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
@@ -650,14 +642,11 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             self._pending_local_mqtt_stick_host = ""
             return await self.async_step_local_broker()
         if current_host and current_host not in options:
-            options[current_host] = f"{current_host} (current)"
-        options[_MANUAL_LOCAL_MQTT_HOST] = "Enter IP or broker host manually"
+            options[current_host] = current_host
 
         default = current_host if current_host in options else None
         if default is None and candidates:
             default = next(iter(candidates))
-        if default is None:
-            default = _MANUAL_LOCAL_MQTT_HOST
 
         schema = vol.Schema({
             vol.Required(CONF_LOCAL_MQTT_CANDIDATE, default=default): vol.In(options),
@@ -803,9 +792,6 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             step_id="local_broker",
             data_schema=schema,
             errors=errors or {},
-            description_placeholders={
-                "broker_hint": "e.g. 192.168.2.4 or leave empty for REMKO cloud"
-            },
         )
 
     async def _async_probe_local_mqtt(self, host, port, user, password, mode):
@@ -828,11 +814,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         return DEVICE_KIND_AUTO
 
     def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
-        options = dict(DEVICE_KIND_OPTIONS)
-        if detected_kind and detected_kind != DEVICE_KIND_AUTO:
-            label = options.get(detected_kind, detected_kind)
-            options[detected_kind] = f"{label} (detected)"
-        return options
+        return dict(DEVICE_KIND_OPTIONS)
 
     def _shows_climate_options(self, device_kind: str) -> bool:
         return device_kind in (DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE)
