@@ -247,6 +247,8 @@ from custom_components.remko_smartweb.api import (
 from custom_components.remko_smartweb._mqtt import (
     LocalMqttProbeResult,
     _classify_local_mqtt_topic,
+    _normalize_mac,
+    _stick_topic_from_mac,
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
@@ -1008,6 +1010,16 @@ class CoordinatorTests(unittest.TestCase):
             )
         )
 
+    def test_probe_can_infer_stick_topic_from_mac(self):
+        self.assertEqual(_normalize_mac("1c:9d:c2:63:c7:58"), "1C9DC263C758")
+        self.assertEqual(_normalize_mac("1C9DC263C758"), "1C9DC263C758")
+        self.assertIsNone(_normalize_mac("not-a-mac"))
+        self.assertEqual(
+            _stick_topic_from_mac("1c:9d:c2:63:c7:58"),
+            "V04P27/SMT1C9DC263C758",
+        )
+        self.assertIsNone(_stick_topic_from_mac("not-a-mac"))
+
     def test_local_mqtt_probe_result_statuses_are_actionable(self):
         self.assertEqual(
             LocalMqttProbeResult(
@@ -1047,9 +1059,20 @@ class CoordinatorTests(unittest.TestCase):
                 mqtt_connected=True,
                 detected_mode=LOCAL_MQTT_MODE_DEVICE_MQTT,
                 topic="V04P28/SMTID",
+                host_mac="1C9DC263C758",
+                inferred_stick_topic="V04P27/SMT1C9DC263C758",
             ).as_dict()["status"],
             "direct_device_mqtt_detected",
         )
+        result = LocalMqttProbeResult(
+            host="192.168.2.102",
+            port=1883,
+            mode_requested=LOCAL_MQTT_MODE_AUTO,
+            host_mac="1C9DC263C758",
+            inferred_stick_topic="V04P27/SMT1C9DC263C758",
+        ).as_dict()
+        self.assertEqual(result["host_mac"], "1C9DC263C758")
+        self.assertEqual(result["inferred_stick_topic"], "V04P27/SMT1C9DC263C758")
 
     def test_mqtt_session_local_command_topic_subscribes_sid_responses(self):
         class FakeMqttClient:

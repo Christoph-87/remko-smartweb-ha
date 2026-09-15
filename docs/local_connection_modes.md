@@ -93,6 +93,9 @@ device from random MQTT traffic. A good flow:
      - the ARP/neighbor table, but only after a MAC is already known
    - if no candidate is known, ask the user for the device IP address
 6. Probe the candidate IP as a direct local MQTT device first:
+   - read the local ARP/neighbor cache for the candidate IP; if it yields a
+     MAC address, derive the expected stick base topic `V04P27/SMT<MAC>`
+     and show it as supporting evidence
    - TCP connect to `1883` and optionally `8883`
    - MQTT CONNACK/auth result
    - read-only subscribe for likely SmartControl topics such as
@@ -150,20 +153,24 @@ For a local target, probe in this order:
 
 1. Start from a cloud-resolved device and retain cloud as fallback.
 2. If the user provides a device IP, TCP probe direct MQTT ports first.
-3. MQTT CONNACK result and auth status.
-4. Subscribe/read-only probe for direct/bridge topics:
+3. Read ARP/neighbor metadata for that IP. If a MAC is available, derive
+   `V04P27/SMT<MAC>` as the expected redirected-stick base topic. This can
+   connect a selected IP to later `HOST2PORTAL` traffic, but it still does not
+   prove which cloud device it is until SID/heartbeat/readback match.
+4. MQTT CONNACK result and auth status.
+5. Subscribe/read-only probe for direct/bridge topics:
    - `+/SMTID/HOST2CLIENT`
    - `V04P28/SMTID/HOST2CLIENT`
    - `V04P27/SMTID/HOST2CLIENT`
    - optional user-provided prefix
-5. If direct device MQTT is not reachable, ask for or validate the local broker
+6. If direct device MQTT is not reachable, ask for or validate the local broker
    used for DNS-redirect mode.
-6. Subscribe/read-only probe for portal-broker topics:
+7. Subscribe/read-only probe for portal-broker topics:
    - `V04P27/+/HOST2PORTAL`
    - `V04P27/+/CLIENT2HOST`
-7. If portal-broker mode is detected, resolve the SmartWeb SID command topic
+8. If portal-broker mode is detected, resolve the SmartWeb SID command topic
    from the cloud account and subscribe to `/ESP` and `/RESP`.
-8. Never send a control command during onboarding probes unless the user
+9. Never send a control command during onboarding probes unless the user
    explicitly starts a test command.
 
 ## Implementation Direction

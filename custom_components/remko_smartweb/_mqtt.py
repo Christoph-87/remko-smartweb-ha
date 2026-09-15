@@ -5,6 +5,7 @@ import abc
 from dataclasses import dataclass
 import json
 import logging
+from pathlib import Path
 import random
 import socket
 import ssl
@@ -41,6 +42,8 @@ class LocalMqttProbeResult:
     connack_rc: int | None = None
     detected_mode: str | None = None
     topic: str | None = None
+    host_mac: str | None = None
+    inferred_stick_topic: str | None = None
     subscriptions: tuple[str, ...] = ()
     sample_topics: tuple[str, ...] = ()
     error: str | None = None
@@ -72,6 +75,8 @@ class LocalMqttProbeResult:
             "connack_rc": self.connack_rc,
             "detected_mode": self.detected_mode,
             "topic": self.topic,
+            "host_mac": self.host_mac,
+            "inferred_stick_topic": self.inferred_stick_topic,
             "subscriptions": list(self.subscriptions),
             "sample_topics": list(self.sample_topics),
             "error": self.error,
@@ -224,6 +229,38 @@ def _local_probe_subscriptions(mode: str) -> list[tuple[str, int]]:
     return subscriptions
 
 
+def _normalize_mac(value: str | None) -> str | None:
+    if not value:
+        return None
+    raw = "".join(ch for ch in str(value).upper() if ch in "0123456789ABCDEF")
+    if len(raw) != 12:
+        return None
+    return raw
+
+
+def _read_arp_mac_for_host(host: str) -> str | None:
+    """Return MAC for a local IPv4 host from Linux ARP cache, if present."""
+    try:
+        arp = Path("/proc/net/arp").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in arp.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ip, _hw_type, flags, mac = parts[:4]
+        if ip == host and flags == "0x2":
+            return _normalize_mac(mac)
+    return None
+
+
+def _stick_topic_from_mac(mac: str | None) -> str | None:
+    normalized = _normalize_mac(mac)
+    if not normalized:
+        return None
+    return f"V04P27/SMT{normalized}"
+
+
 def _classify_local_mqtt_topic(topic: str, mode: str) -> tuple[str, str] | None:
     parts = topic.split("/")
     if len(parts) < 3:
@@ -260,6 +297,8 @@ def probe_local_mqtt(
 ) -> LocalMqttProbeResult:
     """Probe a user-selected local MQTT target without sending device commands."""
     subscriptions = tuple(topic for topic, _qos in _local_probe_subscriptions(mode))
+    host_mac = _read_arp_mac_for_host(host)
+    inferred_stick_topic = _stick_topic_from_mac(host_mac)
     try:
         with socket.create_connection((host, int(port)), timeout=tcp_timeout):
             pass
@@ -269,6 +308,8 @@ def probe_local_mqtt(
             port=int(port),
             mode_requested=mode,
             subscriptions=subscriptions,
+            host_mac=host_mac,
+            inferred_stick_topic=inferred_stick_topic,
             error="tcp_connect_failed",
             sample_topics=(type(err).__name__,),
         )
@@ -318,6 +359,8 @@ def probe_local_mqtt(
             mode_requested=mode,
             tcp_connected=True,
             connack_rc=connack_rc[0],
+            host_mac=host_mac,
+            inferred_stick_topic=inferred_stick_topic,
             subscriptions=subscriptions,
             sample_topics=tuple(sample_topics),
             error=type(err).__name__,
@@ -338,6 +381,8 @@ def probe_local_mqtt(
         connack_rc=connack_rc[0],
         detected_mode=detected_mode,
         topic=topic,
+        host_mac=host_mac,
+        inferred_stick_topic=inferred_stick_topic,
         subscriptions=subscriptions,
         sample_topics=tuple(sample_topics),
     )
