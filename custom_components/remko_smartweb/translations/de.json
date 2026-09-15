@@ -56,7 +56,7 @@
       },
       "local_broker": {
         "title": "Lokaler MQTT-Broker (optional)",
-        "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Ausfüllen, wenn dieses Gerät über lokales MQTT erreichbar ist. Die automatische Erkennung prüft sowohl umgeleitete WiFi-Sticks mit lokalem Portal-Broker als auch direkte oder über eine Bridge angebundene SmartControl-MQTT-Topics.",
+        "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Ausfüllen, wenn dieses Gerät über lokales MQTT erreichbar ist. Die automatische Prüfung testet den eingetragenen Host oder Broker; sie ist keine breite Netzwerksuche.",
         "data": {
           "local_mqtt_mode": "Lokaler MQTT-Modus",
           "local_mqtt_host": "Lokaler MQTT-Host (z. B. 192.168.2.4)",
@@ -65,7 +65,7 @@
           "local_mqtt_password": "Lokales MQTT-Passwort"
         },
         "data_description": {
-          "local_mqtt_mode": "Automatisch ist empfohlen. Direkte Geräte-MQTT-Verbindung nur verwenden, wenn das Gerät HOST2CLIENT/CLIENT2HOST lokal oder über eine Mosquitto-Bridge bereitstellt."
+          "local_mqtt_mode": "Automatische Prüfung ist empfohlen. Zuerst die Geräte-IP für direktes MQTT eintragen; für umgeleitete WiFi-Sticks den lokalen Broker-Host verwenden."
         }
       }
     }

@@ -74,22 +74,28 @@ This branch also contains experimental support for running a REMKO WiFi stick ag
 
 There are multiple REMKO local-MQTT architectures. Some sticks connect outbound
 to a redirected local broker, while some SmartControl/SmartCom devices expose a
-local MQTT path directly or through a bridge. The integration can distinguish
-these modes in the local MQTT options; automatic detection is recommended where
-possible. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
+local MQTT path directly or through a bridge. Local setup should start from the
+cloud-discovered device, then probe a user-provided device IP or local broker;
+automatic mode means "probe this local target" rather than broad network
+discovery. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
 for the current architecture and onboarding plan.
 
 The local mode is intended for advanced installations where a single WiFi stick is redirected from `smartweb.remko.media` to a local broker. Enable it per device in the integration options:
 
 - `Local MQTT host`
 - `Local MQTT port`
-- `Local MQTT mode` (`Automatic detection`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
+- `Local MQTT mode` (`Automatic probe`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
 - `Local MQTT username`
 - `Local MQTT password`
 
 For redirected WiFi sticks, the integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
 
 For direct/bridged SmartControl MQTT devices, the integration listens for `HOST2CLIENT`/`CLIENT2HOST` topics such as `V04P28/SMTID/...` and uses the value-based `CLIENT2HOST` path directly. This path is implemented as an experimental transport mode and needs real-device testers before it should be considered broadly supported.
+
+If no MQTT service is reachable on the device IP, the redirected local portal
+broker path is the next candidate. In that setup, Home Assistant connects to the
+local broker directly; the DNS rewrite only affects the stick, not Home
+Assistant itself.
 
 Home Assistant exposes a diagnostic **Local MQTT status** sensor for devices with local MQTT options enabled. Use it as the first setup checklist:
 

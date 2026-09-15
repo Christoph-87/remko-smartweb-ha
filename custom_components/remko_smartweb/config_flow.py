@@ -47,7 +47,7 @@ DEVICE_KIND_OPTIONS = {
 }
 
 LOCAL_MQTT_MODE_OPTIONS = {
-    LOCAL_MQTT_MODE_AUTO: "Automatic detection",
+    LOCAL_MQTT_MODE_AUTO: "Automatic probe",
     LOCAL_MQTT_MODE_PORTAL_BROKER: "Redirected WiFi stick / local portal broker",
     LOCAL_MQTT_MODE_DEVICE_MQTT: "Direct device MQTT / SmartControl bridge",
 }

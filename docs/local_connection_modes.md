@@ -2,8 +2,9 @@
 
 Goal: support local REMKO operation without making users understand REMKO's
 transport details during setup. The implementation may have several technical
-paths, but the Home Assistant onboarding should guide users through checks and
-show the detected result.
+paths, but the Home Assistant onboarding should start from the known cloud
+device, guide the user through one local candidate at a time, and show the
+detected result with actionable checks.
 
 ## Known Architectures
 
@@ -50,7 +51,7 @@ Known shape from that project and issue reports:
 This should be implemented as another transport adapter, not as separate HA
 entities or duplicated profile logic.
 
-Initial support in `feature/local-portal-support`:
+Initial technical support in `feature/local-portal-support`:
 
 - options include an explicit `local_mqtt_mode`
 - automatic discovery can classify `HOST2PORTAL` as `local_portal_broker`
@@ -65,46 +66,89 @@ can differ between SmartControl installations.
 
 ## Product Onboarding
 
-The UI should avoid protocol names as the first user-facing choice. A good flow:
+The UI should avoid protocol names as the first user-facing choice. Local setup
+must be anchored to the cloud-discovered device instead of trying to infer a
+device from random MQTT traffic. A good flow:
 
 1. Ask for the normal SmartWeb account first.
-2. Show discovered devices.
-3. Offer connection preference:
+2. Show the cloud-discovered devices and let the user choose the exact device.
+3. Store the cloud identity (`device_path`, SID/SK metadata when available,
+   profile, current cloud write/read behaviour). This remains the baseline and
+   fallback.
+4. Offer connection preference for that selected device:
    - `Use REMKO cloud`
    - `Try local connection`
-4. If local is selected, ask for the minimum concrete input:
-   - device IP or local broker host
-   - port, with `1883` as the direct/bridge default and `8883` as a portal-listener hint
-   - username/password only if required
-5. Run probes and show a clear result:
+5. Help the user find a candidate local target:
+   - show guidance that REMKO sticks often appear as Espressif/ESP hostnames in
+     the router or DHCP lease table
+   - later: optionally suggest candidates from Home Assistant network discovery
+     or integrations that expose network device metadata
+   - if no candidate is known, ask the user for the device IP address
+6. Probe the candidate IP as a direct local MQTT device first:
+   - TCP connect to `1883` and optionally `8883`
+   - MQTT CONNACK/auth result
+   - read-only subscribe for likely SmartControl topics such as
+     `V04P28/SMTID/HOST2CLIENT`, `V04P27/SMTID/HOST2CLIENT`, and
+     `+/SMTID/HOST2CLIENT`
+   - if values arrive, classify as `local_device_mqtt` and use the direct
+     `CLIENT2HOST`/`HOST2CLIENT` transport
+7. If no MQTT service is reachable on the device IP, explain the redirected
+   portal-broker option instead of silently failing:
+   - the stick likely connects outbound to REMKO's broker
+   - the user needs a local broker/listener and a DNS rewrite for this one stick
+   - Home Assistant must be able to connect to that local broker
+8. Probe the local broker/listener for the redirected-stick path:
+   - TCP connect to the user-provided local broker host/port
+   - MQTT CONNACK/auth result for the Home Assistant-side account
+   - read-only subscribe for `V04P27/+/HOST2PORTAL`
+   - once the user has redirected the stick, verify the expected `HOST2PORTAL`
+     heartbeat and then resolve the SID command topic from the cloud baseline
+9. Show a clear result before switching the entry:
    - Cloud only
-   - Local portal broker detected
-   - Local device MQTT detected
+   - Direct local MQTT detected
+   - Redirected local portal broker detected
    - Local MQTT reachable but no REMKO topics seen
    - MQTT auth/ACL failed
-6. Create the entry only after the user sees the detected mode and guidance.
+   - Waiting for redirected stick heartbeat
+10. Create or update the entry only after the user sees the detected mode and
+    guidance. Keep cloud as the fallback until local readback is observed.
 
 Users should not have to choose between `HOST2PORTAL`, `CLIENT2HOST`, SID, or
 SMT topics manually in the common path. Manual topic overrides can be advanced
 options later.
 
+### Why Topic-Only Auto-Detection Is Not Enough
+
+Seeing `HOST2PORTAL` is already a consequence of a successful DNS redirect and
+stick connection to a local broker. From Home Assistant's perspective there is
+no DNS rewrite event to detect; HA only connects to the broker host configured
+by the user. Therefore automatic mode should mean "run guided probes against the
+user-selected local target" rather than "listen broadly and guess the setup".
+
+For direct device MQTT, the meaningful probe is the device IP itself. For
+redirected portal-broker mode, the meaningful probe is the local broker plus a
+stick heartbeat after the user has configured DNS.
+
 ## Probe Checklist
 
 For a local target, probe in this order:
 
-1. TCP connect to the configured host/port.
-2. MQTT CONNACK result and auth status.
-3. Subscribe/read-only probe for direct/bridge topics:
+1. Start from a cloud-resolved device and retain cloud as fallback.
+2. If the user provides a device IP, TCP probe direct MQTT ports first.
+3. MQTT CONNACK result and auth status.
+4. Subscribe/read-only probe for direct/bridge topics:
    - `+/SMTID/HOST2CLIENT`
    - `V04P28/SMTID/HOST2CLIENT`
    - `V04P27/SMTID/HOST2CLIENT`
    - optional user-provided prefix
-4. Subscribe/read-only probe for portal-broker topics:
+5. If direct device MQTT is not reachable, ask for or validate the local broker
+   used for DNS-redirect mode.
+6. Subscribe/read-only probe for portal-broker topics:
    - `V04P27/+/HOST2PORTAL`
    - `V04P27/+/CLIENT2HOST`
-5. If portal-broker mode is detected, resolve the SmartWeb SID command topic
+7. If portal-broker mode is detected, resolve the SmartWeb SID command topic
    from the cloud account and subscribe to `/ESP` and `/RESP`.
-6. Never send a control command during onboarding probes unless the user
+8. Never send a control command during onboarding probes unless the user
    explicitly starts a test command.
 
 ## Implementation Direction
