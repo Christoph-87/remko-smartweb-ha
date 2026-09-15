@@ -613,6 +613,12 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         candidates = await self.hass.async_add_executor_job(
             discover_local_mqtt_host_candidates
         )
+        used_hosts = self._local_mqtt_hosts_used_by_other_entries()
+        candidates = {
+            host: label
+            for host, label in candidates.items()
+            if host not in used_hosts
+        }
         self._local_mqtt_host_candidates = candidates
 
         options = dict(candidates)
@@ -637,6 +643,17 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 "candidate_count": str(len(candidates)),
             },
         )
+
+    def _local_mqtt_hosts_used_by_other_entries(self) -> set[str]:
+        hosts: set[str] = set()
+        current_entry_id = getattr(self._config_entry, "entry_id", None)
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if getattr(entry, "entry_id", None) == current_entry_id:
+                continue
+            host = (entry.options or {}).get(CONF_LOCAL_MQTT_HOST)
+            if host:
+                hosts.add(str(host).strip())
+        return hosts
 
     async def async_step_local_broker(self, user_input=None):
         """Optional step: configure and probe local MQTT for this device."""

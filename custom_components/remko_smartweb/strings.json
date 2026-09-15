@@ -58,7 +58,7 @@
       },
       "local_candidate": {
         "title": "Local MQTT candidate",
-        "description": "Home Assistant found {candidate_count} possible ESP/REMKO stick IP candidates from local hostname hints. Choose one to prefill the local MQTT host, or continue with manual entry. This is only a suggestion; the next step probes the selected host.",
+        "description": "Home Assistant found {candidate_count} possible ESP/REMKO stick IP candidates from local hostname hints. IPs already used by another REMKO entry are hidden. Choose one to prefill the local MQTT host, or continue with manual entry. This is only a suggestion; the next step probes the selected host.",
         "data": {
           "local_mqtt_candidate": "Candidate IP"
         }

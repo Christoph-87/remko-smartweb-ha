@@ -58,7 +58,7 @@
       },
       "local_candidate": {
         "title": "Lokaler MQTT-Kandidat",
-        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. Wähle einen Kandidaten, um den lokalen MQTT-Host vorzubelegen, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt prüft den gewählten Host.",
+        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. IPs, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Wähle einen Kandidaten, um den lokalen MQTT-Host vorzubelegen, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt prüft den gewählten Host.",
         "data": {
           "local_mqtt_candidate": "Kandidaten-IP"
         }
