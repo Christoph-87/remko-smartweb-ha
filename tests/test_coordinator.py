@@ -231,6 +231,7 @@ sys.modules.setdefault("requests", requests)
 import custom_components.remko_smartweb.api as api_module
 import custom_components.remko_smartweb.client as client_module
 import custom_components.remko_smartweb.coordinator as coordinator_module
+from custom_components.remko_smartweb._account import DeviceResolveError
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.number import RemkoSmartWebNumber
 from custom_components.remko_smartweb.api import (
@@ -1690,6 +1691,30 @@ class CoordinatorTests(unittest.TestCase):
         )
         try:
             self.assertFalse(client._ensure_local_topic())
+        finally:
+            client_module._stick_topic_from_host = original_expected_topic
+
+        self.assertIsNone(client.topic)
+
+    def test_ensure_device_validates_stored_local_mqtt_topic(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.topic = "V04P27/SMT111111111111"
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_user = None
+        client._local_mqtt_password = None
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_PORTAL_BROKER
+        client._local_mqtt_stick_host = "192.168.2.88"
+        client._local_mqtt_command_topic = None
+
+        original_expected_topic = client_module._stick_topic_from_host
+        client_module._stick_topic_from_host = (
+            lambda host: "V04P27/SMT222222222222"
+        )
+        try:
+            with self.assertRaises(DeviceResolveError):
+                client._ensure_device()
         finally:
             client_module._stick_topic_from_host = original_expected_topic
 

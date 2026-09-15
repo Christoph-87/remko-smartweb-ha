@@ -713,7 +713,7 @@ class RemkoSmartWebClient:
     def _ensure_device(self) -> None:
         """Ensure SID/SK/topic are resolved from SmartWeb."""
         if self._local_mqtt_host:
-            if not self.topic and not self._ensure_local_topic():
+            if not self._ensure_local_topic():
                 raise DeviceResolveError("Local MQTT topic not found")
             self._ensure_local_command_topic()
             return
