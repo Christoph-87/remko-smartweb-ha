@@ -91,11 +91,13 @@ device from random MQTT traffic. A good flow:
      - Home Assistant network discovery or integrations that expose network
        device metadata
      - the ARP/neighbor table, but only after a MAC is already known
-   - if no candidate is known, ask the user for the device IP address
+   - present these as suggestions for the selected cloud device, not as an
+     automatic mapping; if no candidate is known, ask the user for the device
+     IP address
 6. Probe the candidate IP as a direct local MQTT device first:
    - read the local ARP/neighbor cache for the candidate IP; if it yields a
      MAC address, derive the expected stick base topic `V04P27/SMT<MAC>`
-     and show it as supporting evidence
+     and show it as supporting evidence for the chosen candidate
    - TCP connect to `1883` and optionally `8883`
    - MQTT CONNACK/auth result
    - read-only subscribe for likely SmartControl topics such as
@@ -112,8 +114,12 @@ device from random MQTT traffic. A good flow:
    - TCP connect to the user-provided local broker host/port
    - MQTT CONNACK/auth result for the Home Assistant-side account
    - read-only subscribe for `V04P27/+/HOST2PORTAL`
-   - once the user has redirected the stick, verify the expected `HOST2PORTAL`
-     heartbeat and then resolve the SID command topic from the cloud baseline
+   - once the user has redirected the selected stick, verify whether the
+     `HOST2PORTAL` topic matches the expected `V04P27/SMT<MAC>` from the chosen
+     IP; if another `SMT<MAC>` appears, warn the user that the DNS redirect may
+     point to a different stick
+   - resolve the SID command topic from the cloud baseline and require local
+     readback before considering the mapping healthy
 9. Show a clear result before switching the entry:
    - Cloud only
    - Direct local MQTT detected
@@ -143,6 +149,13 @@ DHCP, local DNS, mDNS, or a router integration. Since several sticks can publish
 the same hostname, these hints should feed a selectable candidate list. They
 must not silently decide which cloud device maps to which IP.
 
+This is especially important when migrating one stick at a time. Other sticks
+may still be cloud-only, so Home Assistant cannot prove every candidate by
+trying all channels. The user-selected IP plus ARP MAC gives an expected
+`SMT<MAC>` topic; the first redirected `HOST2PORTAL` heartbeat is then used as
+a consistency check. If it does not match the expected MAC/topic, show a
+"possible mismatch" warning and keep the cloud fallback.
+
 For direct device MQTT, the meaningful probe is the device IP itself. For
 redirected portal-broker mode, the meaningful probe is the local broker plus a
 stick heartbeat after the user has configured DNS.
@@ -153,10 +166,10 @@ For a local target, probe in this order:
 
 1. Start from a cloud-resolved device and retain cloud as fallback.
 2. If the user provides a device IP, TCP probe direct MQTT ports first.
-3. Read ARP/neighbor metadata for that IP. If a MAC is available, derive
+3. Read ARP/neighbor metadata for that selected IP. If a MAC is available, derive
    `V04P27/SMT<MAC>` as the expected redirected-stick base topic. This can
-   connect a selected IP to later `HOST2PORTAL` traffic, but it still does not
-   prove which cloud device it is until SID/heartbeat/readback match.
+   validate later `HOST2PORTAL` traffic, but it still does not prove which cloud
+   device it is until SID/heartbeat/readback match.
 4. MQTT CONNACK result and auth status.
 5. Subscribe/read-only probe for direct/bridge topics:
    - `+/SMTID/HOST2CLIENT`
@@ -169,7 +182,9 @@ For a local target, probe in this order:
    - `V04P27/+/HOST2PORTAL`
    - `V04P27/+/CLIENT2HOST`
 8. If portal-broker mode is detected, resolve the SmartWeb SID command topic
-   from the cloud account and subscribe to `/ESP` and `/RESP`.
+   from the cloud account and subscribe to `/ESP` and `/RESP`. Compare the
+   observed `HOST2PORTAL` topic with the expected `SMT<MAC>` topic from the
+   selected IP and warn on mismatch.
 9. Never send a control command during onboarding probes unless the user
    explicitly starts a test command.
 
