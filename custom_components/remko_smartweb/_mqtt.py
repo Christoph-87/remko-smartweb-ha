@@ -746,3 +746,211 @@ class _MqttSession:
         except Exception:
             pass
         self._closed = True
+
+
+class _CloudLocalMqttBridge:
+    """Forward REMKO cloud MQTT commands to a local MQTT stick/broker.
+
+    Redirected WiFi-stick setups move the stick away from the REMKO cloud
+    broker, so the REMKO app can no longer reach it directly.  This bridge
+    keeps a separate cloud MQTT client subscribed to the normal SID command
+    topic and mirrors command/status frames to the local broker.
+    """
+
+    def __init__(
+        self,
+        *,
+        cloud_topic: str,
+        cloud_broker: _BrokerConfig,
+        local_topic: str,
+        local_command_topic: str,
+        local_broker: _BrokerConfig,
+    ) -> None:
+        self.cloud_topic = cloud_topic
+        self.local_topic = local_topic
+        self.local_command_topic = local_command_topic
+        self._lock = threading.Lock()
+        self._connected = threading.Event()
+        self._closed = False
+        self._last_cloud_to_local_time: float | None = None
+        self._last_local_to_cloud_time: float | None = None
+        self._last_cloud_to_local_topic: str | None = None
+        self._last_local_to_cloud_topic: str | None = None
+        self._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
+        self._last_cloud_connack_rc: int | None = None
+        self._last_local_connack_rc: int | None = None
+
+        _sid = getattr(cloud_broker, "_sid", None) or "0000"
+        self.cloud_client = mqtt.Client(
+            client_id=f"SMTBR{random.randint(0, 9999):04d}{_sid}",
+            protocol=mqtt.MQTTv311,
+            transport="websockets",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        self.local_client = mqtt.Client(
+            client_id=f"SMTHABR{random.randint(0, 9999):04d}",
+            protocol=mqtt.MQTTv311,
+            transport="tcp",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+
+        cloud_host, cloud_port = cloud_broker.apply(self.cloud_client, cloud_topic)
+        local_host, local_port = local_broker.apply(self.local_client, local_topic)
+
+        self.cloud_client.on_connect = self._on_cloud_connect
+        self.cloud_client.on_message = self._on_cloud_message
+        self.cloud_client.on_disconnect = self._on_disconnect
+        self.local_client.on_connect = self._on_local_connect
+        self.local_client.on_message = self._on_local_message
+        self.local_client.on_disconnect = self._on_disconnect
+
+        self.cloud_client.connect(cloud_host, cloud_port, keepalive=60)
+        self.local_client.connect(local_host, local_port, keepalive=60)
+        self.cloud_client.loop_start()
+        self.local_client.loop_start()
+
+    def _on_disconnect(self, client, userdata, *args):
+        with self._lock:
+            self._closed = True
+        self._connected.set()
+
+    def _on_cloud_connect(self, client, userdata, flags, reason_code, properties=None):
+        rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        try:
+            self._last_cloud_connack_rc = int(rc)
+        except Exception:
+            self._last_cloud_connack_rc = None
+        if rc != 0:
+            _LOGGER.warning("REMKO SmartWeb cloud bridge cloud MQTT connect failed rc=%s", rc)
+            self._connected.set()
+            return
+        client.subscribe(
+            [
+                (f"{self.cloud_topic}/ESP", 2),
+                (f"{self.cloud_topic}/CLIENT2HOST", 2),
+            ]
+        )
+        self._connected.set()
+
+    def _on_local_connect(self, client, userdata, flags, reason_code, properties=None):
+        rc = reason_code.value if hasattr(reason_code, "value") else reason_code
+        try:
+            self._last_local_connack_rc = int(rc)
+        except Exception:
+            self._last_local_connack_rc = None
+        if rc != 0:
+            _LOGGER.warning("REMKO SmartWeb cloud bridge local MQTT connect failed rc=%s", rc)
+            self._connected.set()
+            return
+        client.subscribe(
+            [
+                (f"{self.local_command_topic}/RESP", 2),
+                (f"{self.local_command_topic}/HOST2CLIENT", 2),
+                (f"{self.local_command_topic}/PORTAL2CLIENT", 2),
+                (f"{self.local_topic}/HOST2CLIENT", 2),
+                (f"{self.local_topic}/PORTAL2CLIENT", 2),
+            ]
+        )
+        self._connected.set()
+
+    def _forward(self, target_client, target_topic: str, payload: bytes, direction: str, source_topic: str):
+        target_client.publish(target_topic, payload, qos=2, retain=False)
+        with self._lock:
+            now = time.time()
+            self._forward_counts[direction] = self._forward_counts.get(direction, 0) + 1
+            if direction == "cloud_to_local":
+                self._last_cloud_to_local_time = now
+                self._last_cloud_to_local_topic = f"{source_topic} -> {target_topic}"
+            else:
+                self._last_local_to_cloud_time = now
+                self._last_local_to_cloud_topic = f"{source_topic} -> {target_topic}"
+
+    def _on_cloud_message(self, client, userdata, msg):
+        topic = str(msg.topic)
+        if topic.endswith("/ESP"):
+            target = f"{self.local_command_topic}/ESP"
+        elif topic.endswith("/CLIENT2HOST"):
+            target = f"{self.local_command_topic}/CLIENT2HOST"
+        else:
+            return
+        _LOGGER.debug(
+            "REMKO SmartWeb cloud bridge forwarding cloud %s to local %s",
+            _redact_topic(topic),
+            _redact_topic(target),
+        )
+        self._forward(self.local_client, target, msg.payload, "cloud_to_local", topic)
+
+    def _on_local_message(self, client, userdata, msg):
+        topic = str(msg.topic)
+        if topic.endswith("/RESP"):
+            target = f"{self.cloud_topic}/RESP"
+        elif topic.endswith("/HOST2CLIENT"):
+            target = f"{self.cloud_topic}/HOST2CLIENT"
+        elif topic.endswith("/PORTAL2CLIENT"):
+            target = f"{self.cloud_topic}/PORTAL2CLIENT"
+        else:
+            return
+        _LOGGER.debug(
+            "REMKO SmartWeb cloud bridge forwarding local %s to cloud %s",
+            _redact_topic(topic),
+            _redact_topic(target),
+        )
+        self._forward(self.cloud_client, target, msg.payload, "local_to_cloud", topic)
+
+    def ensure_connected(self, timeout: float = 8.0) -> bool:
+        self._connected.wait(timeout=timeout)
+        with self._lock:
+            return (
+                not self._closed
+                and self._last_cloud_connack_rc == 0
+                and self._last_local_connack_rc == 0
+            )
+
+    def diagnostic_snapshot(self) -> dict:
+        with self._lock:
+            now = time.time()
+
+            def _age(timestamp: float | None) -> float | None:
+                return round(now - timestamp, 1) if timestamp is not None else None
+
+            return {
+                "enabled": True,
+                "connected": (
+                    not self._closed
+                    and self._last_cloud_connack_rc == 0
+                    and self._last_local_connack_rc == 0
+                ),
+                "cloud_connack_rc": self._last_cloud_connack_rc,
+                "local_connack_rc": self._last_local_connack_rc,
+                "cloud_to_local_count": self._forward_counts.get("cloud_to_local", 0),
+                "local_to_cloud_count": self._forward_counts.get("local_to_cloud", 0),
+                "last_cloud_to_local_age_s": _age(self._last_cloud_to_local_time),
+                "last_cloud_to_local_topic": _redact_topic(self._last_cloud_to_local_topic),
+                "last_local_to_cloud_age_s": _age(self._last_local_to_cloud_time),
+                "last_local_to_cloud_topic": _redact_topic(self._last_local_to_cloud_topic),
+            }
+
+    def close(self):
+        with self._lock:
+            self._closed = True
+        for client in (self.cloud_client, self.local_client):
+            try:
+                client.loop_stop()
+                client.disconnect()
+            except Exception:
+                pass
+
+
+def _redact_topic(topic: str | None) -> str | None:
+    if not topic:
+        return topic
+    parts = str(topic).split("/")
+    redacted = []
+    for part in parts:
+        if part.startswith("SMT") and len(part) > 8:
+            redacted.append(part[:6] + "...")
+        elif len(part) >= 16 and all(ch in "0123456789abcdefABCDEF" for ch in part):
+            redacted.append(part[:6] + "...")
+        else:
+            redacted.append(part)
+    return "/".join(redacted)

@@ -292,6 +292,7 @@ from ._frames import (  # noqa: E402, F401
 
 from ._mqtt import (  # noqa: E402, F401
     _BrokerConfig,
+    _CloudLocalMqttBridge,
     _CloudBrokerConfig,
     _LocalBrokerConfig,
     _MqttSession,

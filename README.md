@@ -87,8 +87,17 @@ The local mode is intended for advanced installations where a single WiFi stick 
 - `Local MQTT mode` (`Automatic probe`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
 - `Local MQTT username`
 - `Local MQTT password`
+- `Bridge REMKO app commands through Home Assistant` (experimental, redirected WiFi-stick setups only)
 
 For redirected WiFi sticks, the integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
+
+When a redirected stick is connected to the local broker, the REMKO app may lose
+direct control because the stick is no longer connected to REMKO's cloud broker.
+The optional cloud bridge keeps a second cloud MQTT connection open, listens for
+cloud app commands on the normal SID command topic, forwards those commands to
+the local broker, and mirrors local `RESP`/status frames back to the cloud. This
+is intentionally opt-in and experimental until it has been verified with real
+REMKO app commands.
 
 For direct/bridged SmartControl MQTT devices, the integration listens for `HOST2CLIENT`/`CLIENT2HOST` topics such as `V04P28/SMTID/...` and uses the value-based `CLIENT2HOST` path directly. This path is implemented as an experimental transport mode and needs real-device testers before it should be considered broadly supported.
 

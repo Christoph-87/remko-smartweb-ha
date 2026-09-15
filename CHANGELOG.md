@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Add an experimental opt-in cloud-command bridge for redirected local MQTT setups, forwarding REMKO app cloud MQTT commands to the local broker and local responses back to the cloud topic
 - Add a per-device `Beep on command` switch entity so the command beep can be toggled directly from Home Assistant instead of only through the integration options
 - Restore extended AC switch behavior for Value-ID capable climate profiles: Power keeps the Value-ID path, while Eco, Turbo, Sleep, Bioclean, and Frost Protection fall back to the C0/ESP SET path when needed
 - Parse the Bioclean flag from C0 status frames so the switch can reflect device state after polling

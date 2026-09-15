@@ -23,6 +23,7 @@ from .const import (
     CONF_LOCAL_MQTT_PASSWORD,
     CONF_LOCAL_MQTT_MODE,
     CONF_LOCAL_MQTT_LAST_PROBE,
+    CONF_LOCAL_MQTT_CLOUD_BRIDGE,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
@@ -294,6 +295,9 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._options[CONF_LOCAL_MQTT_HOST] = host
                 self._options[CONF_LOCAL_MQTT_PORT] = port
                 self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
+                self._options[CONF_LOCAL_MQTT_CLOUD_BRIDGE] = bool(
+                    user_input.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
+                )
                 if user_val:
                     self._options[CONF_LOCAL_MQTT_USER] = user_val
                     self._options[CONF_LOCAL_MQTT_PASSWORD] = (
@@ -306,7 +310,8 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # User cleared the host → remove all local broker settings
                 for k in (CONF_LOCAL_MQTT_HOST, CONF_LOCAL_MQTT_PORT,
                           CONF_LOCAL_MQTT_USER, CONF_LOCAL_MQTT_PASSWORD,
-                          CONF_LOCAL_MQTT_MODE, CONF_LOCAL_MQTT_LAST_PROBE):
+                          CONF_LOCAL_MQTT_MODE, CONF_LOCAL_MQTT_LAST_PROBE,
+                          CONF_LOCAL_MQTT_CLOUD_BRIDGE):
                     self._options.pop(k, None)
             return self.async_create_entry(title="", data=self._options)
 
@@ -340,6 +345,10 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_LOCAL_MQTT_PASSWORD,
                 default=(user_input or self._options).get(CONF_LOCAL_MQTT_PASSWORD, ""),
             ): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_CLOUD_BRIDGE,
+                default=(user_input or self._options).get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False),
+            ): bool,
         })
         return self.async_show_form(
             step_id="local_broker",

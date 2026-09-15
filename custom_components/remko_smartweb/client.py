@@ -48,6 +48,7 @@ from ._frames import (
 )
 from ._mqtt import (
     _BrokerConfig,
+    _CloudLocalMqttBridge,
     _CloudBrokerConfig,
     _LocalBrokerConfig,
     _MqttSession,
@@ -98,6 +99,7 @@ class RemkoSmartWebClient:
         local_mqtt_topic: str | None = None,
         local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
         local_mqtt_last_probe: dict | None = None,
+        local_mqtt_cloud_bridge: bool = False,
     ):
         self.email = email
         self.password = password
@@ -126,6 +128,7 @@ class RemkoSmartWebClient:
         self._last_device_list_empty = False
         self._last_support_snapshot_signature = None
         self._mqtt: _MqttSession | None = None
+        self._mqtt_cloud_bridge: _CloudLocalMqttBridge | None = None
         self._write_lock = threading.RLock()
         self._local_mqtt_host = local_mqtt_host
         self._local_mqtt_port = local_mqtt_port
@@ -136,6 +139,7 @@ class RemkoSmartWebClient:
         self._local_mqtt_last_probe = (
             local_mqtt_last_probe if isinstance(local_mqtt_last_probe, dict) else None
         )
+        self._local_mqtt_cloud_bridge_enabled = bool(local_mqtt_cloud_bridge)
 
     @property
     def uses_local_mqtt(self) -> bool:
@@ -152,6 +156,14 @@ class RemkoSmartWebClient:
     @property
     def uses_local_device_mqtt(self) -> bool:
         return bool(self._local_mqtt_host) and self._local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
+
+    @property
+    def cloud_bridge_enabled(self) -> bool:
+        return (
+            bool(self._local_mqtt_host)
+            and bool(getattr(self, "_local_mqtt_cloud_bridge_enabled", False))
+            and self._local_mqtt_mode != LOCAL_MQTT_MODE_DEVICE_MQTT
+        )
 
     @property
     def beep_enabled(self) -> bool:
@@ -329,6 +341,8 @@ class RemkoSmartWebClient:
         if self._local_mqtt_host:
             metadata["Connection Mode"] = self._local_mqtt_mode
             metadata["Local Broker"] = f"{self._local_mqtt_host}:{self._local_mqtt_port}"
+            if self.cloud_bridge_enabled:
+                metadata["Cloud Bridge"] = "enabled"
         elif self._mqtt is not None and self._mqtt.local_portal:
             metadata["Connection Mode"] = "local (auto-detected)"
         else:
@@ -515,6 +529,7 @@ class RemkoSmartWebClient:
                 if isinstance(mqtt_diagnostics, dict)
                 else None
             ),
+            "cloud_bridge": self._cloud_bridge_diagnostic_snapshot(),
         }
 
     def communication_diagnostics(self) -> dict:
@@ -597,6 +612,7 @@ class RemkoSmartWebClient:
             ),
             "last_host2portal_age_s": mqtt_diagnostics.get("last_host2portal_age_s"),
             "last_portal2host_age_s": mqtt_diagnostics.get("last_portal2host_age_s"),
+            "cloud_bridge": self._cloud_bridge_diagnostic_snapshot(),
         }
 
     def _ensure_login(self, force: bool = False) -> None:
@@ -648,6 +664,48 @@ class RemkoSmartWebClient:
             )
             if not self._mqtt.ensure_connected():
                 raise DeviceResolveError("MQTT connect failed")
+        self._ensure_cloud_bridge()
+
+    def _ensure_cloud_bridge(self) -> None:
+        if not self.cloud_bridge_enabled:
+            return
+        if not self.sid or not self.sk or not self.topic:
+            return
+        command_topic = getattr(self, "_local_mqtt_command_topic", None)
+        if not command_topic:
+            return
+        if self._mqtt_cloud_bridge is not None and self._mqtt_cloud_bridge.ensure_connected(timeout=0.1):
+            return
+        if self._mqtt_cloud_bridge is not None:
+            self._mqtt_cloud_bridge.close()
+            self._mqtt_cloud_bridge = None
+        local_broker = _LocalBrokerConfig(
+            self._local_mqtt_host,
+            self._local_mqtt_port,
+            self._local_mqtt_user,
+            self._local_mqtt_password,
+        )
+        cloud_broker = _CloudBrokerConfig(self.sid, self.sk)
+        self._mqtt_cloud_bridge = _CloudLocalMqttBridge(
+            cloud_topic=command_topic,
+            cloud_broker=cloud_broker,
+            local_topic=self.topic,
+            local_command_topic=command_topic,
+            local_broker=local_broker,
+        )
+        if not self._mqtt_cloud_bridge.ensure_connected():
+            _LOGGER.warning(
+                "REMKO SmartWeb cloud bridge for %r did not fully connect yet",
+                self.device_name,
+            )
+
+    def _cloud_bridge_diagnostic_snapshot(self) -> dict:
+        bridge = getattr(self, "_mqtt_cloud_bridge", None)
+        if bridge is not None:
+            return bridge.diagnostic_snapshot()
+        if self.cloud_bridge_enabled:
+            return {"enabled": True, "connected": False}
+        return {"enabled": False}
 
     def _account_request(self, method: str, url: str, **kwargs):
         return self.account.account_request(method, url, **kwargs)
@@ -2076,6 +2134,9 @@ class RemkoSmartWebClient:
         return mismatches
 
     def close(self):
+        if self._mqtt_cloud_bridge is not None:
+            self._mqtt_cloud_bridge.close()
+            self._mqtt_cloud_bridge = None
         if self._mqtt is not None:
             self._mqtt.close()
             self._mqtt = None

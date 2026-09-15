@@ -238,6 +238,7 @@ from custom_components.remko_smartweb.api import (
     RemkoSmartWebClient,
     SMARTWEB_USER_AGENT,
     UnsupportedPayload,
+    _CloudLocalMqttBridge,
     _MqttSession,
     _build_kwt_set_cmd,
     _build_rbw_set_cmd,
@@ -838,6 +839,76 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn("V04P28/SMTID/CLIENT2HOST", topics)
         self.assertNotIn("V04P28/SMTID/HOST2PORTAL", topics)
         self.assertNotIn("V04P28/SMTID/PORTAL2HOST", topics)
+
+    def test_cloud_local_bridge_forwards_cloud_esp_to_local_command_topic(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, payload, qos, retain))
+
+        bridge = _CloudLocalMqttBridge.__new__(_CloudLocalMqttBridge)
+        bridge.cloud_topic = "V04P27/SIDABC"
+        bridge.local_topic = "V04P27/SMTABC"
+        bridge.local_command_topic = "V04P27/SIDABC"
+        bridge._lock = threading.Lock()
+        bridge._last_cloud_to_local_time = None
+        bridge._last_local_to_cloud_time = None
+        bridge._last_cloud_to_local_topic = None
+        bridge._last_local_to_cloud_topic = None
+        bridge._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
+        bridge.local_client = FakeMqttClient()
+
+        bridge._on_cloud_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SIDABC/ESP",
+                payload=b'{"Tx":"AA","CLIENT_ID":"app"}',
+            ),
+        )
+
+        self.assertEqual(
+            bridge.local_client.published,
+            [("V04P27/SIDABC/ESP", b'{"Tx":"AA","CLIENT_ID":"app"}', 2, False)],
+        )
+        self.assertEqual(bridge._forward_counts["cloud_to_local"], 1)
+
+    def test_cloud_local_bridge_forwards_local_resp_to_cloud(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.published = []
+
+            def publish(self, topic, payload, qos=0, retain=False):
+                self.published.append((topic, payload, qos, retain))
+
+        bridge = _CloudLocalMqttBridge.__new__(_CloudLocalMqttBridge)
+        bridge.cloud_topic = "V04P27/SIDABC"
+        bridge.local_topic = "V04P27/SMTABC"
+        bridge.local_command_topic = "V04P27/SIDABC"
+        bridge._lock = threading.Lock()
+        bridge._last_cloud_to_local_time = None
+        bridge._last_local_to_cloud_time = None
+        bridge._last_cloud_to_local_topic = None
+        bridge._last_local_to_cloud_topic = None
+        bridge._forward_counts = {"cloud_to_local": 0, "local_to_cloud": 0}
+        bridge.cloud_client = FakeMqttClient()
+
+        bridge._on_local_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P27/SIDABC/RESP",
+                payload=b'{"Rx":"AA"}',
+            ),
+        )
+
+        self.assertEqual(
+            bridge.cloud_client.published,
+            [("V04P27/SIDABC/RESP", b'{"Rx":"AA"}', 2, False)],
+        )
+        self.assertEqual(bridge._forward_counts["local_to_cloud"], 1)
 
     def test_local_mqtt_probe_classifies_portal_and_direct_topics(self):
         self.assertEqual(

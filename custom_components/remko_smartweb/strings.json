@@ -64,10 +64,12 @@
           "local_mqtt_host": "Local MQTT host (e.g. 192.168.2.4)",
           "local_mqtt_port": "Local MQTT port",
           "local_mqtt_user": "Local MQTT username",
-          "local_mqtt_password": "Local MQTT password"
+          "local_mqtt_password": "Local MQTT password",
+          "local_mqtt_cloud_bridge": "Bridge REMKO app commands through Home Assistant"
         },
         "data_description": {
-          "local_mqtt_mode": "Automatic probe is recommended. Enter a device IP for direct MQTT first; use a local broker host for redirected WiFi-stick setups."
+          "local_mqtt_mode": "Automatic probe is recommended. Enter a device IP for direct MQTT first; use a local broker host for redirected WiFi-stick setups.",
+          "local_mqtt_cloud_bridge": "Experimental. Use only for redirected WiFi-stick setups where the REMKO app loses control while the stick is connected locally."
         }
       }
     }
