@@ -923,9 +923,11 @@ class _CloudLocalMqttBridge:
             self._last_cloud_portal2host_time = time.time()
             self._last_cloud_portal2host_topic = topic
         _LOGGER.debug(
-            "REMKO SmartWeb cloud bridge saw cloud %s",
+            "REMKO SmartWeb cloud bridge forwarding cloud %s to local %s",
+            _redact_topic(topic),
             _redact_topic(topic),
         )
+        self._forward(self.local_client, topic, msg.payload, "cloud_to_local", topic)
 
     def _on_local_message(self, client, userdata, msg):
         topic = str(msg.topic)
