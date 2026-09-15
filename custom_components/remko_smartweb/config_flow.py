@@ -623,6 +623,9 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
 
         options = dict(candidates)
         current_host = self._options.get(CONF_LOCAL_MQTT_HOST)
+        if not candidates and not current_host:
+            self._pending_local_mqtt_host = ""
+            return await self.async_step_local_broker()
         if current_host and current_host not in options:
             options[current_host] = f"{current_host} (current)"
         options[_MANUAL_LOCAL_MQTT_HOST] = "Enter IP or broker host manually"
