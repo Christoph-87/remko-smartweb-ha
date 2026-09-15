@@ -1720,6 +1720,38 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertIsNone(client.topic)
 
+    def test_expected_stick_topic_refreshes_neighbor_once(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client._local_mqtt_stick_host = "192.168.2.88"
+
+        calls = {"topic": 0, "refresh": 0}
+
+        def _topic_from_host(host):
+            calls["topic"] += 1
+            return None if calls["topic"] == 1 else "V04P27/SMT222222222222"
+
+        def _refresh(host):
+            calls["refresh"] += 1
+
+        original_expected_topic = client_module._stick_topic_from_host
+        original_refresh = client_module._refresh_neighbor
+        client_module._stick_topic_from_host = _topic_from_host
+        client_module._refresh_neighbor = _refresh
+        try:
+            self.assertEqual(
+                client._expected_stick_topic(),
+                "V04P27/SMT222222222222",
+            )
+            self.assertEqual(
+                client._expected_stick_topic(),
+                "V04P27/SMT222222222222",
+            )
+        finally:
+            client_module._stick_topic_from_host = original_expected_topic
+            client_module._refresh_neighbor = original_refresh
+
+        self.assertEqual(calls["refresh"], 1)
+
     def test_set_value_ids_rejects_unconfirmed_readback_value(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "DHW"

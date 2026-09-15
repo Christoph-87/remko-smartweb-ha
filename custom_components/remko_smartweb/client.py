@@ -4,8 +4,10 @@ from __future__ import annotations
 import logging
 import random
 import re
+import socket
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urljoin
 
 from ._helpers import (
@@ -137,6 +139,7 @@ class RemkoSmartWebClient:
         self._local_mqtt_user = local_mqtt_user
         self._local_mqtt_password = local_mqtt_password
         self._local_mqtt_stick_host = local_mqtt_stick_host
+        self._local_mqtt_stick_neighbor_refreshed = False
         self._local_mqtt_command_topic = None
         self._local_mqtt_mode = local_mqtt_mode or LOCAL_MQTT_MODE_AUTO
         self._local_mqtt_last_probe = (
@@ -185,9 +188,7 @@ class RemkoSmartWebClient:
     def _ensure_local_topic(self) -> bool:
         if not self._local_mqtt_host:
             return False
-        expected_topic = _stick_topic_from_host(
-            getattr(self, "_local_mqtt_stick_host", None)
-        )
+        expected_topic = self._expected_stick_topic()
         if self.topic:
             if not self._local_topic_matches_configured_stick(expected_topic):
                 self.topic = None
@@ -272,6 +273,20 @@ class RemkoSmartWebClient:
             _redact_debug_text(expected_topic),
         )
         return False
+
+    def _expected_stick_topic(self) -> str | None:
+        """Infer the configured stick's expected local topic, refreshing ARP once."""
+        stick_host = getattr(self, "_local_mqtt_stick_host", None)
+        topic = _stick_topic_from_host(stick_host)
+        if (
+            topic
+            or not stick_host
+            or getattr(self, "_local_mqtt_stick_neighbor_refreshed", False)
+        ):
+            return topic
+        self._local_mqtt_stick_neighbor_refreshed = True
+        _refresh_neighbor(stick_host)
+        return _stick_topic_from_host(stick_host)
 
     def _ensure_local_command_topic(self) -> None:
         """Resolve the SID-based ESP command topic while keeping the local topic.
@@ -441,9 +456,7 @@ class RemkoSmartWebClient:
         )
         topic = getattr(self, "topic", None)
         local_topic_discovered = bool(topic)
-        expected_stick_topic = _stick_topic_from_host(
-            getattr(self, "_local_mqtt_stick_host", None)
-        )
+        expected_stick_topic = self._expected_stick_topic()
         stick_topic_matches_expected = (
             None
             if not expected_stick_topic or not topic
@@ -2270,3 +2283,22 @@ def _stick_topic_from_host(host: str | None) -> str | None:
         if len(compact) == 12:
             return f"V04P27/SMT{compact}"
     return None
+
+
+def _refresh_neighbor(host: str | None) -> None:
+    """Nudge the OS neighbor table for a local IPv4 host without requiring a reply."""
+    if not host:
+        return
+    try:
+        socket.inet_aton(host)
+    except OSError:
+        return
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.settimeout(0.2)
+            sock.sendto(b"", (host, 9))
+        finally:
+            sock.close()
+    except OSError:
+        return
