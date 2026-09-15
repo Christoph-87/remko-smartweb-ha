@@ -43,7 +43,6 @@
       "init": {
         "title": "REMKO SmartWeb Optionen",
         "data": {
-          "scan_interval": "Polling-Intervall (Sekunden)",
           "device_kind": "Gerätetyp"
         }
       },
@@ -64,21 +63,37 @@
         }
       },
       "local_broker": {
-        "title": "Lokaler MQTT-Broker (optional)",
-        "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Für direktes Geräte-MQTT ist die Stick-IP der Host. Für DNS-umgeleitete WiFi-Sticks bleibt die Stick-IP nur ein Prüfhilfe-Hinweis; als Host trägst du die lokale Broker-IP ein.",
+        "title": "Lokale Verbindung",
+        "description": "Wähle, wie dieses Gerät verbunden werden soll. Der Modus für umgeleitete WiFi-Sticks nutzt die gemeinsamen lokalen Broker-Einstellungen aus dem nächsten Schritt.",
         "data": {
           "local_mqtt_mode": "Lokaler MQTT-Modus",
           "local_mqtt_stick_host": "Stick-IP-Kandidat (zur Prüfung)",
-          "local_mqtt_host": "Lokaler MQTT-Host (z. B. 192.168.2.4)",
-          "local_mqtt_port": "Lokaler MQTT-Port",
-          "local_mqtt_user": "Lokaler MQTT-Benutzername",
-          "local_mqtt_password": "Lokales MQTT-Passwort",
           "local_mqtt_cloud_bridge": "REMKO-App-Befehle über Home Assistant weiterleiten"
         },
         "data_description": {
-          "local_mqtt_mode": "Automatische Prüfung ist empfohlen. Direktes Geräte-MQTT verbindet zur Stick-IP. Umgeleitete WiFi-Sticks verbinden zu deiner lokalen Broker-IP.",
-          "local_mqtt_stick_host": "Nur als Hinweis für Mismatch-Erkennung. Dieses Feld wird nicht als Broker-Host verwendet, außer du kopierst es in Lokaler MQTT-Host.",
+          "local_mqtt_mode": "Cloud nutzt nur REMKO SmartWeb. Direktes Geräte-MQTT verbindet zur Stick-IP. Umgeleitete WiFi-Sticks nutzen den gemeinsamen lokalen Broker aus dem nächsten Schritt.",
+          "local_mqtt_stick_host": "Nur als Hinweis für Mismatch-Erkennung. Dieses Feld wird nicht als Broker-Host verwendet.",
           "local_mqtt_cloud_bridge": "Experimentell. Nur für umgeleitete WiFi-Sticks verwenden, bei denen die REMKO-App die Steuerung verliert, während der Stick lokal verbunden ist."
+        }
+      },
+      "local_device": {
+        "title": "Direktes Geräte-MQTT",
+        "description": "Nur für Sticks oder SmartControl-Geräte verwenden, die MQTT direkt auf ihrer eigenen IP anbieten.",
+        "data": {
+          "local_mqtt_host": "Stick-MQTT-Host",
+          "local_mqtt_port": "Stick-MQTT-Port",
+          "local_mqtt_user": "Stick-MQTT-Benutzername",
+          "local_mqtt_password": "Stick-MQTT-Passwort"
+        }
+      },
+      "global_broker": {
+        "title": "Gemeinsamer lokaler MQTT-Broker",
+        "description": "Diese Broker-Einstellungen werden von allen umgeleiteten REMKO WiFi-Sticks gemeinsam genutzt. Gerätespezifisch werden nur Modus und Stick-IP-Hinweis gespeichert.",
+        "data": {
+          "local_mqtt_host": "Lokaler Broker-Host",
+          "local_mqtt_port": "Lokaler Broker-Port",
+          "local_mqtt_user": "Lokaler Broker-Benutzername",
+          "local_mqtt_password": "Lokales Broker-Passwort"
         }
       }
     }
@@ -99,7 +114,7 @@
     },
     "local_mqtt_mode": {
       "options": {
-        "auto": "Automatisch prüfen",
+        "cloud": "Nur REMKO Cloud",
         "portal_broker": "Umgeleiteter WiFi-Stick / lokaler Portal-Broker",
         "device_mqtt": "Direktes Geräte-MQTT / SmartControl-Bridge"
       }

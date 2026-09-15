@@ -33,6 +33,7 @@ CONF_LOCAL_MQTT_CANDIDATE = "local_mqtt_candidate"
 CONF_LOCAL_MQTT_STICK_HOST = "local_mqtt_stick_host"
 
 LOCAL_MQTT_MODE_AUTO = "auto"
+LOCAL_MQTT_MODE_CLOUD = "cloud"
 LOCAL_MQTT_MODE_PORTAL_BROKER = "portal_broker"
 LOCAL_MQTT_MODE_DEVICE_MQTT = "device_mqtt"
 

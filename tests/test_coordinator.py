@@ -260,7 +260,15 @@ from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
 from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
 from custom_components.remko_smartweb.water_heater import OPERATION_MODES, RemkoSmartWebWaterHeater
 from custom_components.remko_smartweb.const import (
+    CONF_LOCAL_MQTT_HOST,
+    CONF_LOCAL_MQTT_LAST_PROBE,
+    CONF_LOCAL_MQTT_MODE,
+    CONF_LOCAL_MQTT_PASSWORD,
+    CONF_LOCAL_MQTT_PORT,
+    CONF_LOCAL_MQTT_USER,
+    DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_CLOUD,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
     LOCAL_MQTT_MODE_PORTAL_BROKER,
 )
@@ -2195,6 +2203,66 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.values, {"1195": "152015", "1196": "154802", "1200": "02"})
         self.assertTrue(coordinator.refreshed)
+
+    def test_local_mqtt_runtime_uses_global_broker_for_redirect_mode(self):
+        integration_module = _load_integration_module()
+        options = {
+            CONF_LOCAL_MQTT_MODE: LOCAL_MQTT_MODE_PORTAL_BROKER,
+            CONF_LOCAL_MQTT_HOST: "192.168.2.250",
+            CONF_LOCAL_MQTT_PORT: 1884,
+        }
+        global_broker = {
+            CONF_LOCAL_MQTT_HOST: "192.168.2.4",
+            CONF_LOCAL_MQTT_PORT: 1883,
+            CONF_LOCAL_MQTT_USER: "ha",
+            CONF_LOCAL_MQTT_PASSWORD: "secret",
+            CONF_LOCAL_MQTT_LAST_PROBE: {"status": "ok"},
+        }
+
+        self.assertEqual(
+            integration_module._resolve_local_mqtt_connection(
+                options,
+                LOCAL_MQTT_MODE_PORTAL_BROKER,
+                global_broker,
+            ),
+            ("192.168.2.4", 1883, "ha", "secret", {"status": "ok"}),
+        )
+
+    def test_local_mqtt_runtime_keeps_direct_device_host_per_entry(self):
+        integration_module = _load_integration_module()
+        options = {
+            CONF_LOCAL_MQTT_MODE: LOCAL_MQTT_MODE_DEVICE_MQTT,
+            CONF_LOCAL_MQTT_HOST: "192.168.2.88",
+            CONF_LOCAL_MQTT_PORT: 1883,
+        }
+        global_broker = {
+            CONF_LOCAL_MQTT_HOST: "192.168.2.4",
+            CONF_LOCAL_MQTT_PORT: 1883,
+        }
+
+        self.assertEqual(
+            integration_module._resolve_local_mqtt_connection(
+                options,
+                LOCAL_MQTT_MODE_DEVICE_MQTT,
+                global_broker,
+            ),
+            ("192.168.2.88", 1883, None, None, None),
+        )
+
+    def test_local_mqtt_runtime_cloud_mode_has_no_local_host(self):
+        integration_module = _load_integration_module()
+
+        self.assertEqual(
+            integration_module._resolve_local_mqtt_connection(
+                {},
+                LOCAL_MQTT_MODE_CLOUD,
+                {
+                    CONF_LOCAL_MQTT_HOST: "192.168.2.4",
+                    CONF_LOCAL_MQTT_PORT: 1883,
+                },
+            ),
+            (None, DEFAULT_LOCAL_MQTT_PORT, None, None, None),
+        )
 
     def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:

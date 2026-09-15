@@ -13,6 +13,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
+from homeassistant.helpers.storage import Store
 
 from .const import (
     DOMAIN,
@@ -20,7 +21,6 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
-    CONF_SCAN_INTERVAL,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
     CONF_MODEL,
@@ -37,13 +37,13 @@ from .const import (
     CONF_LOCAL_MQTT_STICK_HOST,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_CLOUD,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
     LOCAL_MQTT_MODE_PORTAL_BROKER,
     DEVICE_KIND_AUTO,
     DEVICE_KIND_CLIMATE,
     DEVICE_KIND_DHW,
     DEVICE_KIND_DIAGNOSTICS,
-    DEFAULT_SCAN_INTERVAL,
     DEFAULT_MIN_TEMP,
     DEFAULT_MAX_TEMP,
 )
@@ -53,6 +53,8 @@ from .profiles import looks_like_dhw_name
 _LOGGER = logging.getLogger(__name__)
 
 _MANUAL_LOCAL_MQTT_HOST = "__manual__"
+GLOBAL_BROKER_STORE_VERSION = 1
+GLOBAL_BROKER_STORE_KEY = f"{DOMAIN}_global_local_mqtt_broker"
 
 DEVICE_KIND_OPTIONS = (
     DEVICE_KIND_AUTO,
@@ -62,7 +64,7 @@ DEVICE_KIND_OPTIONS = (
 )
 
 LOCAL_MQTT_MODE_OPTIONS = (
-    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_CLOUD,
     LOCAL_MQTT_MODE_PORTAL_BROKER,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
 )
@@ -87,6 +89,27 @@ def _select_selector(
             mode=SelectSelectorMode.DROPDOWN,
         )
     )
+
+
+def _global_broker_store(hass) -> Store:
+    return Store(hass, GLOBAL_BROKER_STORE_VERSION, GLOBAL_BROKER_STORE_KEY)
+
+
+async def _async_load_global_broker(hass) -> dict:
+    data = await _global_broker_store(hass).async_load()
+    return dict(data or {})
+
+
+async def _async_save_global_broker(hass, data: dict) -> None:
+    if data:
+        await _global_broker_store(hass).async_save(data)
+    else:
+        await _global_broker_store(hass).async_save({})
+
+
+def _local_mqtt_mode_form_default(values: dict) -> str:
+    mode = values.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_CLOUD)
+    return LOCAL_MQTT_MODE_CLOUD if mode == LOCAL_MQTT_MODE_AUTO else mode
 
 
 def _candidate_label(ip: str, sources: set[str]) -> str:
@@ -520,10 +543,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema({
             vol.Optional(
                 CONF_LOCAL_MQTT_MODE,
-                default=(user_input or self._options).get(
-                    CONF_LOCAL_MQTT_MODE,
-                    LOCAL_MQTT_MODE_AUTO,
-                ),
+                default=_local_mqtt_mode_form_default(user_input or self._options),
             ): _select_selector(LOCAL_MQTT_MODE_OPTIONS, CONF_LOCAL_MQTT_MODE),
             vol.Optional(
                 CONF_LOCAL_MQTT_HOST,
@@ -612,10 +632,6 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 self._device_kind_options(device_kind),
                 CONF_DEVICE_KIND,
             ),
-            vol.Optional(
-                CONF_SCAN_INTERVAL,
-                default=self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-            ): vol.Coerce(int),
         })
         return self.async_show_form(step_id="init", data_schema=schema)
 
@@ -676,7 +692,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         self._local_mqtt_host_candidates = candidates
 
         options = dict(candidates)
-        current_host = self._options.get(CONF_LOCAL_MQTT_HOST)
+        current_host = self._options.get(CONF_LOCAL_MQTT_STICK_HOST)
         if not candidates and not current_host:
             self._pending_local_mqtt_stick_host = ""
             return await self.async_step_local_broker()
@@ -704,10 +720,13 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             if getattr(entry, "entry_id", None) == current_entry_id:
                 continue
-            host = (entry.options or {}).get(CONF_LOCAL_MQTT_HOST)
+            entry_options = entry.options or {}
+            host = entry_options.get(CONF_LOCAL_MQTT_HOST)
             if host:
-                hosts.add(str(host).strip())
-            stick_host = (entry.options or {}).get(CONF_LOCAL_MQTT_STICK_HOST)
+                mode = entry_options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
+                if mode == LOCAL_MQTT_MODE_DEVICE_MQTT:
+                    hosts.add(str(host).strip())
+            stick_host = entry_options.get(CONF_LOCAL_MQTT_STICK_HOST)
             if stick_host:
                 hosts.add(str(stick_host).strip())
             data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
@@ -724,65 +743,30 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         return hosts
 
     async def async_step_local_broker(self, user_input=None):
-        """Optional step: configure and probe local MQTT for this device."""
+        """Choose how this device should connect locally."""
         errors = {}
         if user_input is not None:
-            host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
-            if host:
-                port = int(user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT)
-                mode = user_input.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
-                user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
-                password = user_input.get(CONF_LOCAL_MQTT_PASSWORD)
-                stick_host = (user_input.get(CONF_LOCAL_MQTT_STICK_HOST) or "").strip()
-                if password in (None, "") and user_val:
-                    password = self._options.get(CONF_LOCAL_MQTT_PASSWORD, "")
-                password = password or ""
-                probe = await self._async_probe_local_mqtt(
-                    host,
-                    port,
-                    user_val or None,
-                    password if user_val else None,
-                    mode,
-                )
-                if probe["status"] == "tcp_failed":
-                    errors["base"] = "local_mqtt_tcp_failed"
-                    return self._show_local_broker_form(user_input, errors)
-                if probe["status"] == "mqtt_auth_or_acl_failed":
-                    errors["base"] = "local_mqtt_auth_failed"
-                    return self._show_local_broker_form(user_input, errors)
-
-                self._options[CONF_LOCAL_MQTT_MODE] = mode
-                self._options[CONF_LOCAL_MQTT_HOST] = host
-                self._options[CONF_LOCAL_MQTT_PORT] = port
-                self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
-                if stick_host:
-                    self._options[CONF_LOCAL_MQTT_STICK_HOST] = stick_host
-                else:
-                    self._options.pop(CONF_LOCAL_MQTT_STICK_HOST, None)
-                if getattr(self, "_pending_local_mqtt_stick_host", "") == stick_host:
-                    self._options[CONF_LOCAL_MQTT_CANDIDATE] = stick_host
-                self._options[CONF_LOCAL_MQTT_CLOUD_BRIDGE] = bool(
-                    user_input.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
-                )
-                if user_val:
-                    self._options[CONF_LOCAL_MQTT_USER] = user_val
-                    self._options[CONF_LOCAL_MQTT_PASSWORD] = password
-                else:
-                    self._options.pop(CONF_LOCAL_MQTT_USER, None)
-                    self._options.pop(CONF_LOCAL_MQTT_PASSWORD, None)
+            mode = user_input.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_CLOUD)
+            stick_host = (user_input.get(CONF_LOCAL_MQTT_STICK_HOST) or "").strip()
+            self._options[CONF_LOCAL_MQTT_MODE] = mode
+            if stick_host:
+                self._options[CONF_LOCAL_MQTT_STICK_HOST] = stick_host
             else:
-                for k in (
-                    CONF_LOCAL_MQTT_HOST,
-                    CONF_LOCAL_MQTT_PORT,
-                    CONF_LOCAL_MQTT_USER,
-                    CONF_LOCAL_MQTT_PASSWORD,
-                    CONF_LOCAL_MQTT_MODE,
-                    CONF_LOCAL_MQTT_LAST_PROBE,
-                    CONF_LOCAL_MQTT_CLOUD_BRIDGE,
-                    CONF_LOCAL_MQTT_CANDIDATE,
-                    CONF_LOCAL_MQTT_STICK_HOST,
-                ):
-                    self._options.pop(k, None)
+                self._options.pop(CONF_LOCAL_MQTT_STICK_HOST, None)
+            if getattr(self, "_pending_local_mqtt_stick_host", "") == stick_host:
+                self._options[CONF_LOCAL_MQTT_CANDIDATE] = stick_host
+            self._options[CONF_LOCAL_MQTT_CLOUD_BRIDGE] = bool(
+                user_input.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
+            )
+
+            if mode == LOCAL_MQTT_MODE_CLOUD:
+                self._clear_local_connection_options()
+                return self.async_create_entry(title="", data=self._options)
+            if mode == LOCAL_MQTT_MODE_PORTAL_BROKER:
+                self._clear_device_mqtt_options()
+                return await self.async_step_global_broker()
+            if mode == LOCAL_MQTT_MODE_DEVICE_MQTT:
+                return await self.async_step_local_device()
             return self.async_create_entry(title="", data=self._options)
 
         return self._show_local_broker_form()
@@ -791,10 +775,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
             vol.Optional(
                 CONF_LOCAL_MQTT_MODE,
-                default=(user_input or self._options).get(
-                    CONF_LOCAL_MQTT_MODE,
-                    LOCAL_MQTT_MODE_AUTO,
-                ),
+                default=_local_mqtt_mode_form_default(user_input or self._options),
             ): _select_selector(LOCAL_MQTT_MODE_OPTIONS, CONF_LOCAL_MQTT_MODE),
             vol.Optional(
                 CONF_LOCAL_MQTT_STICK_HOST,
@@ -802,25 +783,6 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                     CONF_LOCAL_MQTT_STICK_HOST,
                     getattr(self, "_pending_local_mqtt_stick_host", ""),
                 ),
-            ): str,
-            vol.Optional(
-                CONF_LOCAL_MQTT_HOST,
-                default=(user_input or self._options).get(CONF_LOCAL_MQTT_HOST, ""),
-            ): str,
-            vol.Optional(
-                CONF_LOCAL_MQTT_PORT,
-                default=(user_input or self._options).get(
-                    CONF_LOCAL_MQTT_PORT,
-                    DEFAULT_LOCAL_MQTT_PORT,
-                ),
-            ): vol.Coerce(int),
-            vol.Optional(
-                CONF_LOCAL_MQTT_USER,
-                default=(user_input or self._options).get(CONF_LOCAL_MQTT_USER, ""),
-            ): str,
-            vol.Optional(
-                CONF_LOCAL_MQTT_PASSWORD,
-                default="",
             ): str,
             vol.Optional(
                 CONF_LOCAL_MQTT_CLOUD_BRIDGE,
@@ -832,6 +794,183 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             data_schema=schema,
             errors=errors or {},
         )
+
+    async def async_step_local_device(self, user_input=None):
+        """Configure direct MQTT on the device or SmartControl bridge."""
+        errors = {}
+        if user_input is not None:
+            host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
+            port = int(user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT)
+            user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
+            password = user_input.get(CONF_LOCAL_MQTT_PASSWORD)
+            if password in (None, "") and user_val:
+                password = self._options.get(CONF_LOCAL_MQTT_PASSWORD, "")
+            password = password or ""
+            if host:
+                probe = await self._async_probe_local_mqtt(
+                    host,
+                    port,
+                    user_val or None,
+                    password if user_val else None,
+                    LOCAL_MQTT_MODE_DEVICE_MQTT,
+                )
+                if probe["status"] == "tcp_failed":
+                    errors["base"] = "local_mqtt_tcp_failed"
+                    return self._show_local_device_form(user_input, errors)
+                if probe["status"] == "mqtt_auth_or_acl_failed":
+                    errors["base"] = "local_mqtt_auth_failed"
+                    return self._show_local_device_form(user_input, errors)
+
+                self._options[CONF_LOCAL_MQTT_HOST] = host
+                self._options[CONF_LOCAL_MQTT_PORT] = port
+                self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
+                if user_val:
+                    self._options[CONF_LOCAL_MQTT_USER] = user_val
+                    self._options[CONF_LOCAL_MQTT_PASSWORD] = password
+                else:
+                    self._options.pop(CONF_LOCAL_MQTT_USER, None)
+                    self._options.pop(CONF_LOCAL_MQTT_PASSWORD, None)
+                return self.async_create_entry(title="", data=self._options)
+
+            errors["base"] = "local_mqtt_tcp_failed"
+            return self._show_local_device_form(user_input, errors)
+
+        return self._show_local_device_form()
+
+    def _show_local_device_form(self, user_input=None, errors=None):
+        values = user_input or self._options
+        default_host = values.get(
+            CONF_LOCAL_MQTT_HOST,
+            self._options.get(
+                CONF_LOCAL_MQTT_STICK_HOST,
+                getattr(self, "_pending_local_mqtt_stick_host", ""),
+            ),
+        )
+        schema = vol.Schema({
+            vol.Required(CONF_LOCAL_MQTT_HOST, default=default_host): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_PORT,
+                default=values.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT),
+            ): vol.Coerce(int),
+            vol.Optional(CONF_LOCAL_MQTT_USER, default=values.get(CONF_LOCAL_MQTT_USER, "")): str,
+            vol.Optional(CONF_LOCAL_MQTT_PASSWORD, default=""): str,
+        })
+        return self.async_show_form(
+            step_id="local_device",
+            data_schema=schema,
+            errors=errors or {},
+        )
+
+    async def async_step_global_broker(self, user_input=None):
+        """Configure the shared local MQTT broker used by redirected sticks."""
+        errors = {}
+        global_options = await _async_load_global_broker(self.hass)
+        if not global_options:
+            global_options = self._legacy_entry_broker_options()
+        if user_input is not None:
+            host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
+            if not host:
+                errors["base"] = "local_mqtt_tcp_failed"
+                return self._show_global_broker_form(user_input, errors)
+            port = int(user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT)
+            user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
+            password = user_input.get(CONF_LOCAL_MQTT_PASSWORD)
+            if password in (None, "") and user_val:
+                password = global_options.get(CONF_LOCAL_MQTT_PASSWORD, "")
+            password = password or ""
+            probe = await self._async_probe_local_mqtt(
+                host,
+                port,
+                user_val or None,
+                password if user_val else None,
+                LOCAL_MQTT_MODE_PORTAL_BROKER,
+            )
+            if probe["status"] == "tcp_failed":
+                errors["base"] = "local_mqtt_tcp_failed"
+                return self._show_global_broker_form(user_input, errors)
+            if probe["status"] == "mqtt_auth_or_acl_failed":
+                errors["base"] = "local_mqtt_auth_failed"
+                return self._show_global_broker_form(user_input, errors)
+
+            new_global_options = {
+                CONF_LOCAL_MQTT_HOST: host,
+                CONF_LOCAL_MQTT_PORT: port,
+                CONF_LOCAL_MQTT_LAST_PROBE: probe,
+            }
+            if user_val:
+                new_global_options[CONF_LOCAL_MQTT_USER] = user_val
+                new_global_options[CONF_LOCAL_MQTT_PASSWORD] = password
+            await _async_save_global_broker(self.hass, new_global_options)
+            for key in (
+                CONF_LOCAL_MQTT_HOST,
+                CONF_LOCAL_MQTT_PORT,
+                CONF_LOCAL_MQTT_USER,
+                CONF_LOCAL_MQTT_PASSWORD,
+                CONF_LOCAL_MQTT_LAST_PROBE,
+            ):
+                self._options.pop(key, None)
+            return self.async_create_entry(title="", data=self._options)
+
+        return self._show_global_broker_form(global_options)
+
+    def _legacy_entry_broker_options(self) -> dict:
+        if not self._options.get(CONF_LOCAL_MQTT_HOST):
+            return {}
+        result = {
+            CONF_LOCAL_MQTT_HOST: self._options.get(CONF_LOCAL_MQTT_HOST),
+            CONF_LOCAL_MQTT_PORT: self._options.get(
+                CONF_LOCAL_MQTT_PORT,
+                DEFAULT_LOCAL_MQTT_PORT,
+            ),
+        }
+        for key in (
+            CONF_LOCAL_MQTT_USER,
+            CONF_LOCAL_MQTT_PASSWORD,
+            CONF_LOCAL_MQTT_LAST_PROBE,
+        ):
+            if self._options.get(key):
+                result[key] = self._options[key]
+        return result
+
+    def _show_global_broker_form(self, values=None, errors=None):
+        values = values or {}
+        schema = vol.Schema({
+            vol.Required(CONF_LOCAL_MQTT_HOST, default=values.get(CONF_LOCAL_MQTT_HOST, "")): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_PORT,
+                default=values.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT),
+            ): vol.Coerce(int),
+            vol.Optional(CONF_LOCAL_MQTT_USER, default=values.get(CONF_LOCAL_MQTT_USER, "")): str,
+            vol.Optional(CONF_LOCAL_MQTT_PASSWORD, default=""): str,
+        })
+        return self.async_show_form(
+            step_id="global_broker",
+            data_schema=schema,
+            errors=errors or {},
+        )
+
+    def _clear_local_connection_options(self) -> None:
+        for key in (
+            CONF_LOCAL_MQTT_HOST,
+            CONF_LOCAL_MQTT_PORT,
+            CONF_LOCAL_MQTT_USER,
+            CONF_LOCAL_MQTT_PASSWORD,
+            CONF_LOCAL_MQTT_LAST_PROBE,
+            CONF_LOCAL_MQTT_CLOUD_BRIDGE,
+            CONF_LOCAL_MQTT_CANDIDATE,
+            CONF_LOCAL_MQTT_STICK_HOST,
+        ):
+            self._options.pop(key, None)
+
+    def _clear_device_mqtt_options(self) -> None:
+        for key in (
+            CONF_LOCAL_MQTT_HOST,
+            CONF_LOCAL_MQTT_PORT,
+            CONF_LOCAL_MQTT_USER,
+            CONF_LOCAL_MQTT_PASSWORD,
+            CONF_LOCAL_MQTT_LAST_PROBE,
+        ):
+            self._options.pop(key, None)
 
     async def _async_probe_local_mqtt(self, host, port, user, password, mode):
         def _probe():
