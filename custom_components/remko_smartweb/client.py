@@ -187,6 +187,18 @@ class RemkoSmartWebClient:
             return False
         if self.topic:
             return True
+        expected_topic = _stick_topic_from_host(
+            getattr(self, "_local_mqtt_stick_host", None)
+        )
+        if getattr(self, "_local_mqtt_stick_host", None) and not expected_topic:
+            _LOGGER.warning(
+                "REMKO SmartWeb local MQTT for %r has stick IP %s, but no ARP "
+                "MAC/topic could be inferred yet; refusing to adopt an arbitrary "
+                "stick topic from the shared broker",
+                self.device_name,
+                self._local_mqtt_stick_host,
+            )
+            return False
         try:
             discovery = discover_local_topic(
                 self._local_mqtt_host,
@@ -208,6 +220,16 @@ class RemkoSmartWebClient:
             topic, detected_mode = discovery
         else:
             topic, detected_mode = discovery, LOCAL_MQTT_MODE_PORTAL_BROKER
+        if expected_topic and topic != expected_topic:
+            _LOGGER.warning(
+                "REMKO SmartWeb local MQTT for %r discovered %s, but the configured "
+                "stick IP %s maps to %s; refusing this mismatched topic",
+                self.device_name,
+                _redact_debug_text(topic),
+                self._local_mqtt_stick_host,
+                _redact_debug_text(expected_topic),
+            )
+            return False
         self.topic = topic
         if getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO) == LOCAL_MQTT_MODE_AUTO:
             self._local_mqtt_mode = detected_mode

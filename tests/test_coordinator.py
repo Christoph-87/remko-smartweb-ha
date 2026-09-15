@@ -1643,6 +1643,36 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client._esp_topic(), "V04P27/FEDCBA9876543210/ESP")
         self.assertTrue(client._mqtt_credentials_ready())
 
+    def test_local_mqtt_topic_discovery_rejects_stick_ip_mismatch(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "MXW"
+        client.topic = None
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_user = None
+        client._local_mqtt_password = None
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_PORTAL_BROKER
+        client._local_mqtt_stick_host = "192.168.2.88"
+
+        original_discover = client_module.discover_local_topic
+        original_expected_topic = client_module._stick_topic_from_host
+        client_module.discover_local_topic = (
+            lambda host, port, user, password, mode=None: (
+                "V04P27/SMT111111111111",
+                LOCAL_MQTT_MODE_PORTAL_BROKER,
+            )
+        )
+        client_module._stick_topic_from_host = (
+            lambda host: "V04P27/SMT222222222222"
+        )
+        try:
+            self.assertFalse(client._ensure_local_topic())
+        finally:
+            client_module.discover_local_topic = original_discover
+            client_module._stick_topic_from_host = original_expected_topic
+
+        self.assertIsNone(client.topic)
+
     def test_set_value_ids_rejects_unconfirmed_readback_value(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "DHW"

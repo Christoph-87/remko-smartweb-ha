@@ -907,6 +907,11 @@ class ProfileParsingTests(unittest.TestCase):
         source = (COMPONENT_PATH / "config_flow.py").read_text(encoding="utf-8")
         self.assertNotIn("dict(DEVICE_KIND_OPTIONS)", source)
 
+    def test_options_updates_reload_config_entry(self):
+        source = (COMPONENT_PATH / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("entry.add_update_listener", source)
+        self.assertIn("async_reload(entry.entry_id)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
