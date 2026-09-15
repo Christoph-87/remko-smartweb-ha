@@ -1777,6 +1777,30 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(entity.wrote_state)
         self.assertEqual(len(hass.scheduled_callbacks), 1)
 
+    def test_lte_power_switch_entity_writes_main_value_id(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"power": "OFF"},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WIFI Stick - Luftentfeuchter",
+            "power",
+            "Power",
+            LteDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertEqual(client.values, {"1194": "01"})
+        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertTrue(entity.wrote_state)
+        self.assertEqual(len(hass.scheduled_callbacks), 1)
+
     def test_lte_number_entity_writes_target_humidity_value_id(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(
@@ -1801,32 +1825,39 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(entity.wrote_state)
         self.assertEqual(len(hass.scheduled_callbacks), 1)
 
-    def test_wpm_number_entity_writes_setpoint_value_id(self):
-        hass = HomeAssistant()
-        coordinator = types.SimpleNamespace(
-            hass=hass,
-            data={"wpm_setpoint_ch": 42},
-            async_request_refresh=lambda: None,
+    def test_wpm_number_entities_write_main_value_ids(self):
+        cases = (
+            ("wpm_target_temperature", 42, 45, {"5774": "002D"}),
+            ("wpm_setpoint_ch", 42, 45, {"1352": "002D"}),
+            ("wpm_setpoint_hp", 42, 45, {"2179": "002D"}),
         )
-        client = ValueCaptureClient()
-        profile = WpmDeviceProfile()
-        description = next(
-            item for item in profile.number_descriptions if item[0] == "wpm_setpoint_ch"
-        )
-        entity = RemkoSmartWebNumber(
-            coordinator,
-            client,
-            "WIFI Stick - Waermepumpe",
-            profile,
-            description,
-        )
+        for key, initial, updated, expected in cases:
+            with self.subTest(key=key):
+                hass = HomeAssistant()
+                coordinator = types.SimpleNamespace(
+                    hass=hass,
+                    data={key: initial},
+                    async_request_refresh=lambda: None,
+                )
+                client = ValueCaptureClient()
+                profile = WpmDeviceProfile()
+                description = next(
+                    item for item in profile.number_descriptions if item[0] == key
+                )
+                entity = RemkoSmartWebNumber(
+                    coordinator,
+                    client,
+                    "WIFI Stick - Waermepumpe",
+                    profile,
+                    description,
+                )
 
-        asyncio.run(entity.async_set_native_value(45))
+                asyncio.run(entity.async_set_native_value(updated))
 
-        self.assertEqual(client.values, {"1352": "002D"})
-        self.assertEqual(coordinator.data["wpm_setpoint_ch"], 45)
-        self.assertTrue(entity.wrote_state)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+                self.assertEqual(client.values, expected)
+                self.assertEqual(coordinator.data[key], updated)
+                self.assertTrue(entity.wrote_state)
+                self.assertEqual(len(hass.scheduled_callbacks), 1)
 
     def test_local_climate_set_queue_falls_back_to_direct_publish(self):
         class QueuedMqtt:
