@@ -1493,6 +1493,23 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.local_portal_diagnostics()["status"], "ready")
         self.assertEqual(client.communication_diagnostics()["status"], "ready")
 
+    def test_diagnostic_metadata_derives_mac_from_stick_topic(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.topic = "V04P27/SMT1C9DC263C758"
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_mode = "portal_broker"
+        client._mqtt = None
+        client._local_mqtt_cloud_bridge_enabled = False
+        client.profile = ClimateDeviceProfile()
+        client.device_portal_id = None
+        client.device_portal_name = None
+        client.device_type = None
+        client.device_dev = None
+        client.device_mac = None
+
+        self.assertEqual(client.diagnostic_metadata()["Portal MAC"], "1C9DC263C758")
+
     def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.sid = "0123456789ABCDEF"

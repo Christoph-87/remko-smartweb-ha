@@ -321,6 +321,7 @@ class RemkoSmartWebClient:
 
     def diagnostic_metadata(self) -> dict[str, str]:
         profile = self.profile
+        device_mac = getattr(self, "device_mac", None) or _mac_from_stick_topic(self.topic)
         metadata = {
             "Detected Profile": getattr(profile, "profile_name", type(profile).__name__),
             "Profile Class": type(profile).__name__,
@@ -338,7 +339,6 @@ class RemkoSmartWebClient:
             metadata["Portal Type"] = self.device_type
         if self.device_dev:
             metadata["Portal DEV"] = self.device_dev
-        device_mac = getattr(self, "device_mac", None)
         if device_mac:
             metadata["Portal MAC"] = device_mac
         if self.topic:
@@ -2167,3 +2167,19 @@ class RemkoSmartWebClient:
             self._mqtt = None
         if self._owns_account:
             self.account.close()
+
+
+def _mac_from_stick_topic(topic: str | None) -> str | None:
+    """Extract the stick MAC from a known V04Pxx/SMT<mac> MQTT base topic."""
+    if not topic:
+        return None
+    parts = str(topic).split("/")
+    if len(parts) < 2:
+        return None
+    stick = parts[1].upper()
+    if not stick.startswith("SMT"):
+        return None
+    mac = stick[3:]
+    if len(mac) == 12 and all(ch in "0123456789ABCDEF" for ch in mac):
+        return mac
+    return None
