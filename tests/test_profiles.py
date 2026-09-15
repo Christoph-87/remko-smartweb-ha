@@ -133,7 +133,8 @@ class ProfileParsingTests(unittest.TestCase):
             'appframe.location.href="/webportal/Wifi/sd-card/lighttpd/webpages/smt.html'
             '?SMT_ID=70162fe655ec381ac6312ebf026aac54'
             '&SID=0123456789ABCDEF&SK=FEDCBA9876543210&us=3946&DEV=256'
-            '&NAME=Klima_Erdgeschoss&TYPE=MXW%20204%20-%20524";'
+            '&NAME=Klima_Erdgeschoss&TYPE=MXW%20204%20-%20524'
+            '&SMT_MAC=1C9DC263C758";'
         )
 
         self.assertEqual(
@@ -143,6 +144,7 @@ class ProfileParsingTests(unittest.TestCase):
                 "device_dev": "256",
                 "device_portal_name": "Klima_Erdgeschoss",
                 "device_type": "MXW 204 - 524",
+                "device_mac": "1C9DC263C758",
             },
         )
 

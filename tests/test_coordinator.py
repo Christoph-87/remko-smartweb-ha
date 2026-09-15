@@ -1465,6 +1465,7 @@ class CoordinatorTests(unittest.TestCase):
         client.device_portal_name = None
         client.device_type = None
         client.device_dev = None
+        client.device_mac = None
         client._local_mqtt_cloud_bridge_enabled = False
         client._last_status = {"power": "OFF"}
         client._last_status_source = "esp_rx"

@@ -344,7 +344,18 @@ def _extract_smartweb_portal_params_from_text(text: str) -> dict[str, str]:
         if not qs:
             continue
         params = {}
-        for key in ("SMT_ID", "SID", "SK", "us", "SMT_USER", "smt_user", "DEV", "NAME", "TYPE"):
+        for key in (
+            "SMT_ID",
+            "SID",
+            "SK",
+            "us",
+            "SMT_USER",
+            "smt_user",
+            "DEV",
+            "NAME",
+            "TYPE",
+            "SMT_MAC",
+        ):
             value = (qs.get(key) or [None])[0]
             if value not in (None, ""):
                 params[key] = value
@@ -443,6 +454,7 @@ def _extract_device_metadata_from_text(text: str) -> dict[str, str]:
         ("DEV", "device_dev"),
         ("NAME", "device_portal_name"),
         ("TYPE", "device_type"),
+        ("SMT_MAC", "device_mac"),
     ):
         value = params.get(source_key)
         if value:

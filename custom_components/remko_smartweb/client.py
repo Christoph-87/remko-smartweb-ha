@@ -120,6 +120,7 @@ class RemkoSmartWebClient:
         self.device_dev = None
         self.device_portal_name = None
         self.device_type = None
+        self.device_mac = None
         self._last_payload = None
         self._last_status = None
         self._last_status_source = None
@@ -312,6 +313,7 @@ class RemkoSmartWebClient:
         self.device_portal_id = metadata.get("device_portal_id") or self.device_portal_id
         self.device_portal_name = metadata.get("device_portal_name") or self.device_portal_name
         self.device_type = metadata.get("device_type") or self.device_type
+        self.device_mac = metadata.get("device_mac") or self.device_mac
         if self.device_kind in (DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE):
             profile = get_specialized_profile(self._profile_hint_name())
             if profile is not None:
@@ -336,6 +338,9 @@ class RemkoSmartWebClient:
             metadata["Portal Type"] = self.device_type
         if self.device_dev:
             metadata["Portal DEV"] = self.device_dev
+        device_mac = getattr(self, "device_mac", None)
+        if device_mac:
+            metadata["Portal MAC"] = device_mac
         if self.topic:
             metadata["MQTT Topic"] = _redact_debug_text(self.topic)
         if self._local_mqtt_host:
