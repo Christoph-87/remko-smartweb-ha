@@ -29,6 +29,7 @@ from .const import (
     CONF_LOCAL_MQTT_LAST_PROBE,
     CONF_LOCAL_MQTT_CLOUD_BRIDGE,
     CONF_LOCAL_MQTT_CANDIDATE,
+    CONF_LOCAL_MQTT_STICK_HOST,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
@@ -626,7 +627,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         """Offer best-effort local stick IP candidates before manual MQTT setup."""
         if user_input is not None:
             selected = user_input.get(CONF_LOCAL_MQTT_CANDIDATE, _MANUAL_LOCAL_MQTT_HOST)
-            self._pending_local_mqtt_host = (
+            self._pending_local_mqtt_stick_host = (
                 "" if selected == _MANUAL_LOCAL_MQTT_HOST else selected
             )
             self._options[CONF_LOCAL_MQTT_CANDIDATE] = selected
@@ -646,7 +647,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         options = dict(candidates)
         current_host = self._options.get(CONF_LOCAL_MQTT_HOST)
         if not candidates and not current_host:
-            self._pending_local_mqtt_host = ""
+            self._pending_local_mqtt_stick_host = ""
             return await self.async_step_local_broker()
         if current_host and current_host not in options:
             options[current_host] = f"{current_host} (current)"
@@ -678,6 +679,9 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             host = (entry.options or {}).get(CONF_LOCAL_MQTT_HOST)
             if host:
                 hosts.add(str(host).strip())
+            stick_host = (entry.options or {}).get(CONF_LOCAL_MQTT_STICK_HOST)
+            if stick_host:
+                hosts.add(str(stick_host).strip())
             data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
             client = data.get("client") if isinstance(data, dict) else None
             if client is None:
@@ -701,6 +705,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 mode = user_input.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
                 user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
                 password = user_input.get(CONF_LOCAL_MQTT_PASSWORD)
+                stick_host = (user_input.get(CONF_LOCAL_MQTT_STICK_HOST) or "").strip()
                 if password in (None, "") and user_val:
                     password = self._options.get(CONF_LOCAL_MQTT_PASSWORD, "")
                 password = password or ""
@@ -722,8 +727,12 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 self._options[CONF_LOCAL_MQTT_HOST] = host
                 self._options[CONF_LOCAL_MQTT_PORT] = port
                 self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
-                if getattr(self, "_pending_local_mqtt_host", "") == host:
-                    self._options[CONF_LOCAL_MQTT_CANDIDATE] = host
+                if stick_host:
+                    self._options[CONF_LOCAL_MQTT_STICK_HOST] = stick_host
+                else:
+                    self._options.pop(CONF_LOCAL_MQTT_STICK_HOST, None)
+                if getattr(self, "_pending_local_mqtt_stick_host", "") == stick_host:
+                    self._options[CONF_LOCAL_MQTT_CANDIDATE] = stick_host
                 self._options[CONF_LOCAL_MQTT_CLOUD_BRIDGE] = bool(
                     user_input.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
                 )
@@ -743,6 +752,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                     CONF_LOCAL_MQTT_LAST_PROBE,
                     CONF_LOCAL_MQTT_CLOUD_BRIDGE,
                     CONF_LOCAL_MQTT_CANDIDATE,
+                    CONF_LOCAL_MQTT_STICK_HOST,
                 ):
                     self._options.pop(k, None)
             return self.async_create_entry(title="", data=self._options)
@@ -759,11 +769,15 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 ),
             ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
             vol.Optional(
-                CONF_LOCAL_MQTT_HOST,
+                CONF_LOCAL_MQTT_STICK_HOST,
                 default=(user_input or self._options).get(
-                    CONF_LOCAL_MQTT_HOST,
-                    getattr(self, "_pending_local_mqtt_host", ""),
+                    CONF_LOCAL_MQTT_STICK_HOST,
+                    getattr(self, "_pending_local_mqtt_stick_host", ""),
                 ),
+            ): str,
+            vol.Optional(
+                CONF_LOCAL_MQTT_HOST,
+                default=(user_input or self._options).get(CONF_LOCAL_MQTT_HOST, ""),
             ): str,
             vol.Optional(
                 CONF_LOCAL_MQTT_PORT,

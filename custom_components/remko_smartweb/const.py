@@ -30,6 +30,7 @@ CONF_LOCAL_MQTT_DETECTED_MODE = "local_mqtt_detected_mode"
 CONF_LOCAL_MQTT_LAST_PROBE = "local_mqtt_last_probe"
 CONF_LOCAL_MQTT_CLOUD_BRIDGE = "local_mqtt_cloud_bridge"
 CONF_LOCAL_MQTT_CANDIDATE = "local_mqtt_candidate"
+CONF_LOCAL_MQTT_STICK_HOST = "local_mqtt_stick_host"
 
 LOCAL_MQTT_MODE_AUTO = "auto"
 LOCAL_MQTT_MODE_PORTAL_BROKER = "portal_broker"

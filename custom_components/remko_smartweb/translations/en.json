@@ -58,16 +58,17 @@
       },
       "local_candidate": {
         "title": "Local MQTT candidate",
-        "description": "Home Assistant found {candidate_count} possible ESP/REMKO stick IP candidates from local hostname hints. IPs already used by another REMKO entry are hidden. Choose one to prefill the local MQTT host, or continue with manual entry. This is only a suggestion; the next step probes the selected host.",
+        "description": "Home Assistant found {candidate_count} possible ESP/REMKO stick IP candidates from local hostname hints. IPs already used by another REMKO entry are hidden. Choose one to remember it for validation, or continue with manual entry. This is only a suggestion; the next step still asks for the MQTT connection host.",
         "data": {
-          "local_mqtt_candidate": "Candidate IP"
+          "local_mqtt_candidate": "Stick IP candidate"
         }
       },
       "local_broker": {
         "title": "Local MQTT Broker (optional)",
-        "description": "Leave 'Local MQTT host' empty to use the REMKO cloud portal. Fill it in when this device is reachable through local MQTT. Automatic probe checks the host or broker you enter; it is not broad network discovery.",
+        "description": "Leave 'Local MQTT host' empty to use the REMKO cloud portal. For direct device MQTT, use the stick IP as the host. For DNS-redirected WiFi sticks, keep the stick IP only as a validation hint and enter the local broker IP as the host.",
         "data": {
           "local_mqtt_mode": "Local MQTT mode",
+          "local_mqtt_stick_host": "Stick IP candidate (for validation)",
           "local_mqtt_host": "Local MQTT host (e.g. 192.168.2.4)",
           "local_mqtt_port": "Local MQTT port",
           "local_mqtt_user": "Local MQTT username",
@@ -75,7 +76,8 @@
           "local_mqtt_cloud_bridge": "Bridge REMKO app commands through Home Assistant"
         },
         "data_description": {
-          "local_mqtt_mode": "Automatic probe is recommended. Enter a device IP for direct MQTT first; use a local broker host for redirected WiFi-stick setups.",
+          "local_mqtt_mode": "Automatic probe is recommended. Direct device MQTT connects to the stick IP. Redirected WiFi-stick setups connect to your local broker IP.",
+          "local_mqtt_stick_host": "Only used as a hint to detect mismatches. It is not used as the broker host unless you copy it into Local MQTT host.",
           "local_mqtt_cloud_bridge": "Experimental. Use only for redirected WiFi-stick setups where the REMKO app loses control while the stick is connected locally."
         }
       }

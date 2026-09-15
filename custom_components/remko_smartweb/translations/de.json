@@ -58,16 +58,17 @@
       },
       "local_candidate": {
         "title": "Lokaler MQTT-Kandidat",
-        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. IPs, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Wähle einen Kandidaten, um den lokalen MQTT-Host vorzubelegen, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt prüft den gewählten Host.",
+        "description": "Home Assistant hat {candidate_count} mögliche ESP/REMKO-Stick-IP-Kandidaten aus lokalen Hostnamen-Hinweisen gefunden. IPs, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Wähle einen Kandidaten, um ihn zur Prüfung zu merken, oder fahre mit manueller Eingabe fort. Das ist nur ein Vorschlag; der nächste Schritt fragt weiterhin den MQTT-Verbindungshost ab.",
         "data": {
-          "local_mqtt_candidate": "Kandidaten-IP"
+          "local_mqtt_candidate": "Stick-IP-Kandidat"
         }
       },
       "local_broker": {
         "title": "Lokaler MQTT-Broker (optional)",
-        "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Ausfüllen, wenn dieses Gerät über lokales MQTT erreichbar ist. Die automatische Prüfung testet den eingetragenen Host oder Broker; sie ist keine breite Netzwerksuche.",
+        "description": "Leer lassen, um das REMKO Cloud-Portal zu verwenden. Für direktes Geräte-MQTT ist die Stick-IP der Host. Für DNS-umgeleitete WiFi-Sticks bleibt die Stick-IP nur ein Prüfhilfe-Hinweis; als Host trägst du die lokale Broker-IP ein.",
         "data": {
           "local_mqtt_mode": "Lokaler MQTT-Modus",
+          "local_mqtt_stick_host": "Stick-IP-Kandidat (zur Prüfung)",
           "local_mqtt_host": "Lokaler MQTT-Host (z. B. 192.168.2.4)",
           "local_mqtt_port": "Lokaler MQTT-Port",
           "local_mqtt_user": "Lokaler MQTT-Benutzername",
@@ -75,7 +76,8 @@
           "local_mqtt_cloud_bridge": "REMKO-App-Befehle über Home Assistant weiterleiten"
         },
         "data_description": {
-          "local_mqtt_mode": "Automatische Prüfung ist empfohlen. Zuerst die Geräte-IP für direktes MQTT eintragen; für umgeleitete WiFi-Sticks den lokalen Broker-Host verwenden.",
+          "local_mqtt_mode": "Automatische Prüfung ist empfohlen. Direktes Geräte-MQTT verbindet zur Stick-IP. Umgeleitete WiFi-Sticks verbinden zu deiner lokalen Broker-IP.",
+          "local_mqtt_stick_host": "Nur als Hinweis für Mismatch-Erkennung. Dieses Feld wird nicht als Broker-Host verwendet, außer du kopierst es in Lokaler MQTT-Host.",
           "local_mqtt_cloud_bridge": "Experimentell. Nur für umgeleitete WiFi-Sticks verwenden, bei denen die REMKO-App die Steuerung verliert, während der Stick lokal verbunden ist."
         }
       }
