@@ -67,6 +67,28 @@ def _candidate_label(ip: str, sources: set[str]) -> str:
     return f"{ip} ({suffix})" if suffix else ip
 
 
+def _compact_mac(value: str | None) -> str | None:
+    if not value:
+        return None
+    compact = "".join(ch for ch in value.upper() if ch in "0123456789ABCDEF")
+    return compact if len(compact) == 12 else None
+
+
+def _arp_ip_for_mac(mac: str | None) -> str | None:
+    compact_mac = _compact_mac(mac)
+    if not compact_mac:
+        return None
+    try:
+        arp = Path("/proc/net/arp").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    for line in arp.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 4 and _compact_mac(parts[3]) == compact_mac:
+            return parts[0]
+    return None
+
+
 def _resolver_search_domains() -> list[str]:
     domains: list[str] = []
     try:
@@ -656,6 +678,17 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             host = (entry.options or {}).get(CONF_LOCAL_MQTT_HOST)
             if host:
                 hosts.add(str(host).strip())
+            data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+            client = data.get("client") if isinstance(data, dict) else None
+            if client is None:
+                continue
+            try:
+                metadata = client.diagnostic_metadata()
+            except Exception:
+                continue
+            ip = _arp_ip_for_mac(metadata.get("Portal MAC"))
+            if ip:
+                hosts.add(ip)
         return hosts
 
     async def async_step_local_broker(self, user_input=None):
