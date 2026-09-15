@@ -354,6 +354,9 @@ class FakeMqtt:
         raise AssertionError("cloud writes must not wait for CLIENT2HOST")
 
 
+CLIMATE_C0_RX = "aa000000000000000000c00146667f7f0030000000646400000000000000000000"
+
+
 class WriteFailureClient:
     def __init__(self):
         self.values = None
@@ -1194,6 +1197,32 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(topic, "V04P28/SMTID/CLIENT2HOST")
         self.assertRegex(payload["CLIENT_ID"], r"^SMT[12][0-9]{2}I0{16}$")
         self.assertFalse(payload["CLIENT_ID"].startswith("SMTHA"))
+
+    def test_cloud_read_status_does_not_use_local_device_values_path(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.device_name = "MXW"
+        client.profile = ClimateDeviceProfile()
+        client._local_mqtt_host = None
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_AUTO
+        client._last_status = None
+        client._mqtt = FakeMqtt()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_poll_values = lambda timeout=10: (_ for _ in ()).throw(
+            AssertionError("cloud C0 reads must not poll local device values")
+        )
+        client._mqtt.wait_rx = lambda timeout=10: json.dumps({"Rx": CLIMATE_C0_RX})
+
+        status = client.read_status()
+
+        self.assertEqual(status["power"], "ON")
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
+        self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
 
     def test_cloud_mqtt_poll_values_matches_main_client_id(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
