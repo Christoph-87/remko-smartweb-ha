@@ -1376,6 +1376,47 @@ class CoordinatorTests(unittest.TestCase):
             "V04P27/0123456789ABCDEF/ESP",
         )
 
+    def test_local_portal_diagnostics_treats_parsed_esp_status_as_ready(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/SMTABC"
+        client._local_mqtt_host = "192.168.2.4"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_command_topic = "V04P27/0123456789ABCDEF"
+        client._local_mqtt_mode = "portal_broker"
+        client.profile = ClimateDeviceProfile()
+        client.device_portal_id = None
+        client.device_portal_name = None
+        client.device_type = None
+        client.device_dev = None
+        client._local_mqtt_cloud_bridge_enabled = False
+        client._last_status = {"power": "OFF"}
+        client._last_status_source = "esp_rx"
+        client._mqtt_credentials_ready = lambda: True
+        client._cloud_bridge_diagnostic_snapshot = lambda: {"enabled": False}
+        client._mqtt_diagnostic_snapshot = lambda: {
+            "mqtt_connected": True,
+            "subscribed_topics": [
+                "V04P27/SMTABC/HOST2PORTAL",
+                "V04P27/0123456789ABCDEF/ESP",
+                "V04P27/0123456789ABCDEF/RESP",
+            ],
+            "recent_messages": [],
+            "last_connack_rc": 0,
+            "last_host2portal_age_s": 20.0,
+            "last_portal2host_age_s": 19.5,
+            "last_esp_publish_age_s": 0.0,
+            "last_esp_publish_topic": "V04P27/0123456789ABCDEF/ESP",
+            "last_resp_age_s": 27.8,
+            "last_resp_topic": "V04P27/0123456789ABCDEF/RESP",
+            "last_resp_after_last_esp": False,
+            "last_values_age_s": None,
+        }
+
+        self.assertEqual(client.local_portal_diagnostics()["status"], "ready")
+        self.assertEqual(client.communication_diagnostics()["status"], "ready")
+
     def test_dhw_value_write_uses_rbw_esp_tx_before_client2host_fallback(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.sid = "0123456789ABCDEF"

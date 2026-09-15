@@ -442,6 +442,14 @@ class RemkoSmartWebClient:
                 "wpm_esp",
             }
         ) or isinstance(last_resp_age_s, (int, float))
+        fresh_status_readback = last_status_source in {
+            "esp_rx",
+            "esp_rx_retry",
+            "client2host_values",
+            "rbw_esp",
+            "kwt_esp",
+            "wpm_esp",
+        }
         smartweb_device_resolved = bool(command_topic_resolved or self._mqtt_credentials_ready())
         checks = {
             "local_mqtt_configured": True,
@@ -470,7 +478,9 @@ class RemkoSmartWebClient:
         guidance = "Local MQTT setup looks ready."
         if missing:
             guidance = guidance_by_check.get(missing[0], "Complete the missing local portal setup checks.")
-        elif last_status_cached or last_resp_after_last_esp is False:
+        elif last_status_cached or (
+            last_resp_after_last_esp is False and not fresh_status_readback
+        ):
             status = "degraded"
             guidance = "Last command/status is not freshly confirmed; inspect the local MQTT write and readback topics."
         return {
@@ -558,6 +568,14 @@ class RemkoSmartWebClient:
                 "wpm_esp",
             }
         ) or isinstance(last_resp_age_s, (int, float)) or isinstance(last_values_age_s, (int, float))
+        fresh_status_readback = last_status_source in {
+            "esp_rx",
+            "esp_rx_retry",
+            "client2host_values",
+            "rbw_esp",
+            "kwt_esp",
+            "wpm_esp",
+        }
         checks = {
             "mqtt_credentials_resolved": self._mqtt_credentials_ready() or bool(command_topic),
             "mqtt_connected": mqtt_connected,
@@ -575,7 +593,9 @@ class RemkoSmartWebClient:
                 "status_readback_seen": "Wait for the next poll or verify the device returns RESP/values after writes.",
             }
             guidance = guidance_by_check.get(missing[0], "Complete the missing communication checks.")
-        elif last_status_cached or last_resp_after_last_esp is False:
+        elif last_status_cached or (
+            last_resp_after_last_esp is False and not fresh_status_readback
+        ):
             status = "degraded"
             guidance = "Last command/status is not freshly confirmed; inspect ESP/RESP or values freshness."
 
