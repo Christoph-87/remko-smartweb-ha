@@ -81,10 +81,16 @@ device from random MQTT traffic. A good flow:
    - `Use REMKO cloud`
    - `Try local connection`
 5. Help the user find a candidate local target:
-   - show guidance that REMKO sticks often appear as Espressif/ESP hostnames in
-     the router or DHCP lease table
-   - later: optionally suggest candidates from Home Assistant network discovery
-     or integrations that expose network device metadata
+   - show guidance that REMKO sticks often announce generic Espressif hostnames
+     such as `espressif`; multiple sticks may use the same hostname, so this is
+     only a candidate source, not a unique device match
+   - optionally suggest candidates from infrastructure-neutral sources that are
+     available in the running HA environment:
+     - the system resolver search domain (`espressif`, `espressif.local`)
+     - the default gateway/router DNS server, when it can be inferred
+     - Home Assistant network discovery or integrations that expose network
+       device metadata
+     - the ARP/neighbor table, but only after a MAC is already known
    - if no candidate is known, ask the user for the device IP address
 6. Probe the candidate IP as a direct local MQTT device first:
    - TCP connect to `1883` and optionally `8883`
@@ -127,6 +133,12 @@ stick connection to a local broker. From Home Assistant's perspective there is
 no DNS rewrite event to detect; HA only connects to the broker host configured
 by the user. Therefore automatic mode should mean "run guided probes against the
 user-selected local target" rather than "listen broadly and guess the setup".
+
+Likewise, hostname hints such as `espressif` are not tied to one router vendor.
+They are usually the hostname sent by the ESP-based stick and may be surfaced by
+DHCP, local DNS, mDNS, or a router integration. Since several sticks can publish
+the same hostname, these hints should feed a selectable candidate list. They
+must not silently decide which cloud device maps to which IP.
 
 For direct device MQTT, the meaningful probe is the device IP itself. For
 redirected portal-broker mode, the meaningful probe is the local broker plus a
