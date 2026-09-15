@@ -110,6 +110,16 @@ def _dns_query_a(server: str, name: str, timeout: float = 1.2) -> set[str]:
             if part
         ) + b"\0"
 
+    def _skip_name(data: bytes, offset: int) -> int | None:
+        while offset < len(data):
+            label_len = data[offset]
+            if label_len == 0:
+                return offset + 1
+            if label_len & 0xC0 == 0xC0:
+                return offset + 2
+            offset += 1 + label_len
+        return None
+
     try:
         query_id = random.randrange(65536)
         packet = (
@@ -134,26 +144,16 @@ def _dns_query_a(server: str, name: str, timeout: float = 1.2) -> set[str]:
     )
     offset = 12
     for _ in range(qd_count):
-        while offset < len(data) and data[offset] != 0:
-            label_len = data[offset]
-            if label_len & 0xC0 == 0xC0:
-                offset += 2
-                break
-            offset += 1 + label_len
-        else:
+        offset = _skip_name(data, offset)
+        if offset is None or offset + 4 > len(data):
             return set()
-        offset += 5
+        offset += 4
 
     results: set[str] = set()
     for _ in range(an_count):
-        if offset >= len(data):
+        offset = _skip_name(data, offset)
+        if offset is None:
             break
-        if data[offset] & 0xC0 == 0xC0:
-            offset += 2
-        else:
-            while offset < len(data) and data[offset] != 0:
-                offset += 1 + data[offset]
-            offset += 1
         if offset + 10 > len(data):
             break
         answer_type, _answer_class, _ttl, rd_len = struct.unpack(
