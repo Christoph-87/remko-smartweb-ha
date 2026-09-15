@@ -97,6 +97,7 @@ class RemkoSmartWebClient:
         local_mqtt_password: str | None = None,
         local_mqtt_topic: str | None = None,
         local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
+        local_mqtt_last_probe: dict | None = None,
     ):
         self.email = email
         self.password = password
@@ -132,6 +133,9 @@ class RemkoSmartWebClient:
         self._local_mqtt_password = local_mqtt_password
         self._local_mqtt_command_topic = None
         self._local_mqtt_mode = local_mqtt_mode or LOCAL_MQTT_MODE_AUTO
+        self._local_mqtt_last_probe = (
+            local_mqtt_last_probe if isinstance(local_mqtt_last_probe, dict) else None
+        )
 
     @property
     def uses_local_mqtt(self) -> bool:
@@ -461,6 +465,7 @@ class RemkoSmartWebClient:
             "checks": checks,
             "local_broker": f"{local_mqtt_host}:{local_mqtt_port}",
             "local_mqtt_mode": local_mqtt_mode,
+            "last_probe": getattr(self, "_local_mqtt_last_probe", None),
             "local_topic": _redact_debug_text(topic) if topic else None,
             "command_topic": (
                 _redact_debug_text(topic)

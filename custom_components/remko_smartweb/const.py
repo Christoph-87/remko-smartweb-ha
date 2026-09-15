@@ -27,6 +27,7 @@ CONF_LOCAL_MQTT_PASSWORD = "local_mqtt_password"
 CONF_LOCAL_MQTT_TOPIC = "local_mqtt_topic"
 CONF_LOCAL_MQTT_MODE = "local_mqtt_mode"
 CONF_LOCAL_MQTT_DETECTED_MODE = "local_mqtt_detected_mode"
+CONF_LOCAL_MQTT_LAST_PROBE = "local_mqtt_last_probe"
 
 LOCAL_MQTT_MODE_AUTO = "auto"
 LOCAL_MQTT_MODE_PORTAL_BROKER = "portal_broker"

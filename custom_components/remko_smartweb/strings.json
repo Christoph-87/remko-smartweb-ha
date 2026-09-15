@@ -33,6 +33,8 @@
     },
     "error": {
       "cannot_connect": "Cannot connect. Check credentials and device name.",
+      "local_mqtt_auth_failed": "Local MQTT login or ACL check failed. Check username, password, listener settings and permissions.",
+      "local_mqtt_tcp_failed": "Cannot reach the local MQTT host and port from Home Assistant.",
       "no_devices": "No new devices found for this account."
     }
   },

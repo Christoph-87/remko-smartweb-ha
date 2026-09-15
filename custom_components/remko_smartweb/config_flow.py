@@ -22,6 +22,7 @@ from .const import (
     CONF_LOCAL_MQTT_USER,
     CONF_LOCAL_MQTT_PASSWORD,
     CONF_LOCAL_MQTT_MODE,
+    CONF_LOCAL_MQTT_LAST_PROBE,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
@@ -34,7 +35,7 @@ from .const import (
     DEFAULT_MIN_TEMP,
     DEFAULT_MAX_TEMP,
 )
-from .api import RemkoSmartWebClient
+from .api import RemkoSmartWebClient, probe_local_mqtt
 from .profiles import looks_like_dhw_name
 
 _LOGGER = logging.getLogger(__name__)
@@ -263,26 +264,36 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_device_kind()
 
     async def async_step_local_broker(self, user_input=None):
-        """Optional step: configure a local MQTT broker for this device.
-
-        Leave 'Local MQTT host' blank to use the REMKO cloud portal (default).
-        Fill it in when the WiFi stick is redirected to a local Mosquitto broker
-        (e.g. via AdGuard DNS override) so HA connects directly to that broker
-        rather than the cloud.  HA will then discover the stick's local MQTT
-        topic and use the local portal path for status/control.
-        """
+        """Optional step: configure and probe local MQTT for this device."""
+        errors = {}
         if user_input is not None:
             host = (user_input.get(CONF_LOCAL_MQTT_HOST) or "").strip()
             if host:
+                port = int(user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT)
+                mode = user_input.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
+                user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
+                password = user_input.get(CONF_LOCAL_MQTT_PASSWORD) or ""
+                probe = await self._async_probe_local_mqtt(
+                    host,
+                    port,
+                    user_val or None,
+                    password if user_val else None,
+                    mode,
+                )
+                if probe["status"] == "tcp_failed":
+                    errors["base"] = "local_mqtt_tcp_failed"
+                    return self._show_local_broker_form(user_input, errors)
+                if probe["status"] == "mqtt_auth_or_acl_failed":
+                    errors["base"] = "local_mqtt_auth_failed"
+                    return self._show_local_broker_form(user_input, errors)
+
                 self._options[CONF_LOCAL_MQTT_MODE] = user_input.get(
                     CONF_LOCAL_MQTT_MODE,
                     LOCAL_MQTT_MODE_AUTO,
                 )
                 self._options[CONF_LOCAL_MQTT_HOST] = host
-                self._options[CONF_LOCAL_MQTT_PORT] = int(
-                    user_input.get(CONF_LOCAL_MQTT_PORT) or DEFAULT_LOCAL_MQTT_PORT
-                )
-                user_val = (user_input.get(CONF_LOCAL_MQTT_USER) or "").strip()
+                self._options[CONF_LOCAL_MQTT_PORT] = port
+                self._options[CONF_LOCAL_MQTT_LAST_PROBE] = probe
                 if user_val:
                     self._options[CONF_LOCAL_MQTT_USER] = user_val
                     self._options[CONF_LOCAL_MQTT_PASSWORD] = (
@@ -295,40 +306,63 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # User cleared the host → remove all local broker settings
                 for k in (CONF_LOCAL_MQTT_HOST, CONF_LOCAL_MQTT_PORT,
                           CONF_LOCAL_MQTT_USER, CONF_LOCAL_MQTT_PASSWORD,
-                          CONF_LOCAL_MQTT_MODE):
+                          CONF_LOCAL_MQTT_MODE, CONF_LOCAL_MQTT_LAST_PROBE):
                     self._options.pop(k, None)
             return self.async_create_entry(title="", data=self._options)
 
-        import voluptuous as vol  # already imported at module level, but safe to re-reference
+        return self._show_local_broker_form()
+
+    def _show_local_broker_form(self, user_input=None, errors=None):
         schema = vol.Schema({
             vol.Optional(
                 CONF_LOCAL_MQTT_MODE,
-                default=self._options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO),
+                default=(user_input or self._options).get(
+                    CONF_LOCAL_MQTT_MODE,
+                    LOCAL_MQTT_MODE_AUTO,
+                ),
             ): vol.In(LOCAL_MQTT_MODE_OPTIONS),
             vol.Optional(
                 CONF_LOCAL_MQTT_HOST,
-                default=self._options.get(CONF_LOCAL_MQTT_HOST, ""),
+                default=(user_input or self._options).get(CONF_LOCAL_MQTT_HOST, ""),
             ): str,
             vol.Optional(
                 CONF_LOCAL_MQTT_PORT,
-                default=self._options.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT),
+                default=(user_input or self._options).get(
+                    CONF_LOCAL_MQTT_PORT,
+                    DEFAULT_LOCAL_MQTT_PORT,
+                ),
             ): vol.Coerce(int),
             vol.Optional(
                 CONF_LOCAL_MQTT_USER,
-                default=self._options.get(CONF_LOCAL_MQTT_USER, ""),
+                default=(user_input or self._options).get(CONF_LOCAL_MQTT_USER, ""),
             ): str,
             vol.Optional(
                 CONF_LOCAL_MQTT_PASSWORD,
-                default=self._options.get(CONF_LOCAL_MQTT_PASSWORD, ""),
+                default=(user_input or self._options).get(CONF_LOCAL_MQTT_PASSWORD, ""),
             ): str,
         })
         return self.async_show_form(
             step_id="local_broker",
             data_schema=schema,
+            errors=errors or {},
             description_placeholders={
                 "broker_hint": "e.g. 192.168.2.4 or leave empty for REMKO cloud"
             },
         )
+
+    async def _async_probe_local_mqtt(self, host, port, user, password, mode):
+        def _probe():
+            return probe_local_mqtt(
+                host,
+                port,
+                user,
+                password,
+                mode=mode,
+                timeout=4.0,
+                tcp_timeout=2.0,
+            ).as_dict()
+
+        return await self.hass.async_add_executor_job(_probe)
 
     def _suggest_device_kind(self, device_name: str) -> str:
         if looks_like_dhw_name(device_name):

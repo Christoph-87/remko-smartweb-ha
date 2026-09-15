@@ -24,6 +24,7 @@ from .const import (
     CONF_LOCAL_MQTT_TOPIC,
     CONF_LOCAL_MQTT_MODE,
     CONF_LOCAL_MQTT_DETECTED_MODE,
+    CONF_LOCAL_MQTT_LAST_PROBE,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
@@ -90,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     local_mqtt_user = entry.options.get(CONF_LOCAL_MQTT_USER) or None
     local_mqtt_password = entry.options.get(CONF_LOCAL_MQTT_PASSWORD) or None
     local_mqtt_topic = entry.data.get(CONF_LOCAL_MQTT_TOPIC) or None
+    local_mqtt_last_probe = entry.options.get(CONF_LOCAL_MQTT_LAST_PROBE)
     configured_local_mqtt_mode = entry.options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
     local_mqtt_mode = configured_local_mqtt_mode
     if configured_local_mqtt_mode == LOCAL_MQTT_MODE_AUTO:
@@ -114,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         local_mqtt_password=local_mqtt_password,
         local_mqtt_topic=local_mqtt_topic,
         local_mqtt_mode=local_mqtt_mode,
+        local_mqtt_last_probe=local_mqtt_last_probe,
     )
     coordinator = RemkoSmartWebCoordinator(
         hass,

@@ -33,6 +33,8 @@
     },
     "error": {
       "cannot_connect": "Verbindung fehlgeschlagen. Prüfe Zugangsdaten und Gerätenamen.",
+      "local_mqtt_auth_failed": "Lokaler MQTT-Login oder ACL-Prüfung fehlgeschlagen. Prüfe Benutzername, Passwort, Listener-Einstellungen und Rechte.",
+      "local_mqtt_tcp_failed": "Home Assistant erreicht den lokalen MQTT-Host und Port nicht.",
       "no_devices": "Keine neuen Geräte für dieses Konto gefunden."
     }
   },
