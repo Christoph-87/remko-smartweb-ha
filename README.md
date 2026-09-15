@@ -80,13 +80,13 @@ automatic mode means "probe this local target" rather than broad network
 discovery. See [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
 for the current architecture and onboarding plan.
 
-The local mode is intended for advanced installations where a single WiFi stick is redirected from `smartweb.remko.media` to a local broker. Enable it per device in the integration options:
+The local mode is intended for advanced installations where selected WiFi sticks
+are redirected from `smartweb.remko.media` to a local broker. Configure it from
+the device's integration options:
 
-- `Local MQTT host`
-- `Local MQTT port`
-- `Local MQTT mode` (`Automatic probe`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
-- `Local MQTT username`
-- `Local MQTT password`
+- `Local connection mode` (`Cloud only`, `Redirected WiFi stick / local portal broker`, or `Direct device MQTT / SmartControl bridge`)
+- `Stick IP address` for candidate validation and mismatch warnings
+- shared local broker host, port, username, and password for redirected WiFi-stick setups
 - `Bridge REMKO app commands through Home Assistant` (experimental, redirected WiFi-stick setups only)
 
 For redirected WiFi sticks, the integration discovers the local stick from its `HOST2PORTAL` announcements and keeps that local topic for status handling. For ESP commands, some sticks subscribe on their normal SID-based SmartWeb topic, so the integration resolves that command topic separately and sends SET frames there.
@@ -105,6 +105,33 @@ If no MQTT service is reachable on the device IP, the redirected local portal
 broker path is the next candidate. In that setup, Home Assistant connects to the
 local broker directly; the DNS rewrite only affects the stick, not Home
 Assistant itself.
+
+### AdGuard Home DNS rewrite example
+
+For redirected WiFi-stick setups, the stick must resolve REMKO's broker hostname
+to the local MQTT broker. Scope the rewrite to the selected stick IPs only. Do
+not add a broad rewrite for the whole network, because Home Assistant and the
+cloud bridge still need to reach REMKO's real cloud endpoints.
+
+In AdGuard Home, add one custom filtering rule per redirected stick:
+
+```text
+||smartweb.remko.media^$client=<stick-ip>,dnsrewrite=<local-broker-ip>
+```
+
+Example with three REMKO sticks redirected to a broker on `192.168.2.4`:
+
+```text
+||smartweb.remko.media^$client=192.168.2.102,dnsrewrite=192.168.2.4
+||smartweb.remko.media^$client=192.168.2.88,dnsrewrite=192.168.2.4
+||smartweb.remko.media^$client=192.168.2.89,dnsrewrite=192.168.2.4
+```
+
+After saving the rules, reconnect or reboot the selected stick so it performs a
+fresh DNS lookup. The local MQTT status sensor should then start seeing
+`V04P27/SMT.../HOST2PORTAL` for that stick. If the discovered `SMT...` topic
+does not match the MAC derived from the configured stick IP, the integration
+will report a mismatch instead of treating the mapping as healthy.
 
 Home Assistant exposes a diagnostic **Local MQTT status** sensor for devices with local MQTT options enabled. Use it as the first setup checklist:
 

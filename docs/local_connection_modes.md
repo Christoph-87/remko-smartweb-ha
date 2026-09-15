@@ -110,6 +110,9 @@ device from random MQTT traffic. A good flow:
    - the stick likely connects outbound to REMKO's broker
    - the user needs a local broker/listener and a DNS rewrite for this one stick
    - Home Assistant must be able to connect to that local broker
+   - for AdGuard Home, prefer per-client rewrite rules so only the selected
+     stick IP is redirected:
+     `||smartweb.remko.media^$client=<stick-ip>,dnsrewrite=<broker-ip>`
 8. Probe the local broker/listener for the redirected-stick path:
    - TCP connect to the user-provided local broker host/port
    - MQTT CONNACK/auth result for the Home Assistant-side account
