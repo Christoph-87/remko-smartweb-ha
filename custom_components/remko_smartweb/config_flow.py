@@ -489,8 +489,8 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return DEVICE_KIND_DHW
         return DEVICE_KIND_AUTO
 
-    def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
-        return dict(DEVICE_KIND_OPTIONS)
+    def _device_kind_options(self, detected_kind: str | None = None) -> tuple[str, ...]:
+        return DEVICE_KIND_OPTIONS
 
     async def async_step_import(self, user_input):
         return await self.async_step_user(user_input)
@@ -883,8 +883,8 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             return DEVICE_KIND_DHW
         return DEVICE_KIND_AUTO
 
-    def _device_kind_options(self, detected_kind: str | None = None) -> dict[str, str]:
-        return dict(DEVICE_KIND_OPTIONS)
+    def _device_kind_options(self, detected_kind: str | None = None) -> tuple[str, ...]:
+        return DEVICE_KIND_OPTIONS
 
     def _shows_climate_options(self, device_kind: str) -> bool:
         return device_kind in (DEVICE_KIND_AUTO, DEVICE_KIND_CLIMATE)
