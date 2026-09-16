@@ -1,10 +1,21 @@
 # Changelog
 
 ## Unreleased
+
+## v0.5.0-beta.1
+- Pre-release for testing the experimental local MQTT work. This release is
+  intended for users who explicitly want to try local operation and provide
+  feedback; cloud-only users should stay on the latest stable release.
 - Add an experimental opt-in cloud-command bridge for redirected local MQTT setups, forwarding REMKO app cloud MQTT commands to the local broker and local responses back to the cloud topic
 - Add a per-device `Beep on command` switch entity so the command beep can be toggled directly from Home Assistant instead of only through the integration options
 - Restore extended AC switch behavior for Value-ID capable climate profiles: Power keeps the Value-ID path, while Eco, Turbo, Sleep, Bioclean, and Frost Protection fall back to the C0/ESP SET path when needed
 - Parse the Bioclean flag from C0 status frames so the switch can reflect device state after polling
+- Add the redirected WiFi-stick / local portal broker mode, direct local MQTT
+  probe groundwork, shared local broker settings, per-device stick-IP
+  validation, and diagnostic Local MQTT status sensors
+- Add documentation for Mosquitto 2.x listener separation, the stick-facing
+  `8883` TLS listener, per-client DNS rewrites with AdGuard Home, and the
+  `smartweb.remko.media` certificate requirement
 
 ## v0.4.19
 - Keep the browser-like SmartWeb user agent on the full account HTTP session, not only on the login request. v0.4.18 fixed login itself, but REMKO can also block follow-up requests such as `/rest/liste` and device detail pages when they use the default Python/requests user agent
