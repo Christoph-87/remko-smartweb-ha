@@ -30,9 +30,27 @@ Observed with MXW WiFi sticks:
 - stick announces on `V04P27/SMT.../HOST2PORTAL`
 - local portal answers `V04P27/SMT.../PORTAL2HOST` with `{"WSID": ""}`
 - actual control still uses the SID path `V04P27/<SID>/ESP` and `/RESP`
+- redirected sticks connect to the local broker's TLS listener on `8883`
+- Home Assistant can use a separate authenticated local listener, commonly
+  `1883`
 
 This mode needs broker/listener diagnostics because failures can look like HA
 state changes while the stick is not subscribed to the command topic.
+
+Recommended broker shape:
+
+- Mosquitto 2.x or newer, or another broker with equivalent per-listener auth.
+- A Home Assistant listener with authentication/ACLs.
+- A stick-facing TLS listener with a certificate valid for
+  `smartweb.remko.media`.
+- Separate listener settings, e.g. Mosquitto `per_listener_settings true`, so an
+  anonymous or cloud-style stick connection is not rejected by the Home
+  Assistant listener's auth rules.
+
+DNS rewriting is a separate concern from MQTT. Use AdGuard Home, Pi-hole,
+dnsmasq, Unbound, router DNS, or another DNS server that can limit the override
+to the selected stick IP. Avoid a network-wide `smartweb.remko.media` rewrite:
+Home Assistant and the cloud bridge still need REMKO's real cloud endpoints.
 
 ### Local Device MQTT
 
