@@ -195,6 +195,44 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
 Store `server.crt` and `server.key` where the Mosquitto container can read them
 and restart Mosquitto after changing listener settings.
 
+#### About the `smartweb.remko.media` certificate
+
+This part is unusual and worth spelling out: the redirected stick still thinks
+it is connecting to REMKO's MQTT broker at `smartweb.remko.media`. DNS only
+changes the IP address; it does not change the hostname the stick uses for TLS.
+Therefore the local broker must present a certificate for that hostname.
+
+You normally cannot get a public Let's Encrypt or other public CA certificate
+for `smartweb.remko.media`, because you do not own that domain. For local
+redirect setups, use a private/self-signed certificate whose CN/SAN contains
+`smartweb.remko.media`.
+
+The command above creates such a certificate:
+
+- `server.crt` is the certificate Mosquitto presents to redirected sticks.
+- `server.key` is the matching private key and must stay private.
+- The certificate name must be `smartweb.remko.media`; using your broker's LAN
+  hostname or IP address is not enough for sticks that check the TLS hostname.
+
+Observed MXW WiFi sticks accept this local self-signed certificate when the
+hostname matches. Other firmware may be stricter. If a stick repeatedly connects
+to port `8883` and immediately disconnects during TLS setup, the certificate is
+one of the first things to check.
+
+Helpful checks:
+
+```bash
+openssl x509 -in server.crt -noout -subject -issuer -dates -ext subjectAltName
+openssl s_client -connect <broker-ip>:8883 -servername smartweb.remko.media \
+  -showcerts
+```
+
+The integration cannot create or install this certificate automatically because
+the certificate belongs to the external MQTT broker, not to Home Assistant.
+What it can do is report whether the stick reaches the broker, whether
+`HOST2PORTAL` appears, and whether the discovered `SMT...` topic matches the
+configured stick IP.
+
 ### DNS rewrite with AdGuard Home
 
 For redirected WiFi-stick setups, the stick must resolve REMKO's broker hostname

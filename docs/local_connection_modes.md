@@ -52,6 +52,20 @@ dnsmasq, Unbound, router DNS, or another DNS server that can limit the override
 to the selected stick IP. Avoid a network-wide `smartweb.remko.media` rewrite:
 Home Assistant and the cloud bridge still need REMKO's real cloud endpoints.
 
+Certificate UX:
+
+- Users cannot normally obtain a public CA certificate for
+  `smartweb.remko.media`, because they do not control that domain.
+- For local redirect setups, the practical path is a private/self-signed broker
+  certificate whose CN/SAN is `smartweb.remko.media`.
+- The integration should not try to create or install broker certificates
+  automatically. The broker may run outside Home Assistant and certificate
+  ownership is infrastructure-specific.
+- The onboarding diagnostics can still help by checking broker TCP/TLS
+  reachability, showing whether the stick connects on `8883`, and explaining
+  that missing `HOST2PORTAL` after a successful DNS rewrite may mean a TLS or
+  listener configuration problem.
+
 ### Local Device MQTT
 
 Some SmartControl/SmartCom devices expose a local MQTT path directly or via a
