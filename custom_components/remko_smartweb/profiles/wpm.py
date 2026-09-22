@@ -12,6 +12,7 @@ def looks_like_wpm_name(device_name: str | None) -> bool:
         for token in (
             "wpm",
             "wpk",
+            "wkf",
             "wkm",
             "sqw",
             "waermepumpe",

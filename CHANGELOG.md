@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.5.0-beta.2
+- Detect WKF heat pumps as experimental WPM/heat-pump diagnostics devices instead of leaving them on the generic auto-detection parser. This mirrors the v0.4.20 stable fix in the local MQTT beta line
+
 ## v0.5.0-beta.1
 - Pre-release for testing the experimental local MQTT work. This release is
   intended for users who explicitly want to try local operation and provide
