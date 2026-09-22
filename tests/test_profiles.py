@@ -766,6 +766,10 @@ class ProfileParsingTests(unittest.TestCase):
             get_device_profile("WPM 400 A Pro", {"setpoint": 22}),
             WpmDeviceProfile,
         )
+        self.assertIsInstance(
+            get_device_profile("WKF 120", {"setpoint": 22}),
+            WpmDeviceProfile,
+        )
 
     def test_auto_profile_uses_climate_values_for_climate_like_values(self):
         values = {

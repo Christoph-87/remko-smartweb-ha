@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.4.20
+- Detect WKF heat pumps as experimental WPM/heat-pump diagnostics devices instead of leaving them on the generic auto-detection parser. This should allow WKF users to test the heat-pump status path and provide useful diagnostics if firmware-specific value mappings are still missing
+
 ## v0.4.19
 - Keep the browser-like SmartWeb user agent on the full account HTTP session, not only on the login request. v0.4.18 fixed login itself, but REMKO can also block follow-up requests such as `/rest/liste` and device detail pages when they use the default Python/requests user agent
 - Listen for SmartWeb `PORTAL2CLIENT` value responses in addition to `HOST2CLIENT`, matching the official SmartWeb frontend behavior
