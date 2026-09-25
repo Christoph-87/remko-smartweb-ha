@@ -423,6 +423,8 @@ class _MqttSession:
         self._last_smt_user = None
         self._recent_messages: deque = deque(maxlen=20)
         self._received_non_tx_count = 0
+        self._received_by_kind: dict[str, int] = {}
+        self._received_by_channel: dict[str, int] = {}
         self._subscribed_topics: list[str] = []
         self._outgoing_client_ids: deque = deque(maxlen=20)
         # Local-portal state
@@ -522,6 +524,14 @@ class _MqttSession:
             summary = _mqtt_message_summary(msg.topic, text)
             with self._cond:
                 now = time.time()
+                kind = str(summary.get("kind") or "unknown")
+                channel = str(msg.topic).rsplit("/", 1)[-1]
+                if not hasattr(self, "_received_by_kind"):
+                    self._received_by_kind = {}
+                if not hasattr(self, "_received_by_channel"):
+                    self._received_by_channel = {}
+                self._received_by_kind[kind] = self._received_by_kind.get(kind, 0) + 1
+                self._received_by_channel[channel] = self._received_by_channel.get(channel, 0) + 1
                 if summary.get("kind") == "tx_echo":
                     self._last_tx_echo = summary
                     self._last_tx_echo_time = now
@@ -774,6 +784,8 @@ class _MqttSession:
                 "last_portal2host_age_s": _age(getattr(self, "_last_portal2host_time", None)),
                 "last_values": self._last_seen_values,
                 "received_non_tx_count": self._received_non_tx_count,
+                "received_by_kind": dict(getattr(self, "_received_by_kind", {})),
+                "received_by_channel": dict(getattr(self, "_received_by_channel", {})),
                 "subscribed_topics": list(self._subscribed_topics),
                 "local_portal": self._local_portal,
                 "local_host2portal_mode": self._local_host2portal_mode,
