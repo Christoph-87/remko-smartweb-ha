@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.22
+- Extend experimental WPM/WKF heat-pump polling to match the SmartWeb portal UART query chain more closely, including the additional holding-register blocks `3:101-200`, `3:201-300`, and `3:301-400`
+- Improve MQTT diagnostics by counting received messages by payload kind and topic channel, helping distinguish device/portal responses from local poll echoes in debug logs
+
 ## v0.4.21
 - Include the SmartWeb portal `DEV` value as `DEVID` in `CLIENT2HOST` value polls and writes. This should help WKF/WPM devices that were detected correctly in v0.4.20 but only echoed the poll request without returning usable status values
 

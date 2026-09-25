@@ -191,6 +191,9 @@ WPM_READ_RANGES = (
     (1, 1, 62),
     (1, 71, 171),
     (3, 1, 100),
+    (3, 101, 100),
+    (3, 201, 100),
+    (3, 301, 100),
     (3, 401, 16),
 )
 
@@ -1480,6 +1483,8 @@ class _MqttSession:
         self._last_smt_user = None
         self._recent_messages = deque(maxlen=20)
         self._received_non_tx_count = 0
+        self._received_by_kind = {}
+        self._received_by_channel = {}
         self._subscribed_topics = []
 
         self.client = mqtt.Client(
@@ -1528,6 +1533,14 @@ class _MqttSession:
                 text = repr(msg.payload)
             summary = _mqtt_message_summary(msg.topic, text)
             with self._cond:
+                kind = str(summary.get("kind") or "unknown")
+                channel = str(msg.topic).rsplit("/", 1)[-1]
+                if not hasattr(self, "_received_by_kind"):
+                    self._received_by_kind = {}
+                if not hasattr(self, "_received_by_channel"):
+                    self._received_by_channel = {}
+                self._received_by_kind[kind] = self._received_by_kind.get(kind, 0) + 1
+                self._received_by_channel[channel] = self._received_by_channel.get(channel, 0) + 1
                 if summary.get("kind") == "tx_echo":
                     self._last_tx_echo = summary
                 else:
@@ -1600,6 +1613,8 @@ class _MqttSession:
                 "last_tx_echo": self._last_tx_echo,
                 "last_values": self._last_seen_values,
                 "received_non_tx_count": self._received_non_tx_count,
+                "received_by_kind": dict(getattr(self, "_received_by_kind", {})),
+                "received_by_channel": dict(getattr(self, "_received_by_channel", {})),
                 "subscribed_topics": list(self._subscribed_topics),
             }
 

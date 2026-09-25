@@ -52,6 +52,7 @@ from custom_components.remko_smartweb.api import (
     _parse_modbus_holding_rx,
     _parse_wpm_register_status,
     _value_query_list,
+    WPM_READ_RANGES,
 )
 from custom_components.remko_smartweb.const import DEVICE_KIND_CLIMATE, DEVICE_KIND_DHW, DEVICE_KIND_DIAGNOSTICS
 from custom_components.remko_smartweb.profiles import detect_device_kind, get_device_profile, get_parser_profile
@@ -171,6 +172,20 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIn(1352, query_list)
         self.assertEqual(query_list.count(1333), 1)
         self.assertGreater(len(query_list), 2)
+
+    def test_wpm_read_ranges_match_frontend_query_chain(self):
+        self.assertEqual(
+            WPM_READ_RANGES,
+            (
+                (1, 1, 62),
+                (1, 71, 171),
+                (3, 1, 100),
+                (3, 101, 100),
+                (3, 201, 100),
+                (3, 301, 100),
+                (3, 401, 16),
+            ),
+        )
 
     def test_build_rbw_set_cmd_uses_frontend_modbus_conversion(self):
         self.assertEqual(_build_rbw_set_cmd("1333", "0226"), "631004500100AA")
