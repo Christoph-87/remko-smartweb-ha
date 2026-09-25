@@ -1321,6 +1321,7 @@ class CoordinatorTests(unittest.TestCase):
         client.sk = "FEDCBA9876543210"
         client.topic = "V04P27/0123456789ABCDEF"
         client.smt_user = 12345
+        client.device_dev = "256"
         client.device_name = "DHW"
         client._local_mqtt_host = None
         client._mqtt = FakeMqtt({"1333": "022B"})
@@ -1336,6 +1337,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn(1333, payload["query_list"])
         self.assertGreater(len(payload["query_list"]), 1)
         self.assertEqual(payload["SMT_USER"], 12345)
+        self.assertEqual(payload["DEVID"], "256")
         self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
         self.assertFalse(payload["CLIENT_ID"].startswith("SMTHA"))
         self.assertTrue(payload["CLIENT_ID"].endswith("0123456789ABCDEF"))
@@ -1408,6 +1410,7 @@ class CoordinatorTests(unittest.TestCase):
         client.sk = "FEDCBA9876543210"
         client.topic = "V04P27/0123456789ABCDEF"
         client.smt_user = 12345
+        client.device_dev = "0"
         client.device_name = "DHW"
         client._local_mqtt_host = None
         client._mqtt = FakeMqtt({"1194": "01"})
@@ -1421,6 +1424,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payload["LASTWRITE"], 0)
         self.assertTrue(payload["FORCE_RESPONSE"])
         self.assertEqual(payload["SMT_USER"], 12345)
+        self.assertEqual(payload["DEVID"], "0")
         self.assertTrue(payload["CLIENT_ID"].startswith("SMT"))
         self.assertFalse(payload["CLIENT_ID"].startswith("SMTHA"))
         self.assertTrue(payload["CLIENT_ID"].endswith("0123456789ABCDEF"))

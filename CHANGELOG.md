@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.5.0-beta.3
+- Include the SmartWeb portal `DEV` value as `DEVID` in `CLIENT2HOST` value polls and writes. This mirrors the v0.4.21 stable fix in the local MQTT beta line and should help WKF/WPM devices that only echoed value poll requests
+
 ## v0.5.0-beta.2
 - Detect WKF heat pumps as experimental WPM/heat-pump diagnostics devices instead of leaving them on the generic auto-detection parser. This mirrors the v0.4.20 stable fix in the local MQTT beta line
 

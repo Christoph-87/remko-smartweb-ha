@@ -349,6 +349,13 @@ class RemkoSmartWebClient:
             return f"SMTHA{random.randint(0,9999):04d}"
         return f"SMT{random.randint(0,9999):04d}{self.sid}"
 
+    def _mqtt_devid(self) -> str:
+        """Return the SmartWeb portal device id used by CLIENT2HOST payloads."""
+        device_dev = getattr(self, "device_dev", None)
+        if device_dev is None:
+            return ""
+        return str(device_dev)
+
     def prime_status_cache(self, status: dict | None) -> None:
         """Seed the write cache from coordinator data before a local SET call."""
         if not isinstance(status, dict):
@@ -1019,7 +1026,7 @@ class RemkoSmartWebClient:
             "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": 0,
             "ISTOUCH": False,
-            "DEVID": "",
+            "DEVID": self._mqtt_devid(),
         }
         smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
         if smt_user is not None:
@@ -1041,7 +1048,7 @@ class RemkoSmartWebClient:
             "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
-            "DEVID": "",
+            "DEVID": self._mqtt_devid(),
         }
         smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
         if smt_user is not None:
