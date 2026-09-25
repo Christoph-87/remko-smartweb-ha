@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.4.21
+- Include the SmartWeb portal `DEV` value as `DEVID` in `CLIENT2HOST` value polls and writes. This should help WKF/WPM devices that were detected correctly in v0.4.20 but only echoed the poll request without returning usable status values
+
 ## v0.4.20
 - Detect WKF heat pumps as experimental WPM/heat-pump diagnostics devices instead of leaving them on the generic auto-detection parser. This should allow WKF users to test the heat-pump status path and provide useful diagnostics if firmware-specific value mappings are still missing
 

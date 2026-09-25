@@ -2059,6 +2059,13 @@ class RemkoSmartWebClient:
         self._mqtt.publish(f"{self.topic}/ESP", payload)
         return self._mqtt.wait_rx(timeout=timeout)
 
+    def _mqtt_devid(self) -> str:
+        """Return the SmartWeb portal device id used by CLIENT2HOST payloads."""
+        device_dev = getattr(self, "device_dev", None)
+        if device_dev is None:
+            return ""
+        return str(device_dev)
+
     def _mqtt_poll_values(self, timeout=10) -> dict | None:
         """Poll values via CLIENT2HOST on persistent MQTT."""
         if not self.sid or not self.sk or not self.topic:
@@ -2070,7 +2077,7 @@ class RemkoSmartWebClient:
             "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
             "LASTWRITE": 0,
             "ISTOUCH": False,
-            "DEVID": "",
+            "DEVID": self._mqtt_devid(),
         }
         smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
         if smt_user is not None:
@@ -2090,7 +2097,7 @@ class RemkoSmartWebClient:
             "CLIENT_ID": f"SMT{random.randint(0,9999):04d}{self.sid}",
             "LASTWRITE": int(time.time() * 1000),
             "ISTOUCH": False,
-            "DEVID": "",
+            "DEVID": self._mqtt_devid(),
         }
         smt_user = self.smt_user if self.smt_user is not None else self._mqtt.last_smt_user()
         if smt_user is not None:
