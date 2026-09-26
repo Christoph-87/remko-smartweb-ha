@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.24
+- Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P26` response subscriptions (`V04P26/<device-id>/...` and `V04P26/SMT<device-id>/...`) for devices that may still use the firmware 4.26 topic family
+- Keep the additional subscriptions device-specific; the integration still does not subscribe to broad cloud topics such as `V04P26/#`
+
 ## v0.4.23
 - Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P28` response subscriptions (`V04P28/<device-id>/...` and `V04P28/SMT<device-id>/...`) to check whether SmartWeb responses for some sticks are published on the bridge-style topic family
 - Add MQTT diagnostic counts by topic prefix so debug logs can distinguish `V04P27` echoes from potential `V04P28` device/portal responses

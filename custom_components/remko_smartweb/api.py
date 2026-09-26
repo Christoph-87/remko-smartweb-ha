@@ -518,9 +518,10 @@ def _build_mqtt_topic(sid: str | None) -> str | None:
 def _build_mqtt_response_topics(topic: str) -> list[tuple[str, int]]:
     """Build narrowly scoped SmartWeb response subscriptions.
 
-    Some SmartWeb variants appear to use the V04P28 topic family for local/
-    bridged traffic. Subscribe only to device-specific candidates; never use a
-    broad cloud wildcard like V04P28/# because it can expose unrelated devices.
+    Some SmartWeb variants appear to use older/newer V04Pxx topic families for
+    local/bridged traffic. Subscribe only to device-specific candidates; never
+    use a broad cloud wildcard like V04P26/# or V04P28/# because it can expose
+    unrelated devices.
     """
     if not topic:
         return []
@@ -534,6 +535,8 @@ def _build_mqtt_response_topics(topic: str) -> list[tuple[str, int]]:
     primary_prefix = f"{parts[0]}/{sid}"
     prefixes = [
         primary_prefix,
+        f"V04P26/{sid}",
+        f"V04P26/SMT{sid}",
         f"V04P28/{sid}",
         f"V04P28/SMT{sid}",
     ]

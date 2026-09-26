@@ -164,13 +164,16 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIsNone(_build_mqtt_topic(""))
         self.assertIsNone(_build_mqtt_topic("NaN"))
 
-    def test_build_mqtt_response_topics_includes_targeted_v04p28_candidates(self):
+    def test_build_mqtt_response_topics_includes_targeted_cross_version_candidates(self):
         subscriptions = _build_mqtt_response_topics("V04P27/0123456789abcdef")
         topics = [topic for topic, _qos in subscriptions]
 
         self.assertIn("V04P27/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P26/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P26/SMT0123456789ABCDEF/RESP", topics)
         self.assertIn("V04P28/0123456789ABCDEF/RESP", topics)
         self.assertIn("V04P28/SMT0123456789ABCDEF/RESP", topics)
+        self.assertNotIn("V04P26/#", topics)
         self.assertNotIn("V04P28/#", topics)
         self.assertTrue(all(qos == 2 for _topic, qos in subscriptions))
 
