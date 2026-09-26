@@ -262,8 +262,8 @@ def _stick_topic_from_mac(mac: str | None) -> str | None:
     return f"V04P27/SMT{normalized}"
 
 
-def _targeted_v04p28_response_subscriptions(topic: str | None) -> list[tuple[str, int]]:
-    """Build narrowly scoped V04P28 diagnostic response subscriptions."""
+def _targeted_response_diagnostic_subscriptions(topic: str | None) -> list[tuple[str, int]]:
+    """Build narrowly scoped cross-version diagnostic response subscriptions."""
     if not topic:
         return []
     parts = topic.split("/")
@@ -273,7 +273,11 @@ def _targeted_v04p28_response_subscriptions(topic: str | None) -> list[tuple[str
     if not _valid_credential_part(sid):
         return []
     channels = ("HOST2CLIENT", "PORTAL2CLIENT", "CLIENT2HOST", "RESP", "ESP")
-    prefixes = (f"V04P28/{sid}", f"V04P28/SMT{sid}")
+    prefixes = tuple(
+        f"{version}/{target}"
+        for version in ("V04P26", "V04P28")
+        for target in (sid, f"SMT{sid}")
+    )
     return [(f"{prefix}/{channel}", 2) for prefix in prefixes for channel in channels]
 
 
@@ -504,9 +508,9 @@ class _MqttSession:
                     (f"{command_topic}/CLIENT2HOST", 2),
                 ]
             )
-        subscriptions.extend(_targeted_v04p28_response_subscriptions(self.topic))
+        subscriptions.extend(_targeted_response_diagnostic_subscriptions(self.topic))
         if command_topic and command_topic != self.topic:
-            subscriptions.extend(_targeted_v04p28_response_subscriptions(command_topic))
+            subscriptions.extend(_targeted_response_diagnostic_subscriptions(command_topic))
         if (
             self._local_portal
             and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)

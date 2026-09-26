@@ -250,7 +250,7 @@ from custom_components.remko_smartweb._mqtt import (
     _classify_local_mqtt_topic,
     _normalize_mac,
     _stick_topic_from_mac,
-    _targeted_v04p28_response_subscriptions,
+    _targeted_response_diagnostic_subscriptions,
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
@@ -799,7 +799,7 @@ class CoordinatorTests(unittest.TestCase):
             ],
         )
 
-    def test_mqtt_session_cloud_subscriptions_include_targeted_v04p28_diagnostics(self):
+    def test_mqtt_session_cloud_subscriptions_include_targeted_response_diagnostics(self):
         class FakeMqttClient:
             def __init__(self):
                 self.subscriptions = None
@@ -821,13 +821,16 @@ class CoordinatorTests(unittest.TestCase):
         session._on_connect(client, None, None, 0)
 
         topics = [topic for topic, _qos in client.subscriptions]
+        self.assertIn("V04P26/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P26/SMT0123456789ABCDEF/RESP", topics)
         self.assertIn("V04P28/0123456789ABCDEF/RESP", topics)
         self.assertIn("V04P28/SMT0123456789ABCDEF/RESP", topics)
+        self.assertNotIn("V04P26/#", topics)
         self.assertNotIn("V04P28/#", topics)
 
-    def test_targeted_v04p28_subscriptions_reject_non_device_topics(self):
-        self.assertEqual(_targeted_v04p28_response_subscriptions("V04P27/SMTABC"), [])
-        self.assertEqual(_targeted_v04p28_response_subscriptions("V04P27/ABC"), [])
+    def test_targeted_response_diagnostics_reject_non_device_topics(self):
+        self.assertEqual(_targeted_response_diagnostic_subscriptions("V04P27/SMTABC"), [])
+        self.assertEqual(_targeted_response_diagnostic_subscriptions("V04P27/ABC"), [])
 
     def test_mqtt_session_local_host2portal_subscriptions_include_client2host(self):
         class FakeMqttClient:
