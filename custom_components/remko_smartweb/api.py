@@ -515,6 +515,41 @@ def _build_mqtt_topic(sid: str | None) -> str | None:
     return f"{VERSION}/{sid.strip().upper()}"
 
 
+def _build_mqtt_response_topics(topic: str) -> list[tuple[str, int]]:
+    """Build narrowly scoped SmartWeb response subscriptions.
+
+    Some SmartWeb variants appear to use the V04P28 topic family for local/
+    bridged traffic. Subscribe only to device-specific candidates; never use a
+    broad cloud wildcard like V04P28/# because it can expose unrelated devices.
+    """
+    if not topic:
+        return []
+    parts = topic.split("/")
+    if len(parts) < 2:
+        return []
+    sid = parts[1].strip().upper()
+    if not _valid_credential_part(sid):
+        return []
+
+    primary_prefix = f"{parts[0]}/{sid}"
+    prefixes = [
+        primary_prefix,
+        f"V04P28/{sid}",
+        f"V04P28/SMT{sid}",
+    ]
+    channels = ("HOST2CLIENT", "PORTAL2CLIENT", "CLIENT2HOST", "RESP", "ESP")
+    subscriptions: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for prefix in prefixes:
+        for channel in channels:
+            candidate = f"{prefix}/{channel}"
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            subscriptions.append((candidate, 2))
+    return subscriptions
+
+
 def _extract_sid_sk_from_text(text: str):
     m = re.search(r"SID=([0-9A-Fa-f]{16}).*?SK=([0-9A-Fa-f]{16})", text)
     if m:
@@ -1485,6 +1520,7 @@ class _MqttSession:
         self._received_non_tx_count = 0
         self._received_by_kind = {}
         self._received_by_channel = {}
+        self._received_by_prefix = {}
         self._subscribed_topics = []
 
         self.client = mqtt.Client(
@@ -1509,13 +1545,7 @@ class _MqttSession:
             _LOGGER.warning("MQTT connect failed rc=%s", rc)
             self._connected.set()
             return
-        subscriptions = [
-            (f"{self.topic}/HOST2CLIENT", 2),
-            (f"{self.topic}/PORTAL2CLIENT", 2),
-            (f"{self.topic}/CLIENT2HOST", 2),
-            (f"{self.topic}/RESP", 2),
-            (f"{self.topic}/ESP", 2),
-        ]
+        subscriptions = _build_mqtt_response_topics(self.topic)
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
@@ -1535,12 +1565,16 @@ class _MqttSession:
             with self._cond:
                 kind = str(summary.get("kind") or "unknown")
                 channel = str(msg.topic).rsplit("/", 1)[-1]
+                prefix = str(msg.topic).split("/", 1)[0]
                 if not hasattr(self, "_received_by_kind"):
                     self._received_by_kind = {}
                 if not hasattr(self, "_received_by_channel"):
                     self._received_by_channel = {}
+                if not hasattr(self, "_received_by_prefix"):
+                    self._received_by_prefix = {}
                 self._received_by_kind[kind] = self._received_by_kind.get(kind, 0) + 1
                 self._received_by_channel[channel] = self._received_by_channel.get(channel, 0) + 1
+                self._received_by_prefix[prefix] = self._received_by_prefix.get(prefix, 0) + 1
                 if summary.get("kind") == "tx_echo":
                     self._last_tx_echo = summary
                 else:
@@ -1615,6 +1649,7 @@ class _MqttSession:
                 "received_non_tx_count": self._received_non_tx_count,
                 "received_by_kind": dict(getattr(self, "_received_by_kind", {})),
                 "received_by_channel": dict(getattr(self, "_received_by_channel", {})),
+                "received_by_prefix": dict(getattr(self, "_received_by_prefix", {})),
                 "subscribed_topics": list(self._subscribed_topics),
             }
 

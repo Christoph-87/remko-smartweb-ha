@@ -34,6 +34,7 @@ from custom_components.remko_smartweb.api import (
     _build_kwt_set_cmd,
     _build_lte_set_cmd,
     _build_modbus_read_cmd,
+    _build_mqtt_response_topics,
     _build_mqtt_topic,
     _build_rbw_get_status_cmd,
     _build_rbw_set_cmd,
@@ -162,6 +163,16 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(_build_mqtt_topic("0123456789abcdef"), "V04P27/0123456789ABCDEF")
         self.assertIsNone(_build_mqtt_topic(""))
         self.assertIsNone(_build_mqtt_topic("NaN"))
+
+    def test_build_mqtt_response_topics_includes_targeted_v04p28_candidates(self):
+        subscriptions = _build_mqtt_response_topics("V04P27/0123456789abcdef")
+        topics = [topic for topic, _qos in subscriptions]
+
+        self.assertIn("V04P27/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P28/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P28/SMT0123456789ABCDEF/RESP", topics)
+        self.assertNotIn("V04P28/#", topics)
+        self.assertTrue(all(qos == 2 for _topic, qos in subscriptions))
 
     def test_value_query_list_includes_written_ids_with_status_ids(self):
         query_list = _value_query_list({"1333": "022B", "9999": "01"})
