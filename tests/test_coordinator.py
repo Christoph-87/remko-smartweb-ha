@@ -250,6 +250,7 @@ from custom_components.remko_smartweb._mqtt import (
     _classify_local_mqtt_topic,
     _normalize_mac,
     _stick_topic_from_mac,
+    _targeted_v04p28_response_subscriptions,
 )
 from custom_components.remko_smartweb.coordinator import RemkoSmartWebCoordinator
 from custom_components.remko_smartweb.climate import RemkoSmartWebClimate
@@ -594,6 +595,7 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
+        self.assertEqual(session._received_by_prefix, {"V04P27": 2})
 
     def test_mqtt_session_accepts_portal2client_values_like_frontend(self):
         session = _MqttSession.__new__(_MqttSession)
@@ -796,6 +798,36 @@ class CoordinatorTests(unittest.TestCase):
                 "V04P27/ABC/CLIENT2HOST",
             ],
         )
+
+    def test_mqtt_session_cloud_subscriptions_include_targeted_v04p28_diagnostics(self):
+        class FakeMqttClient:
+            def __init__(self):
+                self.subscriptions = None
+
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/0123456789ABCDEF"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._local_portal = False
+        session._local_host2portal_mode = False
+        session._subscribed_topics = []
+        session._command_topic = None
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+
+        topics = [topic for topic, _qos in client.subscriptions]
+        self.assertIn("V04P28/0123456789ABCDEF/RESP", topics)
+        self.assertIn("V04P28/SMT0123456789ABCDEF/RESP", topics)
+        self.assertNotIn("V04P28/#", topics)
+
+    def test_targeted_v04p28_subscriptions_reject_non_device_topics(self):
+        self.assertEqual(_targeted_v04p28_response_subscriptions("V04P27/SMTABC"), [])
+        self.assertEqual(_targeted_v04p28_response_subscriptions("V04P27/ABC"), [])
 
     def test_mqtt_session_local_host2portal_subscriptions_include_client2host(self):
         class FakeMqttClient:

@@ -24,6 +24,7 @@ from ._helpers import (
     _extract_values_from_payload,
     _json_loads_maybe_wrapped,
     _mqtt_message_summary,
+    _valid_credential_part,
 )
 from ._frames import _build_status_cmd
 
@@ -261,6 +262,21 @@ def _stick_topic_from_mac(mac: str | None) -> str | None:
     return f"V04P27/SMT{normalized}"
 
 
+def _targeted_v04p28_response_subscriptions(topic: str | None) -> list[tuple[str, int]]:
+    """Build narrowly scoped V04P28 diagnostic response subscriptions."""
+    if not topic:
+        return []
+    parts = topic.split("/")
+    if len(parts) < 2:
+        return []
+    sid = parts[1].strip().upper()
+    if not _valid_credential_part(sid):
+        return []
+    channels = ("HOST2CLIENT", "PORTAL2CLIENT", "CLIENT2HOST", "RESP", "ESP")
+    prefixes = (f"V04P28/{sid}", f"V04P28/SMT{sid}")
+    return [(f"{prefix}/{channel}", 2) for prefix in prefixes for channel in channels]
+
+
 def _classify_local_mqtt_topic(topic: str, mode: str) -> tuple[str, str] | None:
     parts = topic.split("/")
     if len(parts) < 3:
@@ -425,6 +441,7 @@ class _MqttSession:
         self._received_non_tx_count = 0
         self._received_by_kind: dict[str, int] = {}
         self._received_by_channel: dict[str, int] = {}
+        self._received_by_prefix: dict[str, int] = {}
         self._subscribed_topics: list[str] = []
         self._outgoing_client_ids: deque = deque(maxlen=20)
         # Local-portal state
@@ -487,6 +504,9 @@ class _MqttSession:
                     (f"{command_topic}/CLIENT2HOST", 2),
                 ]
             )
+        subscriptions.extend(_targeted_v04p28_response_subscriptions(self.topic))
+        if command_topic and command_topic != self.topic:
+            subscriptions.extend(_targeted_v04p28_response_subscriptions(command_topic))
         if (
             self._local_portal
             and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
@@ -499,6 +519,14 @@ class _MqttSession:
                 ]
             )
         subscriptions.append((f"{self.topic}/CLIENT2HOST", 2))
+        deduped_subscriptions = []
+        seen_topics = set()
+        for topic, qos in subscriptions:
+            if topic in seen_topics:
+                continue
+            seen_topics.add(topic)
+            deduped_subscriptions.append((topic, qos))
+        subscriptions = deduped_subscriptions
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
@@ -526,12 +554,16 @@ class _MqttSession:
                 now = time.time()
                 kind = str(summary.get("kind") or "unknown")
                 channel = str(msg.topic).rsplit("/", 1)[-1]
+                prefix = str(msg.topic).split("/", 1)[0]
                 if not hasattr(self, "_received_by_kind"):
                     self._received_by_kind = {}
                 if not hasattr(self, "_received_by_channel"):
                     self._received_by_channel = {}
+                if not hasattr(self, "_received_by_prefix"):
+                    self._received_by_prefix = {}
                 self._received_by_kind[kind] = self._received_by_kind.get(kind, 0) + 1
                 self._received_by_channel[channel] = self._received_by_channel.get(channel, 0) + 1
+                self._received_by_prefix[prefix] = self._received_by_prefix.get(prefix, 0) + 1
                 if summary.get("kind") == "tx_echo":
                     self._last_tx_echo = summary
                     self._last_tx_echo_time = now
@@ -786,6 +818,7 @@ class _MqttSession:
                 "received_non_tx_count": self._received_non_tx_count,
                 "received_by_kind": dict(getattr(self, "_received_by_kind", {})),
                 "received_by_channel": dict(getattr(self, "_received_by_channel", {})),
+                "received_by_prefix": dict(getattr(self, "_received_by_prefix", {})),
                 "subscribed_topics": list(self._subscribed_topics),
                 "local_portal": self._local_portal,
                 "local_host2portal_mode": self._local_host2portal_mode,

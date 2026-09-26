@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.0-beta.5
+- Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P28` response subscriptions (`V04P28/<device-id>/...` and `V04P28/SMT<device-id>/...`) to check whether SmartWeb responses for some sticks are published on the bridge-style topic family
+- Add MQTT diagnostic counts by topic prefix so debug logs can distinguish `V04P27` echoes from potential `V04P28` device/portal responses
+
 ## v0.5.0-beta.4
 - Extend experimental WPM/WKF heat-pump polling to match the SmartWeb portal UART query chain more closely, including the additional holding-register blocks `3:101-200`, `3:201-300`, and `3:301-400`
 - Improve MQTT diagnostics by counting received messages by payload kind and topic channel, helping distinguish device/portal responses from local poll echoes in debug logs
