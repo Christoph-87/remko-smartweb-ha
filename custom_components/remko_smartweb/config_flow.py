@@ -30,10 +30,12 @@ from .const import (
     CONF_LOCAL_MQTT_PORT,
     CONF_LOCAL_MQTT_USER,
     CONF_LOCAL_MQTT_PASSWORD,
+    CONF_LOCAL_MQTT_CREDENTIAL_SOURCE,
     CONF_LOCAL_MQTT_MODE,
     CONF_LOCAL_MQTT_LAST_PROBE,
     CONF_LOCAL_MQTT_CLOUD_BRIDGE,
     CONF_LOCAL_MQTT_STICK_HOST,
+    DEFAULT_DEVICE_MQTT_USER,
     DEFAULT_LOCAL_MQTT_PORT,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_CLOUD,
@@ -47,6 +49,7 @@ from .const import (
     DEFAULT_MAX_TEMP,
 )
 from .api import RemkoSmartWebClient, probe_local_mqtt
+from ._mqtt import discover_local_mqtt_credentials
 from .profiles import looks_like_dhw_name
 
 _LOGGER = logging.getLogger(__name__)
@@ -683,6 +686,13 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             if password in (None, "") and user_val:
                 password = self._options.get(CONF_LOCAL_MQTT_PASSWORD, "")
             password = password or ""
+            credential_source = None
+            if host and not user_val and not password:
+                discovery = await self._async_discover_local_mqtt_credentials(host)
+                if discovery.get("found"):
+                    user_val = discovery.get("user") or DEFAULT_DEVICE_MQTT_USER
+                    password = discovery.get("password") or ""
+                    credential_source = discovery.get("source")
             if host:
                 probe = await self._async_probe_local_mqtt(
                     host,
@@ -704,9 +714,12 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
                 if user_val:
                     self._options[CONF_LOCAL_MQTT_USER] = user_val
                     self._options[CONF_LOCAL_MQTT_PASSWORD] = password
+                    if credential_source:
+                        self._options[CONF_LOCAL_MQTT_CREDENTIAL_SOURCE] = credential_source
                 else:
                     self._options.pop(CONF_LOCAL_MQTT_USER, None)
                     self._options.pop(CONF_LOCAL_MQTT_PASSWORD, None)
+                    self._options.pop(CONF_LOCAL_MQTT_CREDENTIAL_SOURCE, None)
                 return self.async_create_entry(title="", data=self._options)
 
             errors["base"] = "local_mqtt_tcp_failed"
@@ -848,6 +861,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             CONF_LOCAL_MQTT_PORT,
             CONF_LOCAL_MQTT_USER,
             CONF_LOCAL_MQTT_PASSWORD,
+            CONF_LOCAL_MQTT_CREDENTIAL_SOURCE,
             CONF_LOCAL_MQTT_LAST_PROBE,
             CONF_LOCAL_MQTT_CLOUD_BRIDGE,
             CONF_LOCAL_MQTT_STICK_HOST,
@@ -860,9 +874,20 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
             CONF_LOCAL_MQTT_PORT,
             CONF_LOCAL_MQTT_USER,
             CONF_LOCAL_MQTT_PASSWORD,
+            CONF_LOCAL_MQTT_CREDENTIAL_SOURCE,
             CONF_LOCAL_MQTT_LAST_PROBE,
         ):
             self._options.pop(key, None)
+
+    async def _async_discover_local_mqtt_credentials(self, host):
+        def _discover():
+            result = discover_local_mqtt_credentials(host)
+            data = result.as_dict()
+            if result.password:
+                data["password"] = result.password
+            return data
+
+        return await self.hass.async_add_executor_job(_discover)
 
     async def _async_probe_local_mqtt(self, host, port, user, password, mode):
         def _probe():

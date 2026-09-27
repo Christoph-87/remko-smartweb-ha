@@ -248,6 +248,8 @@ from custom_components.remko_smartweb.api import (
 from custom_components.remko_smartweb._mqtt import (
     LocalMqttProbeResult,
     _classify_local_mqtt_topic,
+    _extract_local_mqtt_password_from_smt_js,
+    _local_probe_subscriptions,
     _normalize_mac,
     _stick_topic_from_mac,
     _targeted_response_diagnostic_subscriptions,
@@ -1053,6 +1055,35 @@ class CoordinatorTests(unittest.TestCase):
                 LOCAL_MQTT_MODE_DEVICE_MQTT,
             )
         )
+
+    def test_local_mqtt_probe_subscribes_to_v04p26_for_direct_device(self):
+        topics = [topic for topic, _qos in _local_probe_subscriptions(LOCAL_MQTT_MODE_DEVICE_MQTT)]
+
+        self.assertIn("V04P26/+/HOST2CLIENT", topics)
+        self.assertIn("V04P26/+/CLIENT2HOST", topics)
+        self.assertIn("V04P26/+/RESP", topics)
+        self.assertNotIn("V04P26/#", topics)
+
+    def test_local_mqtt_probe_classifies_v04p26_direct_topics(self):
+        self.assertEqual(
+            _classify_local_mqtt_topic("V04P26/SMTID/HOST2CLIENT", LOCAL_MQTT_MODE_AUTO),
+            ("V04P26/SMTID", LOCAL_MQTT_MODE_DEVICE_MQTT),
+        )
+        self.assertEqual(
+            _classify_local_mqtt_topic("V04P26/SMTID/RESP", LOCAL_MQTT_MODE_AUTO),
+            ("V04P26/SMTID", LOCAL_MQTT_MODE_DEVICE_MQTT),
+        )
+
+    def test_extracts_local_mqtt_password_from_smt_js(self):
+        self.assertEqual(
+            _extract_local_mqtt_password_from_smt_js('var mqtt_password="secret-123";'),
+            "secret-123",
+        )
+        self.assertEqual(
+            _extract_local_mqtt_password_from_smt_js('window.cfg={"smt_key":"abcDEF123"};'),
+            "abcDEF123",
+        )
+        self.assertIsNone(_extract_local_mqtt_password_from_smt_js('var password="";'))
 
     def test_probe_can_infer_stick_topic_from_mac(self):
         self.assertEqual(_normalize_mac("1c:9d:c2:63:c7:58"), "1C9DC263C758")

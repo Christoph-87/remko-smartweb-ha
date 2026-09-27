@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.0-beta.7
+- Add best-effort local MQTT credential discovery for direct device MQTT setups: when username and password are left empty, the options flow tries to read the local SmartControl `smt.min.js` file, extract the device MQTT password, and probe with the known default user `0000000000000000`
+- Extend direct-device local MQTT probing to include the `V04P26` topic family used by some WKF/Firmware 4.26 installations, without subscribing to broad cloud wildcards
+
 ## v0.5.0-beta.6
 - Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P26` response subscriptions (`V04P26/<device-id>/...` and `V04P26/SMT<device-id>/...`) for devices that may still use the firmware 4.26 topic family
 - Keep the additional subscriptions device-specific; the integration still does not subscribe to broad cloud topics such as `V04P26/#`

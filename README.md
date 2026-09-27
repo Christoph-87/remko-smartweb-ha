@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
-![Version](https://img.shields.io/badge/version-v0.5.0--beta.6-blue)
+![Version](https://img.shields.io/badge/version-v0.5.0--beta.7-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device from Home Assistant — temperatures, operating modes, switches, and more. Works via the REMKO SmartWeb cloud (internet connection required).
 
@@ -83,6 +83,11 @@ There are multiple REMKO local-MQTT architectures:
 - **Direct device MQTT / SmartControl bridge**: some SmartControl/SmartCom
   installations expose a local MQTT path directly on the device IP or through a
   separate bridge. This mode is experimental and needs more real-device testing.
+  For some WKF/Firmware 4.26 systems the local broker uses `V04P26/#`. The
+  integration can try to read the local MQTT password from the device's
+  `smt.min.js` web asset when username and password are left empty; the default
+  username for these devices is `0000000000000000`. The discovered password is
+  only stored in Home Assistant options and is never logged.
 
 Local setup starts from the normal cloud-discovered REMKO device. Configure it
 from the device's integration options:

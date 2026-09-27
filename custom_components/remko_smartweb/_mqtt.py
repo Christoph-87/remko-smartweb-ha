@@ -7,15 +7,19 @@ import json
 import logging
 from pathlib import Path
 import random
+import re
 import socket
 import ssl
 import threading
 import time
 from collections import deque
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 import paho.mqtt.client as mqtt
 
 from .const import (
+    DEFAULT_DEVICE_MQTT_USER,
     LOCAL_MQTT_MODE_AUTO,
     LOCAL_MQTT_MODE_DEVICE_MQTT,
     LOCAL_MQTT_MODE_PORTAL_BROKER,
@@ -82,6 +86,139 @@ class LocalMqttProbeResult:
             "sample_topics": list(self.sample_topics),
             "error": self.error,
         }
+
+
+@dataclass(frozen=True)
+class LocalMqttCredentialDiscoveryResult:
+    """Best-effort local MQTT credential discovery result.
+
+    Passwords are intentionally excluded from ``as_dict`` to keep diagnostics
+    safe.  The caller may store ``password`` in HA options when discovery and
+    the MQTT probe succeed.
+    """
+
+    user: str | None = None
+    password: str | None = None
+    source: str | None = None
+    attempted_sources: tuple[str, ...] = ()
+    error: str | None = None
+
+    @property
+    def found(self) -> bool:
+        return bool(self.user and self.password)
+
+    def as_dict(self) -> dict:
+        return {
+            "found": self.found,
+            "user": self.user if self.found else None,
+            "source": self.source,
+            "attempted_sources": list(self.attempted_sources),
+            "error": self.error,
+        }
+
+
+_SMT_PASSWORD_PATTERNS = (
+    re.compile(
+        r"""(?ix)
+        (?:mqtt|smt|broker|remote)?[_-]?
+        (?:pass|password|pwd|key)\w*
+        \s*[:=]\s*["']([^"']{4,160})["']
+        """
+    ),
+    re.compile(
+        r"""(?ix)
+        ["'](?:pass|password|pwd|mqtt_password|broker_password|smt_key)["']
+        \s*:\s*["']([^"']{4,160})["']
+        """
+    ),
+)
+
+_SCRIPT_SRC_RE = re.compile(r"""(?is)<script[^>]+src=["']([^"']*smt[^"']*\.js[^"']*)["']""")
+
+
+def _extract_local_mqtt_password_from_smt_js(script: str) -> str | None:
+    """Extract the local REMKO MQTT password from a local ``smt*.js`` file.
+
+    REMKO SmartControl/SmartCom firmware generations expose the local MQTT
+    password in their local JavaScript bundle.  Exact variable names vary, so
+    this parser intentionally accepts a small set of password/key-like names
+    but avoids logging or returning unrelated short strings.
+    """
+    for pattern in _SMT_PASSWORD_PATTERNS:
+        for match in pattern.finditer(script or ""):
+            candidate = match.group(1).strip()
+            lowered = candidate.lower()
+            if lowered in {"password", "undefined", "null", "false", "true"}:
+                continue
+            if len(candidate) < 4:
+                continue
+            return candidate
+    return None
+
+
+def _fetch_text_url(url: str, timeout: float) -> str:
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0 Home Assistant REMKO SmartWeb"})
+    with urlopen(request, timeout=timeout) as response:  # nosec B310 - user-selected local host
+        data = response.read(512 * 1024)
+    return data.decode("utf-8", errors="replace")
+
+
+def discover_local_mqtt_credentials(
+    host: str,
+    timeout: float = 4.0,
+) -> LocalMqttCredentialDiscoveryResult:
+    """Best-effort discovery of direct-device MQTT credentials from local web UI."""
+    host = (host or "").strip()
+    if not host:
+        return LocalMqttCredentialDiscoveryResult(error="missing_host")
+
+    base_urls = [f"http://{host}/", f"https://{host}/"]
+    paths = (
+        "smt.min.js",
+        "js/smt.min.js",
+        "webpages/js/smt.min.js",
+        "sd-card/lighttpd/webpages/js/smt.min.js",
+    )
+    candidate_urls: list[str] = []
+    seen: set[str] = set()
+    last_error: str | None = None
+
+    def add_url(url: str) -> None:
+        if url not in seen:
+            seen.add(url)
+            candidate_urls.append(url)
+
+    for base_url in base_urls:
+        try:
+            index = _fetch_text_url(base_url, timeout)
+        except Exception as err:
+            last_error = type(err).__name__
+        else:
+            for script_src in _SCRIPT_SRC_RE.findall(index):
+                add_url(urljoin(base_url, script_src))
+        for path in paths:
+            add_url(urljoin(base_url, path))
+
+    attempted: list[str] = []
+    for url in candidate_urls:
+        attempted.append(url)
+        try:
+            script = _fetch_text_url(url, timeout)
+        except Exception as err:
+            last_error = type(err).__name__
+            continue
+        password = _extract_local_mqtt_password_from_smt_js(script)
+        if password:
+            return LocalMqttCredentialDiscoveryResult(
+                user=DEFAULT_DEVICE_MQTT_USER,
+                password=password,
+                source=url,
+                attempted_sources=tuple(attempted),
+            )
+    return LocalMqttCredentialDiscoveryResult(
+        attempted_sources=tuple(attempted),
+        error=last_error or "password_not_found",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +356,9 @@ def _local_probe_subscriptions(mode: str) -> list[tuple[str, int]]:
     if mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT):
         subscriptions.extend(
             [
+                ("V04P26/+/HOST2CLIENT", 2),
+                ("V04P26/+/CLIENT2HOST", 2),
+                ("V04P26/+/RESP", 2),
                 ("V04P27/+/HOST2CLIENT", 2),
                 ("V04P27/+/CLIENT2HOST", 2),
                 ("V04P28/+/HOST2CLIENT", 2),
@@ -296,9 +436,9 @@ def _classify_local_mqtt_topic(topic: str, mode: str) -> tuple[str, str] | None:
         return base_topic, LOCAL_MQTT_MODE_PORTAL_BROKER
     if (
         mode in (LOCAL_MQTT_MODE_AUTO, LOCAL_MQTT_MODE_DEVICE_MQTT)
-        and direction in {"HOST2CLIENT", "CLIENT2HOST"}
+        and direction in {"HOST2CLIENT", "CLIENT2HOST", "RESP"}
         and (
-            parts[0] in {"V04P27", "V04P28"}
+            parts[0] in {"V04P26", "V04P27", "V04P28"}
             or (len(parts) >= 3 and parts[-2] == "SMTID")
         )
     ):

@@ -71,7 +71,7 @@
       },
       "local_device": {
         "title": "Direct device MQTT",
-        "description": "Use this only for sticks or SmartControl devices that provide MQTT directly on their own IP.",
+        "description": "Use this only for sticks or SmartControl devices that provide MQTT directly on their own IP. If username and password are left empty, the integration tries to read the local smt.min.js file and probe with the default user 0000000000000000.",
         "data": {
           "local_mqtt_host": "Stick MQTT host",
           "local_mqtt_port": "Stick MQTT port",
