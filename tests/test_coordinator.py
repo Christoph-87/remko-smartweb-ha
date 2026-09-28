@@ -33,12 +33,14 @@ ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
 ha_helpers = types.ModuleType("homeassistant.helpers")
+ha_selector = types.ModuleType("homeassistant.helpers.selector")
 ha_event = types.ModuleType("homeassistant.helpers.event")
 ha_entity = types.ModuleType("homeassistant.helpers.entity")
 ha_update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 ha_storage = types.ModuleType("homeassistant.helpers.storage")
 ha_const = types.ModuleType("homeassistant.const")
 ha_exceptions = types.ModuleType("homeassistant.exceptions")
+voluptuous = types.ModuleType("voluptuous")
 
 
 class WaterHeaterEntity:
@@ -163,6 +165,15 @@ class ConfigEntry:
         self.options = options or {}
 
 
+class ConfigFlow:
+    def __init_subclass__(cls, **kwargs):
+        return super().__init_subclass__()
+
+
+class OptionsFlow:
+    pass
+
+
 class DeviceInfo(dict):
     pass
 
@@ -177,6 +188,29 @@ def async_call_later(hass, delay, callback):
     return None
 
 
+class SelectSelector:
+    def __init__(self, config):
+        self.config = config
+
+
+class SelectSelectorConfig:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class SelectSelectorMode:
+    DROPDOWN = "dropdown"
+
+
+class Schema:
+    def __init__(self, schema):
+        self.schema = schema
+
+
+def _vol_marker(*args, **kwargs):
+    return args[0] if args else None
+
+
 ha_date.DateEntity = DateEntity
 ha_number.NumberEntity = NumberEntity
 ha_climate.ClimateEntity = ClimateEntity
@@ -188,16 +222,25 @@ ha_water_heater.WaterHeaterEntity = WaterHeaterEntity
 ha_water_heater.WaterHeaterEntityFeature = WaterHeaterEntityFeature
 ha_core.HomeAssistant = HomeAssistant
 ha_config_entries.ConfigEntry = ConfigEntry
+ha_config_entries.ConfigFlow = ConfigFlow
+ha_config_entries.OptionsFlow = OptionsFlow
 ha_entity.DeviceInfo = DeviceInfo
 ha_event.async_call_later = async_call_later
 ha_update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
 ha_update_coordinator.CoordinatorEntity = CoordinatorEntity
 ha_update_coordinator.UpdateFailed = UpdateFailed
 ha_storage.Store = Store
+ha_selector.SelectSelector = SelectSelector
+ha_selector.SelectSelectorConfig = SelectSelectorConfig
+ha_selector.SelectSelectorMode = SelectSelectorMode
 ha_const.ATTR_TEMPERATURE = "temperature"
 ha_const.PERCENTAGE = "%"
 ha_const.UnitOfTemperature = UnitOfTemperature
 ha_exceptions.HomeAssistantError = HomeAssistantError
+voluptuous.Schema = Schema
+voluptuous.Required = _vol_marker
+voluptuous.Optional = _vol_marker
+voluptuous.Coerce = lambda func: func
 
 sys.modules.setdefault("homeassistant", homeassistant)
 sys.modules.setdefault("homeassistant.components", ha_components)
@@ -210,12 +253,14 @@ sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
 sys.modules.setdefault("homeassistant.helpers", ha_helpers)
+sys.modules.setdefault("homeassistant.helpers.selector", ha_selector)
 sys.modules.setdefault("homeassistant.helpers.event", ha_event)
 sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
 sys.modules.setdefault("homeassistant.helpers.update_coordinator", ha_update_coordinator)
 sys.modules.setdefault("homeassistant.helpers.storage", ha_storage)
 sys.modules.setdefault("homeassistant.const", ha_const)
 sys.modules.setdefault("homeassistant.exceptions", ha_exceptions)
+sys.modules.setdefault("voluptuous", voluptuous)
 
 paho = types.ModuleType("paho")
 paho_mqtt = types.ModuleType("paho.mqtt")
@@ -231,6 +276,7 @@ sys.modules.setdefault("requests", requests)
 import custom_components.remko_smartweb.api as api_module
 import custom_components.remko_smartweb.client as client_module
 import custom_components.remko_smartweb.coordinator as coordinator_module
+import custom_components.remko_smartweb.config_flow as config_flow_module
 from custom_components.remko_smartweb._account import DeviceResolveError
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.number import RemkoSmartWebNumber
@@ -1094,6 +1140,35 @@ class CoordinatorTests(unittest.TestCase):
             "V04P27/SMT1C9DC263C758",
         )
         self.assertIsNone(_stick_topic_from_mac("not-a-mac"))
+
+    def test_local_mqtt_candidates_include_portal_mac_arp_hint(self):
+        original_arp = config_flow_module._arp_ip_for_mac
+        original_domains = config_flow_module._resolver_search_domains
+        original_gateway = config_flow_module._default_gateway_ip
+        original_dns = config_flow_module._dns_query_a
+        original_getaddrinfo = config_flow_module.socket.getaddrinfo
+        try:
+            config_flow_module._arp_ip_for_mac = lambda mac: (
+                "192.168.2.126" if mac == "1c:9d:c2:63:c7:58" else None
+            )
+            config_flow_module._resolver_search_domains = lambda: []
+            config_flow_module._default_gateway_ip = lambda: None
+            config_flow_module._dns_query_a = lambda *_args, **_kwargs: set()
+            config_flow_module.socket.getaddrinfo = (
+                lambda *_args, **_kwargs: []
+            )
+
+            candidates = config_flow_module.discover_local_mqtt_host_candidates(
+                "1c:9d:c2:63:c7:58"
+            )
+        finally:
+            config_flow_module._arp_ip_for_mac = original_arp
+            config_flow_module._resolver_search_domains = original_domains
+            config_flow_module._default_gateway_ip = original_gateway
+            config_flow_module._dns_query_a = original_dns
+            config_flow_module.socket.getaddrinfo = original_getaddrinfo
+
+        self.assertEqual(candidates, {"192.168.2.126": "192.168.2.126 (portal mac)"})
 
     def test_local_mqtt_probe_result_statuses_are_actionable(self):
         self.assertEqual(

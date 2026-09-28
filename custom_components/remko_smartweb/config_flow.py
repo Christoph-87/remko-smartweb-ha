@@ -21,6 +21,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
+    CONF_DEVICE_MAC,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
     CONF_MODEL,
@@ -114,7 +115,9 @@ def _local_mqtt_mode_form_default(values: dict) -> str:
 
 
 def _candidate_label(ip: str, sources: set[str]) -> str:
-    return ip
+    if not sources:
+        return ip
+    return f"{ip} ({', '.join(sorted(sources))})"
 
 
 def _compact_mac(value: str | None) -> str | None:
@@ -137,6 +140,13 @@ def _arp_ip_for_mac(mac: str | None) -> str | None:
         if len(parts) >= 4 and _compact_mac(parts[3]) == compact_mac:
             return parts[0]
     return None
+
+
+def _arp_candidates_for_mac(mac: str | None) -> dict[str, str]:
+    ip = _arp_ip_for_mac(mac)
+    if not ip:
+        return {}
+    return {ip: _candidate_label(ip, {"portal mac"})}
 
 
 def _resolver_search_domains() -> list[str]:
@@ -239,8 +249,8 @@ def _dns_query_a(server: str, name: str, timeout: float = 1.2) -> set[str]:
     return results
 
 
-def discover_local_mqtt_host_candidates() -> dict[str, str]:
-    """Return best-effort local REMKO stick IP candidates from hostname hints."""
+def discover_local_mqtt_host_candidates(mac: str | None = None) -> dict[str, str]:
+    """Return best-effort local REMKO stick IP candidates from safe local hints."""
     hostnames = {"espressif", "espressif.local"}
     for domain in _resolver_search_domains():
         hostnames.add(f"espressif.{domain.strip('.')}")
@@ -261,7 +271,9 @@ def discover_local_mqtt_host_candidates() -> dict[str, str]:
             for ip in _dns_query_a(gateway, hostname):
                 candidates.setdefault(ip, set()).add(hostname)
 
-    return {ip: _candidate_label(ip, sources) for ip, sources in sorted(candidates.items())}
+    result = {ip: _candidate_label(ip, sources) for ip, sources in sorted(candidates.items())}
+    result.update(_arp_candidates_for_mac(mac))
+    return dict(sorted(result.items()))
 
 
 class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -625,8 +637,19 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         return self._show_local_broker_form()
 
     async def _async_prepare_local_mqtt_candidates(self) -> None:
+        portal_mac = self._config_entry.data.get(CONF_DEVICE_MAC)
+        if not portal_mac:
+            data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
+            client = data.get("client") if isinstance(data, dict) else None
+            if client is not None:
+                try:
+                    metadata = client.diagnostic_metadata()
+                    portal_mac = metadata.get("Portal MAC")
+                except Exception:
+                    portal_mac = None
         candidates = await self.hass.async_add_executor_job(
-            discover_local_mqtt_host_candidates
+            discover_local_mqtt_host_candidates,
+            portal_mac,
         )
         used_hosts = self._local_mqtt_hosts_used_by_other_entries()
         candidates = {
@@ -672,7 +695,7 @@ class RemkoSmartWebOptionsFlow(config_entries.OptionsFlow):
         candidates = getattr(self, "_local_mqtt_host_candidates", {}) or {}
         return {
             "candidate_count": str(len(candidates)),
-            "candidate_list": ", ".join(candidates) if candidates else "-",
+            "candidate_list": ", ".join(candidates.values()) if candidates else "-",
         }
 
     async def async_step_local_device(self, user_input=None):

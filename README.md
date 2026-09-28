@@ -96,7 +96,10 @@ from the device's integration options:
   - `Cloud only`
   - `Redirected WiFi stick / local portal broker`
   - `Direct device MQTT / SmartControl bridge`
-- `Stick IP address` for validation and mismatch warnings.
+- `Stick IP address` for validation and mismatch warnings. When the portal
+  metadata contains a device MAC address, the options flow also checks the
+  local ARP/neighbor table and can suggest the matching IP address as a
+  candidate.
 - Shared local broker host, port, username, and password for redirected
   WiFi-stick setups.
 - `Bridge REMKO app commands through Home Assistant` if the REMKO app should

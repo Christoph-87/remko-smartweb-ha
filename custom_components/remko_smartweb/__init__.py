@@ -15,6 +15,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
+    CONF_DEVICE_MAC,
     CONF_DEVICE_KIND,
     CONF_BEEP,
     CONF_LOCAL_MQTT_HOST,
@@ -153,6 +154,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     changed_entry_data = False
     if not device_path and client.device_path:
         entry_data_update[CONF_DEVICE_PATH] = client.device_path
+        changed_entry_data = True
+    device_mac = getattr(client, "device_mac", None)
+    if device_mac and entry.data.get(CONF_DEVICE_MAC) != device_mac:
+        entry_data_update[CONF_DEVICE_MAC] = device_mac
         changed_entry_data = True
     if local_mqtt_host and client.topic and client.topic != local_mqtt_topic:
         entry_data_update[CONF_LOCAL_MQTT_TOPIC] = client.topic

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.0-beta.9
+- Persist the SmartWeb portal MAC address after device metadata resolution so local MQTT setup can reuse it later
+- Use the portal MAC as an ARP/neighbor-table hint in the options flow to suggest a direct-device MQTT host candidate for SmartControl/WKF setups
+
 ## v0.5.0-beta.8
 - Parse WKF/WPM firmware 4.26 local MQTT value IDs such as `1082`, `5034`, `5039`, and `5055`, so direct-device `V04P26` messages can populate the experimental WPM temperature entities
 - Add WPM outdoor and water temperature diagnostic sensors for local MQTT value payloads
