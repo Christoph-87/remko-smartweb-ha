@@ -729,6 +729,26 @@ class ProfileParsingTests(unittest.TestCase):
             {"4110": "01", "1352": "002D"},
         )
 
+    def test_wpm_profile_parses_wkf_426_local_mqtt_values(self):
+        status = WpmDeviceProfile().parse_values_status(
+            {
+                "1082": "01C2",
+                "1951": "03",
+                "5001": "0A",
+                "5034": "00FF",
+                "5039": "0212",
+                "5055": "00C8",
+            }
+        )
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 3)
+        self.assertEqual(status["wpm_unit_on"], 10)
+        self.assertEqual(status["wpm_outdoor_temperature"], 20.0)
+        self.assertEqual(status["wpm_water_temperature"], 53.0)
+        self.assertEqual(status["wpm_target_temperature"], 45.0)
+        self.assertEqual(status["wpm_setpoint_ch"], 45.0)
+        self.assertEqual(status["wpm_setpoint_hp"], 25.5)
+
     def test_kwt_profile_parses_readonly_climate_values(self):
         values = {
             "1194": "01",

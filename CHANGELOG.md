@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.0-beta.8
+- Parse WKF/WPM firmware 4.26 local MQTT value IDs such as `1082`, `5034`, `5039`, and `5055`, so direct-device `V04P26` messages can populate the experimental WPM temperature entities
+- Add WPM outdoor and water temperature diagnostic sensors for local MQTT value payloads
+
 ## v0.5.0-beta.7
 - Add best-effort local MQTT credential discovery for direct device MQTT setups: when username and password are left empty, the options flow tries to read the local SmartControl `smt.min.js` file, extract the device MQTT password, and probe with the known default user `0000000000000000`
 - Extend direct-device local MQTT probing to include the `V04P26` topic family used by some WKF/Firmware 4.26 installations, without subscribing to broad cloud wildcards

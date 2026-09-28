@@ -321,6 +321,12 @@
       "wpm_manual_defrost": {
         "name": "WPM manual defrost"
       },
+      "wpm_outdoor_temperature": {
+        "name": "WPM outdoor temperature"
+      },
+      "wpm_water_temperature": {
+        "name": "WPM water temperature"
+      },
       "wpm_target_temperature": {
         "name": "WPM target temperature"
       },

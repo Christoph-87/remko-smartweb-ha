@@ -321,6 +321,12 @@
       "wpm_manual_defrost": {
         "name": "WPM manuelle Abtauung"
       },
+      "wpm_outdoor_temperature": {
+        "name": "WPM Außentemperatur"
+      },
+      "wpm_water_temperature": {
+        "name": "WPM Wassertemperatur"
+      },
       "wpm_target_temperature": {
         "name": "WPM Zieltemperatur"
       },
