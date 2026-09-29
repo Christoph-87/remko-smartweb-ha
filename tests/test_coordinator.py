@@ -1545,6 +1545,73 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/ESP")
         self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
 
+    def test_wpm_cloud_read_status_prefers_client2host_values(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client.smt_user = 12345
+        client.device_dev = "0"
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client._local_mqtt_host = None
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_AUTO
+        client._last_status = None
+        client._mqtt = FakeMqtt({"5039": "0212", "5055": "00C8", "1951": "03"})
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client._log_poll_summary = lambda *args, **kwargs: None
+
+        status = client.read_status()
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 3)
+        self.assertEqual(status["wpm_outdoor_temperature"], 20.0)
+        self.assertEqual(status["wpm_water_temperature"], 53.0)
+        self.assertEqual(len(client._mqtt.published), 1)
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P27/0123456789ABCDEF/CLIENT2HOST")
+        self.assertIn(5039, payload["query_list"])
+        self.assertIn(5055, payload["query_list"])
+
+    def test_wpm_write_falls_back_to_client2host_when_esp_readback_is_cached(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client._last_status_source = None
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        calls = []
+        client._mqtt_write_wpm_esp_values = lambda values, timeout=10, write_id=None: calls.append(
+            ("esp", dict(values))
+        ) or True
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: calls.append(
+            ("client2host", dict(values))
+        ) or dict(values)
+
+        def read_status():
+            client._last_status_source = "cached_last_status"
+            return {"wpm_setpoint_ch": 42}
+
+        client.read_status = read_status
+        original_sleep = client_module.time.sleep
+        client_module.time.sleep = lambda _seconds: None
+        try:
+            client._set_value_ids_unlocked({"1352": "002D"})
+        finally:
+            client_module.time.sleep = original_sleep
+
+        self.assertEqual(
+            calls,
+            [
+                ("esp", {"1352": "002D"}),
+                ("client2host", {"1352": "002D"}),
+            ],
+        )
+
     def test_cloud_mqtt_poll_values_matches_main_client_id(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.sid = "0123456789ABCDEF"

@@ -17,7 +17,7 @@ broker, or direct local MQTT differences.
 | RBW / DHW | `DomesticHotWaterDeviceProfile` | values and RBW ESP direct readback | water heater/number/date value IDs; direct RBW ESP before fallback | Partial: DHW setpoint/power/mode/vacation tests | no local-specific override yet; should stay cloud-compatible unless local options are enabled |
 | KWT | `KwtDeviceProfile` | values and KWT ESP direct readback | climate value IDs; direct KWT ESP before fallback | Covered: entity-level climate temperature, power/mode, fan/swing value IDs; KWT direct ESP value write | no local-specific override yet |
 | LTE | `LteDeviceProfile` | values | power and target humidity value IDs | Entity-level power switch and humidity number value IDs covered | no local-specific override yet |
-| WPM | `WpmDeviceProfile` | values | numbers/switches value IDs | Entity-level number and switch value IDs covered | no local-specific override yet |
+| WPM | `WpmDeviceProfile` | values first, ESP Modbus fallback | ESP Modbus write first, then `CLIENT2HOST` value-write fallback when fresh readback is unavailable or mismatched | Entity-level number/switch value IDs and WPM fallback covered | no local-specific override yet |
 | Diagnostics | `DiagnosticsDeviceProfile` | values/logging only | no writes | n/a | n/a |
 
 ## HA Controls
@@ -31,8 +31,8 @@ broker, or direct local MQTT differences.
 | `switch.power` | Generic AC/KWT/LTE? | Cloud: value-write if profile has spec; Local Generic AC: C0 `/ESP` | `/RESP` / values | Generic AC and LTE covered; KWT switch exposure/write path follows KWT climate value IDs |
 | `switch.turbo/sleep/eco/frost/bioclean` | Generic AC | C0 `/ESP` | `/RESP` | Entity contract covers all extended C0 switches |
 | `switch.beep` | all | local option only, no device write | n/a | Covered |
-| WPM switches | WPM | value-write | values | Entity contracts added for `wpm_heat_cool_mode` and `wpm_manual_defrost` value IDs |
-| `number.*` | LTE/WPM/etc. | `set_value_ids(build_value_write)` | values | Entity contracts added for LTE humidity and all WPM number keys |
+| WPM switches | WPM | ESP Modbus write with value-write fallback | values | Entity contracts added for `wpm_heat_cool_mode` and `wpm_manual_defrost` value IDs; WPM cached-readback fallback covered |
+| `number.*` | LTE/WPM/etc. | `set_value_ids(build_value_write)`; WPM uses ESP Modbus write with value-write fallback | values | Entity contracts added for LTE humidity and all WPM number keys |
 | `date.vacation_end` | DHW | value-write RBW registers | values | Covered |
 | `water_heater` controls | DHW | value-write/direct RBW ESP | values/ESP | Covered for key paths |
 | `set_mxw_timer_slots` service | Generic AC/MXW | value-write timer IDs | values | Service-level contract covers timer value IDs |

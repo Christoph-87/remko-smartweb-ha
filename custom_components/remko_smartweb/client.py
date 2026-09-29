@@ -1542,6 +1542,34 @@ class RemkoSmartWebClient:
             if parsed_kwt:
                 return parsed_kwt
         elif protocol_name == "wpm_modbus":
+            # WPM/WKF cloud MQTT often returns useful SmartWeb value payloads
+            # while the direct ESP Modbus roundtrip only echoes Tx.
+            values = self._mqtt_poll_values(timeout=10)
+            if isinstance(values, dict):
+                self._log_mapping_snapshot("client2host_values", values)
+            parsed_values = self.profile.parse_values_status(values) if values else None
+            if parsed_values:
+                if self._last_status:
+                    merged = dict(self._last_status)
+                    merged.update({k: v for k, v in parsed_values.items() if v is not None})
+                    self._last_status = merged
+                    self._last_status_source = "client2host_values"
+                    self._log_poll_summary(
+                        "client2host_values",
+                        parsed=merged,
+                        values=values,
+                        duration=time.monotonic() - started,
+                    )
+                    return merged
+                self._last_status = parsed_values
+                self._last_status_source = "client2host_values"
+                self._log_poll_summary(
+                    "client2host_values",
+                    parsed=parsed_values,
+                    values=values,
+                    duration=time.monotonic() - started,
+                )
+                return parsed_values
             parsed_wpm = self._read_status_wpm_modbus(started)
             if parsed_wpm:
                 return parsed_wpm
@@ -2083,6 +2111,8 @@ class RemkoSmartWebClient:
                 time.sleep(1.0)
                 try:
                     readback = self.read_status()
+                    readback_source = getattr(self, "_last_status_source", None)
+                    parsed_mismatches = self._value_write_readback_mismatches(values, readback)
                     _LOGGER.warning(
                         "REMKO SmartWeb experimental WPM write readback: %s",
                         _debug_value(
@@ -2090,24 +2120,49 @@ class RemkoSmartWebClient:
                                 "write_id": write_id,
                                 "device": self.device_name,
                                 "path": "wpm_modbus",
-                                "readback_source": getattr(self, "_last_status_source", None),
+                                "confirmed": (
+                                    None
+                                    if readback_source == "cached_last_status"
+                                    else not bool(parsed_mismatches)
+                                ),
+                                "readback_source": readback_source,
                                 **_parsed_status_summary(readback),
+                            }
+                        ),
+                    )
+                    if not parsed_mismatches and readback_source != "cached_last_status":
+                        return
+                    _LOGGER.warning(
+                        "REMKO SmartWeb experimental WPM write fallback: %s",
+                        _debug_value(
+                            {
+                                "write_id": write_id,
+                                "device": self.device_name,
+                                "from_path": "wpm_modbus",
+                                "to_path": "client2host",
+                                "reason": (
+                                    "fresh_readback_unavailable"
+                                    if readback_source == "cached_last_status"
+                                    else "readback_mismatch"
+                                ),
+                                "mismatches": parsed_mismatches,
                             }
                         ),
                     )
                 except Exception as err:
                     _LOGGER.warning(
-                        "REMKO SmartWeb experimental WPM write readback failed: %s",
+                        "REMKO SmartWeb experimental WPM write fallback: %s",
                         _debug_value(
                             {
                                 "write_id": write_id,
                                 "device": self.device_name,
-                                "path": "wpm_modbus",
+                                "from_path": "wpm_modbus",
+                                "to_path": "client2host",
+                                "reason": "readback_failed",
                                 "error": str(err),
                             }
                         ),
                     )
-                return
 
         response_values = self._mqtt_write_values(values, timeout=10, write_id=write_id)
         if (
@@ -2196,6 +2251,13 @@ class RemkoSmartWebClient:
 
     def _value_write_readback_mismatches(self, values: dict[str, str], readback: dict) -> dict:
         mismatches = {}
+        wpm_status_keys = {
+            "4110": "wpm_heat_cool_mode",
+            "4113": "wpm_manual_defrost",
+            "5774": "wpm_target_temperature",
+            "1352": "wpm_setpoint_ch",
+            "2179": "wpm_setpoint_hp",
+        }
         for key, value in values.items():
             key = str(key)
             try:
@@ -2242,6 +2304,11 @@ class RemkoSmartWebClient:
                 }.get(id_value)
                 if expected is not None and actual is not None and actual != expected:
                     mismatches[key] = {"expected": expected, "actual": actual}
+            elif key in wpm_status_keys:
+                actual_key = wpm_status_keys[key]
+                actual = readback.get(actual_key)
+                if actual is not None and abs(id_value - float(actual)) > 0.05:
+                    mismatches[key] = {"expected": id_value, "actual": actual}
         return mismatches
 
     def close(self):

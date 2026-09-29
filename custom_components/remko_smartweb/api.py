@@ -95,6 +95,14 @@ VALUE_STATUS_QUERY_LIST = [
     5774,
     1352,
     2179,
+    # WKF/WPM 4.26 cloud MQTT values observed on SmartControl/WiFi-stick setups.
+    1082,
+    1951,
+    5001,
+    5033,
+    5034,
+    5039,
+    5055,
 ]
 
 SENSITIVE_DEBUG_KEYS = {

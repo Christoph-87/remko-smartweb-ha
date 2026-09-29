@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.5.0-beta.10
+- Prefer the `CLIENT2HOST` SmartWeb value path for WPM/WKF cloud MQTT polling before trying the slower direct ESP Modbus roundtrip, avoiding long waits when the stick only echoes ESP `Tx` messages
+- Query the WKF/WPM firmware 4.26 value IDs explicitly (`1082`, `1951`, `5001`, `5033`, `5034`, `5039`, `5055`) so supported temperature/mode values are returned more reliably
+- For experimental WPM writes, treat cached readback as unconfirmed and fall back from ESP Modbus writes to the `CLIENT2HOST` value-write path so setpoints and WPM switches still have a chance to apply on sticks that only echo ESP `Tx`
+
 ## v0.5.0-beta.9
 - Persist the SmartWeb portal MAC address after device metadata resolution so local MQTT setup can reuse it later
 - Use the portal MAC as an ARP/neighbor-table hint in the options flow to suggest a direct-device MQTT host candidate for SmartControl/WKF setups
