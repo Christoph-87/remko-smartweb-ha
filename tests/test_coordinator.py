@@ -2010,6 +2010,38 @@ class CoordinatorTests(unittest.TestCase):
 
         client.set_value_ids({"1194": "02"})
 
+    def test_wpm_value_write_allows_timeout_as_pending(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_wpm_esp_values = lambda values, timeout=10, write_id=None: False
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: None
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client.read_status = lambda: (_ for _ in ()).throw(
+            AssertionError("slow WPM readback should be skipped")
+        )
+
+        client.set_value_ids({"2179": "001B"})
+
+    def test_wpm_value_write_allows_mismatched_response_as_pending(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt_write_wpm_esp_values = lambda values, timeout=10, write_id=None: False
+        client._mqtt_write_values = lambda values, timeout=10, write_id=None: {"5034": "0113"}
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client.read_status = lambda: (_ for _ in ()).throw(
+            AssertionError("slow WPM readback should be skipped")
+        )
+
+        client.set_value_ids({"2179": "001B"})
+
     def test_climate_set_temperature_honors_hvac_mode(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(

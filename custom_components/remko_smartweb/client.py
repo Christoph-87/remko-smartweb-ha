@@ -2165,12 +2165,19 @@ class RemkoSmartWebClient:
                     )
 
         response_values = self._mqtt_write_values(values, timeout=10, write_id=write_id)
-        if (
-            not response_values
-            and getattr(self.profile, "kind", None) == DEVICE_KIND_CLIMATE
-        ):
+        pending_without_response = not response_values and (
+            getattr(self.profile, "kind", None) == DEVICE_KIND_CLIMATE
+            or isinstance(self.profile, WpmDeviceProfile)
+        )
+        if pending_without_response:
+            log_label = (
+                "experimental WPM"
+                if isinstance(self.profile, WpmDeviceProfile)
+                else "climate"
+            )
             _LOGGER.warning(
-                "REMKO SmartWeb climate value write confirmation pending: %s",
+                "REMKO SmartWeb %s value write confirmation pending: %s",
+                log_label,
                 _debug_value(
                     {
                         "write_id": write_id,
@@ -2220,6 +2227,21 @@ class RemkoSmartWebClient:
                     }
                 ),
             )
+            if isinstance(self.profile, WpmDeviceProfile):
+                _LOGGER.warning(
+                    "REMKO SmartWeb experimental WPM value write confirmation pending: %s",
+                    _debug_value(
+                        {
+                            "write_id": write_id,
+                            "device": self.device_name,
+                            "path": "client2host",
+                            "reason": "client2host_response_mismatch",
+                            "mismatches_ignored": mismatches,
+                            "written_values": sorted(values),
+                        }
+                    ),
+                )
+                return
         time.sleep(1.0)
         try:
             readback = self.read_status()
