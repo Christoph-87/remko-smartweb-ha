@@ -21,15 +21,20 @@ directly. A Cloud-style WiFi stick normally needs either the REMKO Cloud path or
 the redirected-stick path; a direct-MQTT device uses the local MQTT path.
 
 ```mermaid
-flowchart LR
-  Stick["Cloud-style WiFi stick"]
-  Stick --> Cloud["REMKO Cloud broker"]
-  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud
+flowchart TB
+  subgraph cloud["REMKO Cloud path"]
+    HACloud["Home Assistant"] --> Cloud["REMKO Cloud broker"]
+    StickCloud["Cloud-style WiFi stick"] --> Cloud
+  end
 
-  Stick -. DNS redirect .-> Broker["Your local MQTT broker<br/>cloud-style listener"]
-  HA -. local broker client .-> Broker
+  subgraph redirect["Redirected cloud-style stick"]
+    StickRedirect["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Broker["Your local MQTT broker"]
+    HARedirect["Home Assistant"] --> Broker
+  end
 
-  HA --> Direct["Stick/device with<br/>direct local MQTT"]
+  subgraph direct["Direct local MQTT"]
+    HADirect["Home Assistant"] --> Direct["Stick/device with local MQTT"]
+  end
 ```
 
 ## Before You Start
