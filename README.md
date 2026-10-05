@@ -45,16 +45,17 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 | Device | Models | Read | Write | REMKO cloud | Local/direct path |
 |--------|--------|:----:|:-----:|:-----------:|-------------------|
 | ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
-| ❄️ **Air conditioner** | SKW 521 DC | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
-| ❄️ **Air conditioner** | RVD 525 DC | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
+| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
+| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | ⚠️ | ⚠️ | ✅ Catalog evidence | ⚠️ Usually indoor-unit WiFi/Smart-Control stick; needs logs per series |
+| ❄️ **Multi-split outdoor unit** | MVT DC | — | — | ✅ Catalog evidence | — System context only; choose the indoor-unit profile |
 | ❄️ **Air conditioner** | RKL 495 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, Freecom UART mapping |
 | ❄️ **Air conditioner** | RKL 355 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, NWT UART mapping |
 | ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, AUX UART mapping |
 | 🚿 **Domestic hot water** | RBW 302 Pro | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, RBW Modbus mapping |
 | 💧 **Dehumidifier** | LTE series | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, LTE UART mapping |
 | 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, KWT Modbus mapping |
-| 🔥 **Modular heat pump** | WPM 400 A Pro, WPK, WKM / WKM Pro, SQW 405 Pro | ⚠️ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, WPM Modbus mapping |
-| 🔥 **Modular heat pump** | WKF/WPM systems with firmware 4.26 | ⚠️ | ⚠️ | ✅ Experimental | ⚠️ Direct device MQTT / SmartControl bridge observed with `V04P26/#` |
+| 🔥 **Heat pump** | WKF Neo compact, WKF Duo | ⚠️ | ⚠️ | ✅ Catalog evidence / Smart-Web | ⚠️ WPM/WKF values; direct SmartControl MQTT observed on some firmware |
+| 🔥 **Heat pump candidates** | WPM 400 A Pro, WPK, WKM / WKM Pro, WSP, SQW 405 Pro, HTS Duo, MWL | ⚠️ | ⚠️ | ⚠️ Mixed / catalog dependent | ⚠️ WPM/WSP diagnostics; profile and firmware need confirmation |
 | ❓ **Other** | Any other SmartWeb device | ⚠️ | — | ✅ Diagnostics | — |
 
 ✅ Supported &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; — Not available
@@ -68,6 +69,16 @@ protocol mappings are still marked experimental until more real devices and
 firmware versions are confirmed. Direct device MQTT / SmartControl bridge is a
 separate architecture and has so far mainly been observed on WKF/WPM firmware
 4.26 systems.
+The model grouping above is intentionally conservative. A researched REMKO
+model catalog is kept in [`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv)
+with notes in [`docs/remko_model_catalog.md`](docs/remko_model_catalog.md).
+`Cloud_Betrieb = Ja` in that catalog means the source evidence mentions
+WiFi/Smart-Web/cloud operation; it is not the same as confirmed integration
+support. For split and multi-split systems, the indoor unit series is usually
+more relevant than the outdoor unit.
+The current profile-based architecture and the comparison with EVCC-style
+templates and OpenEMS-style components are summarized in
+[`docs/device_profile_architecture.md`](docs/device_profile_architecture.md).
 Experimental means it works in testing but may behave differently on some units.
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.
