@@ -1,12 +1,12 @@
 # Local Connection Modes
 
 Goal: support local REMKO operation without making users understand REMKO's
-transport details during setup. The implementation may have several technical
-paths, but the Home Assistant onboarding should start from the known cloud
-device, guide the user through one local candidate at a time, and show the
-detected result with actionable checks.
+transport details during setup. User-facing setup should distinguish two real
+operating paths: REMKO Cloud or local MQTT on the stick/device. Redirecting a
+cloud-style WiFi stick to a local broker is a fallback for sticks that do not
+expose MQTT locally.
 
-## Known Architectures
+## Connection Paths
 
 ### Cloud
 
@@ -20,10 +20,44 @@ This is the production path from `main`. Feature branches must keep this path
 behaviour-compatible unless a deliberate cloud fix is made.
 
 This is also the only proven path for the device families that worked in the
-0.4.x releases. If the README says "Cloud path: confirmed", it means this
-SmartWeb account path, not local MQTT.
+0.4.x releases. If the README says `REMKO Cloud`, it means this SmartWeb
+account path, not local MQTT on the stick or device.
 
-### Local Portal Broker
+### Local MQTT on Stick or Device
+
+Some SmartControl/SmartCom devices expose a local MQTT path directly or via a
+Mosquitto bridge to the device IP. Community field reports show this as a
+separate path from REMKO Cloud.
+
+Known shape from issue reports:
+
+- user config points at a local MQTT node/prefix
+- data topic: `<node>/SMTID/HOST2CLIENT`
+- command topic: `<node>/SMTID/CLIENT2HOST`
+- `SMTID` can be a literal topic segment; real IDs may be in the payload
+- credentials may come from the local SmartControl web UI, e.g. `smt.min.js`
+- current external evidence is mainly for WKF/WPM/WSP heat-pump systems, not
+  for the AC/RBW/LTE device families that were originally supported through the
+  REMKO cloud path
+
+This should be implemented as another transport adapter, not as separate HA
+entities or duplicated profile logic.
+
+Initial technical support in `feature/local-portal-support`:
+
+- options include an explicit `local_mqtt_mode`
+- `_mqtt.probe_local_mqtt()` returns a structured read-only probe result for a
+  user-selected host/broker
+- automatic discovery can classify `HOST2CLIENT`/`CLIENT2HOST` topics as
+  `local_device_mqtt`
+- `local_device_mqtt` uses value-based `CLIENT2HOST` writes directly instead
+  of forcing AC C0/ESP writes
+- `local_device_mqtt` reads values before trying the cloud-style ESP status path
+
+This still needs real hardware testing because topic prefixes and payload fields
+can differ between SmartControl installations.
+
+### Redirected Cloud-Style Stick Fallback
 
 Some WiFi sticks do not expose MQTT on their own IP. They connect outbound to
 the configured SmartWeb broker instead. Local operation is possible by
@@ -73,41 +107,6 @@ Certificate UX:
   reachability, showing whether the stick connects on `8883`, and explaining
   that missing `HOST2PORTAL` after a successful DNS rewrite may mean a TLS or
   listener configuration problem.
-
-### Local Device MQTT
-
-Some SmartControl/SmartCom devices expose a local MQTT path directly or via a
-Mosquitto bridge to the device IP. Community field reports show this as a
-separate architecture from redirected WiFi sticks.
-
-Known shape from that project and issue reports:
-
-- user config points at a local MQTT node/prefix
-- data topic: `<node>/SMTID/HOST2CLIENT`
-- command topic: `<node>/SMTID/CLIENT2HOST`
-- `SMTID` can be a literal topic segment; real IDs may be in the payload
-- credentials may come from the local SmartControl web UI, e.g. `smt.min.js`
-- current external evidence is mainly for WKF/WPM/WSP heat-pump systems, not
-  for the AC/RBW/LTE device families that were originally supported through the
-  REMKO cloud path
-
-This should be implemented as another transport adapter, not as separate HA
-entities or duplicated profile logic.
-
-Initial technical support in `feature/local-portal-support`:
-
-- options include an explicit `local_mqtt_mode`
-- `_mqtt.probe_local_mqtt()` returns a structured read-only probe result for a
-  user-selected host/broker
-- automatic discovery can classify `HOST2PORTAL` as `local_portal_broker`
-- automatic discovery can classify `HOST2CLIENT`/`CLIENT2HOST` topics as
-  `local_device_mqtt`
-- `local_device_mqtt` uses value-based `CLIENT2HOST` writes directly instead
-  of forcing AC C0/ESP writes
-- `local_device_mqtt` reads values before trying the cloud-style ESP status path
-
-This still needs real hardware testing because topic prefixes and payload fields
-can differ between SmartControl installations.
 
 ## Product Onboarding
 

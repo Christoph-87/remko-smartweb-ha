@@ -42,32 +42,34 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 
 ## Supported devices
 
-| Device | Models | Cloud path | Redirected WiFi stick | Direct MQTT / SmartControl |
-|--------|--------|:----------:|:---------------------:|:--------------------------:|
-| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ Confirmed | ⚠️ Observed | — |
-| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | ✅ Confirmed | ❓ Unknown | — |
-| ❄️ **Air conditioner** | RKL 495 DC | ✅ Confirmed | ❓ Unknown | — |
-| ❄️ **Air conditioner** | RKL 355 DC | ✅ Confirmed | ❓ Unknown | — |
-| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ Confirmed | ❓ Unknown | — |
-| 🚿 **Domestic hot water** | RBW 302 Pro | ✅ Confirmed | ❓ Unknown | — |
-| 💧 **Dehumidifier** | LTE series | ✅ Confirmed | ❓ Unknown | — |
-| 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ Confirmed | ❓ Unknown | — |
-| 🔥 **Heat pump** | WKF/WPM systems | ⚠️ Experimental | ❓ Unknown | ⚠️ Observed |
-| 🔥 **Heat pump** | WSP systems | ❓ Unknown | ❓ Unknown | ⚠️ Observed |
-| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | ❓ Unknown | ❓ Unknown | — |
-| ❄️ **Multi-split outdoor unit** | MVT DC | — | — | — |
-| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | ❓ Unknown | ❓ Unknown | ❓ Unknown |
-| ❓ **Other** | Any other SmartWeb device | ⚠️ Diagnostics | — | — |
+| Device | Models | Connection path |
+|--------|--------|-----------------|
+| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | REMKO Cloud ✅, redirect observed ⚠️ |
+| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | REMKO Cloud ✅ |
+| ❄️ **Air conditioner** | RKL 495 DC | REMKO Cloud ✅ |
+| ❄️ **Air conditioner** | RKL 355 DC | REMKO Cloud ✅ |
+| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | REMKO Cloud ✅ |
+| 🚿 **Domestic hot water** | RBW 302 Pro | REMKO Cloud ✅ |
+| 💧 **Dehumidifier** | LTE series | REMKO Cloud ✅ |
+| 🌡️ **Compact heat pump** | KWT 180–300 DC | REMKO Cloud ✅ |
+| 🔥 **Heat pump** | WKF/WPM systems | Local MQTT on stick/device ⚠️ |
+| 🔥 **Heat pump** | WSP systems | Local MQTT on stick/device ⚠️ |
+| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | Unknown ❓ |
+| ❄️ **Multi-split outdoor unit** | MVT DC | Use matching indoor unit |
+| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | Unknown ❓ |
+| ❓ **Other** | Any other SmartWeb device | Diagnostics / unknown ❓ |
 
-✅ Confirmed &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown &nbsp;·&nbsp; — Not expected / not applicable
+✅ Confirmed &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown
 
 The 0.4.x device families are confirmed through the REMKO SmartWeb cloud path.
-Local support is split into two different experiments: redirected cloud-style
-WiFi sticks, and direct SmartControl MQTT seen mainly on heat pumps. The model
-catalog in [`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv) is only
-research evidence; it is not a support guarantee. For split and multi-split
-systems, the indoor unit series is usually more relevant than the outdoor unit.
-Architecture notes are in
+For one installed device, treat REMKO Cloud and local MQTT as alternative paths.
+A redirected WiFi-stick setup belongs to the REMKO Cloud-style path and is only
+useful for sticks that do not expose local MQTT on the stick or device. The
+model catalog in
+[`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv) is research
+evidence, not a support guarantee. For split and multi-split systems, the indoor
+unit series is usually more relevant than the outdoor unit. Architecture notes
+are in
 [`docs/device_profile_architecture.md`](docs/device_profile_architecture.md).
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.
@@ -81,26 +83,24 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 Cloud-only installations do **not** need a local MQTT broker, DNS rewrite, or
 AdGuard rule. Local MQTT is optional and experimental.
 
-There are two different local architectures:
+There are two local cases:
 
-- **Redirected WiFi stick / local portal broker**: a cloud-style WiFi stick is
-  redirected by DNS to a local MQTT broker. This keeps the cloud-style topic
-  model, but moves the broker locally.
-- **Direct device MQTT / SmartControl bridge**: the device or SmartControl
-  bridge exposes MQTT directly, commonly with topics such as
-  `V04P28/SMTID/...`. This path is mainly heat-pump evidence so far.
+- **Local MQTT on the stick/device**: the REMKO communication module exposes
+  MQTT locally. This is currently seen mainly on heat-pump/SmartControl setups.
+- **Redirected cloud-style stick**: the stick has no local MQTT service, but can
+  be redirected by DNS to a local broker that mimics the cloud-side MQTT broker.
 
 ```mermaid
 flowchart LR
-  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud["REMKO cloud<br/>SmartWeb MQTT"]
+  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud["REMKO Cloud"]
   Cloud --> Stick["Cloud-style WiFi stick"]
   Stick --> Device["REMKO device"]
 
-  Stick -. DNS redirect .-> Broker["Local MQTT broker"]
-  HA -. optional local portal mode .-> Broker
+  HA --> Local["Local MQTT<br/>on stick/device"]
+  Local --> Device
 
-  HA --> Direct["Direct device MQTT<br/>SmartControl bridge"]
-  Direct --> HeatPump["Heat pump<br/>WKF / WPM / WSP"]
+  Stick -. fallback DNS redirect .-> Broker["Local broker<br/>for cloud-style stick"]
+  HA -. experimental fallback .-> Broker
 ```
 
 Local setup still starts from a cloud-discovered REMKO device where possible.
