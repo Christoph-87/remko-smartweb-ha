@@ -32,6 +32,31 @@ transport can be REMKO cloud, redirected WiFi stick, or direct SmartControl MQTT
 and firmware can affect topic shape and register IDs. Keep WKF/WPM/WSP-style
 profiles conservative and read-only/diagnostic until logs confirm the mapping.
 
+## How To Learn More
+
+The catalog can only tell us where REMKO publicly hints at WiFi, Smart-Web, or
+cloud capability. To decide which integration path a real installation uses, we
+need technical evidence from one of these sources:
+
+1. **Cloud device metadata** from the normal SmartWeb login flow: device name,
+   portal type, SID/SK topic, `TYPE`, `DEV`, and available payloads.
+2. **Debug logs from this integration** with diagnostics enabled. These show
+   whether the device returns C0/ESP status, SmartWeb `values`, or another
+   payload shape.
+3. **Local MQTT probe results** from a candidate local IP or broker:
+   - direct device MQTT: `HOST2CLIENT` / `CLIENT2HOST` topics such as
+     `V04P28/SMTID/...`
+   - redirected stick: `HOST2PORTAL` from `V04P27/SMT...` after DNS redirect
+4. **Device web assets**, if reachable locally. Some SmartControl devices expose
+   `smt.min.js`, which can reveal the direct MQTT password used by
+   SmartControl-style MQTT.
+5. **Known-register evidence** from projects such as `Altrec/remko_mqtt-ha`.
+   Treat this as heat-pump/direct-MQTT evidence unless a matching AC/RBW/LTE
+   device log proves the same transport.
+
+Official REMKO product pages are useful for onboarding hints, but they do not
+prove which transport the Home Assistant integration can use.
+
 ## Current Architectural Takeaways
 
 - Keep runtime support in code profiles, not in the catalog. The catalog can
