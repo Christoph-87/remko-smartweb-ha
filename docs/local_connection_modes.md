@@ -20,22 +20,39 @@ Do not configure DNS redirect for a stick/device that already exposes local MQTT
 directly. A Cloud-style WiFi stick normally needs either the REMKO Cloud path or
 the redirected-stick path; a direct-MQTT device uses the local MQTT path.
 
+## Redirected WiFi Stick Overview
+
+Without bridging, the redirected stick talks only to your local broker. Home
+Assistant can control it locally, but the REMKO app can no longer reach the
+stick through REMKO's broker while the DNS redirect is active.
+
 ```mermaid
-flowchart TB
-  subgraph cloud["REMKO Cloud path"]
-    HACloud["Home Assistant"] --> Cloud["REMKO Cloud broker"]
-    StickCloud["Cloud-style WiFi stick"] --> Cloud
-  end
-
-  subgraph redirect["Redirected cloud-style stick"]
-    StickRedirect["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Broker["Your local MQTT broker"]
-    HARedirect["Home Assistant"] --> Broker
-  end
-
-  subgraph direct["Direct local MQTT"]
-    HADirect["Home Assistant"] --> Direct["Stick/device with local MQTT"]
-  end
+flowchart LR
+  Stick["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Local["Your local MQTT broker"]
+  HA["Home Assistant"] --> Local
 ```
+
+With **Bridge REMKO app commands through Home Assistant** enabled, Home
+Assistant also keeps MQTT connections to REMKO's cloud broker. It forwards app
+commands from the cloud broker to the local broker and forwards local responses
+back to the cloud broker. The stick still stays on your local broker; Home
+Assistant acts as the bridge.
+
+```mermaid
+flowchart LR
+  App["REMKO app"] --> Cloud["REMKO Cloud broker"]
+  HA["Home Assistant<br/>bridge enabled"] <--> Cloud
+  HA <--> Local["Your local MQTT broker"]
+  Stick["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Local
+```
+
+Bridge mode is optional and experimental. Local Home Assistant control uses the
+local broker. REMKO app passthrough still needs working REMKO cloud credentials
+and connectivity because Home Assistant has to relay the cloud-side commands.
+In practice, Home Assistant subscribes to the cloud-side command topics such as
+`/ESP` and `/CLIENT2HOST`, publishes them to the local broker, and mirrors local
+responses such as `/RESP`, `/HOST2CLIENT`, and stick heartbeat traffic back to
+the cloud side.
 
 ## Before You Start
 
@@ -127,11 +144,14 @@ impact.
    **Redirected WiFi stick / local portal broker**.
 4. Enter the **Stick IP candidate**. This is only used for validation; it is not
    the MQTT broker host.
-5. In the shared broker step, enter the local broker host and Home Assistant
+5. Leave **Bridge REMKO app commands through Home Assistant** disabled unless
+   you want the REMKO app to keep working through Home Assistant while the stick
+   is redirected locally.
+6. In the shared broker step, enter the local broker host and Home Assistant
    listener port, commonly `1883`.
-6. Enter the Home Assistant-side MQTT username/password if your broker requires
+7. Enter the Home Assistant-side MQTT username/password if your broker requires
    it.
-7. Save and check the diagnostics sensors/logs before relying on controls.
+8. Save and check the diagnostics sensors/logs before relying on controls.
 
 The stick itself should connect to the stick-facing listener after DNS is
 changed. Home Assistant connects to the Home Assistant listener.
@@ -169,7 +189,8 @@ After applying the DNS rule and restarting the stick if needed, check:
 
 If the REMKO app stops controlling the device while the local broker sees stick
 traffic, that is expected for a redirected cloud-style setup. The stick is no
-longer connected to REMKO's broker while redirected locally.
+longer connected to REMKO's broker while redirected locally. Enable bridge mode
+only after local control is healthy.
 
 ## Troubleshooting
 

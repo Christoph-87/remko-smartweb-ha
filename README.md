@@ -89,26 +89,10 @@ There are two local cases:
 - **Redirected cloud-style stick**: a REMKO Cloud WiFi stick connects outward to
   the cloud broker, but DNS redirects only that stick to your local broker.
 
-```mermaid
-flowchart TB
-  subgraph cloud["REMKO Cloud path"]
-    HACloud["Home Assistant"] --> Cloud["REMKO Cloud broker"]
-    StickCloud["Cloud-style WiFi stick"] --> Cloud
-  end
-
-  subgraph redirect["Redirected cloud-style stick"]
-    StickRedirect["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Broker["Your local MQTT broker"]
-    HARedirect["Home Assistant"] --> Broker
-  end
-
-  subgraph direct["Direct local MQTT"]
-    HADirect["Home Assistant"] --> Direct["Stick/device with local MQTT"]
-  end
-```
-
 Local setup still starts from a cloud-discovered REMKO device where possible.
-The detailed setup, DNS/broker requirements, diagnostics, and troubleshooting
-are documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md).
+The detailed setup for redirected WiFi sticks, including optional REMKO app
+bridging, DNS/broker requirements, diagnostics, and troubleshooting, is
+documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md).
 
 ---
 
