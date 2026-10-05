@@ -42,24 +42,32 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 
 ## Supported devices
 
-| Device | Models | Read | Write |
-|--------|--------|:----:|:-----:|
-| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ | ✅ |
-| ❄️ **Air conditioner** | SKW 521 DC | ✅ | ✅ |
-| ❄️ **Air conditioner** | RVD 525 DC | ✅ | ✅ |
-| ❄️ **Air conditioner** | RKL 495 DC | ✅ | ⚠️ |
-| ❄️ **Air conditioner** | RKL 355 DC | ✅ | ⚠️ |
-| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ | ⚠️ |
-| 🚿 **Domestic hot water** | RBW 302 Pro | ✅ | ✅ |
-| 💧 **Dehumidifier** | LTE series | ✅ | ⚠️ |
-| 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ | ⚠️ |
-| 🔥 **Modular heat pump** | WPM 400 A Pro, WPK, WKM / WKM Pro, SQW 405 Pro | ⚠️ | ⚠️ |
-| ❓ **Other** | Any other SmartWeb device | ⚠️ | — |
+| Device | Models | Read | Write | REMKO cloud | Local/direct path |
+|--------|--------|:----:|:-----:|:-----------:|-------------------|
+| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
+| ❄️ **Air conditioner** | SKW 521 DC | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
+| ❄️ **Air conditioner** | RVD 525 DC | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker |
+| ❄️ **Air conditioner** | RKL 495 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, Freecom UART mapping |
+| ❄️ **Air conditioner** | RKL 355 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, NWT UART mapping |
+| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, AUX UART mapping |
+| 🚿 **Domestic hot water** | RBW 302 Pro | ✅ | ✅ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, RBW Modbus mapping |
+| 💧 **Dehumidifier** | LTE series | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, LTE UART mapping |
+| 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, KWT Modbus mapping |
+| 🔥 **Modular heat pump** | WPM 400 A Pro, WPK, WKM / WKM Pro, SQW 405 Pro | ⚠️ | ⚠️ | ✅ Default | ⚠️ Redirected WiFi stick / local portal broker, WPM Modbus mapping |
+| 🔥 **Modular heat pump** | WKF/WPM systems with firmware 4.26 | ⚠️ | ⚠️ | ✅ Experimental | ⚠️ Direct device MQTT / SmartControl bridge observed with `V04P26/#` |
+| ❓ **Other** | Any other SmartWeb device | ⚠️ | — | ✅ Diagnostics | — |
 
-✅ Supported &nbsp;·&nbsp; ⚠️ Experimental &nbsp;·&nbsp; — Not available
+✅ Supported &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; — Not available
 
 **Read** = sensor values are shown in Home Assistant.
 **Write** = you can change settings (temperature, mode, on/off) from Home Assistant. A per-device **Beep on command** switch controls whether supported AC command frames ask the unit to beep when accepting commands.
+**REMKO cloud** is the normal setup and only needs the SmartWeb account.
+**Local/direct path** requires the optional local MQTT setup below. Redirected
+WiFi-stick mode is transport-level support for SmartWeb sticks; individual
+protocol mappings are still marked experimental until more real devices and
+firmware versions are confirmed. Direct device MQTT / SmartControl bridge is a
+separate architecture and has so far mainly been observed on WKF/WPM firmware
+4.26 systems.
 Experimental means it works in testing but may behave differently on some units.
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.
