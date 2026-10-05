@@ -1,41 +1,38 @@
 # Local Connection Modes
 
 This page explains the optional local connection modes for REMKO devices and how
-to set up a redirected WiFi-stick connection.
+to run a REMKO Cloud-style WiFi stick through your own local broker.
 
 Most users should start with the normal REMKO Cloud setup. Local mode is
 experimental and should be enabled one device at a time.
 
 ## Which Path Do I Need?
 
-There are two real operating paths:
+The communication module determines which local path is possible:
 
 | Path | Use when | Notes |
 |------|----------|-------|
 | REMKO Cloud | The device works through the REMKO app or SmartWeb portal | This is the confirmed path for the 0.4.x device families. |
-| Local MQTT on stick/device | The stick/device exposes MQTT locally | Mainly observed on heat-pump/SmartControl setups so far. |
+| Redirected cloud-style stick | The device uses a REMKO Cloud WiFi stick that connects outward to REMKO's broker, and you want to run that traffic locally | DNS redirects only that stick to your local broker. Home Assistant talks to the same local broker. |
+| Local MQTT on stick/device | The stick/device exposes MQTT directly on its own IP or through a SmartControl bridge | Mainly observed on heat-pump/SmartControl setups so far. This is not the same as redirecting a Cloud stick. |
 
-There is also one fallback for cloud-style WiFi sticks:
-
-| Fallback | Use when | Notes |
-|----------|----------|-------|
-| Redirected cloud-style stick | The stick does not expose MQTT locally, but connects outbound to REMKO's cloud broker | DNS redirects only that stick to your local broker. Home Assistant then talks to the local broker. |
-
-Do not configure DNS redirect for a device that already exposes local MQTT on
-the stick/device. Treat local MQTT and REMKO Cloud as alternative paths for one
-installed device.
+Do not configure DNS redirect for a stick/device that already exposes local MQTT
+directly. A Cloud-style WiFi stick normally needs either the REMKO Cloud path or
+the redirected-stick path; a direct-MQTT device uses the local MQTT path.
 
 ```mermaid
 flowchart LR
-  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud["REMKO Cloud"]
-  Cloud --> Stick["Cloud-style WiFi stick"]
-  Stick --> Device["REMKO device"]
+  Device["REMKO device"]
 
-  HA --> Local["Local MQTT<br/>on stick/device"]
-  Local --> Device
+  Stick["Cloud-style WiFi stick"] --> Device
+  Stick --> Cloud["REMKO Cloud broker"]
+  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud
 
-  Stick -. DNS redirect fallback .-> Broker["Local broker<br/>cloud-style listener"]
+  Stick -. DNS redirect .-> Broker["Your local MQTT broker<br/>cloud-style listener"]
   HA -. local broker client .-> Broker
+
+  Direct["Stick/device with<br/>direct local MQTT"] --> Device
+  HA --> Direct
 ```
 
 ## Before You Start
@@ -58,10 +55,12 @@ The redirected-stick setup has two MQTT sides:
 | Side | Used by | Typical port | Authentication |
 |------|---------|--------------|----------------|
 | Home Assistant listener | Home Assistant integration | `1883` | username/password recommended |
-| Stick-facing listener | REMKO WiFi stick after DNS redirect | `8883` | often anonymous or cloud-style |
+| Stick-facing listener | REMKO WiFi stick after DNS redirect | `8883` | allow the stick to connect without Home Assistant credentials |
 
 Use separate listener settings so the stick is not rejected by the Home
-Assistant listener's username/password rules.
+Assistant listener's username/password rules. In Mosquitto this usually means
+`per_listener_settings true`, with authentication enabled on the Home
+Assistant-facing listener and disabled on the stick-facing listener.
 
 Example Mosquitto shape:
 
@@ -81,6 +80,8 @@ allow_anonymous true
 
 This is only a shape, not a drop-in configuration. Keep your own broker paths,
 ACLs, container mounts, and certificate handling consistent with your setup.
+The important point is that the redirected REMKO stick can connect to the
+`8883` listener, while Home Assistant uses the separate `1883` listener.
 
 ## Certificate Requirement
 
@@ -211,7 +212,7 @@ Transport adapters should own:
 - diagnostics for freshness, auth, subscriptions, and readback
 
 Profiles should not need to know whether the device is using REMKO Cloud,
-redirected cloud-style stick fallback, or local MQTT on stick/device.
+redirected cloud-style stick mode, or local MQTT on stick/device.
 
 ## Open Questions
 

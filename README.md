@@ -62,10 +62,9 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 ✅ Confirmed &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown
 
 The 0.4.x device families are confirmed through the REMKO SmartWeb cloud path.
-For one installed device, treat REMKO Cloud and local MQTT as alternative paths.
-A redirected WiFi-stick setup belongs to the REMKO Cloud-style path and is only
-useful for sticks that do not expose local MQTT on the stick or device. The
-model catalog in
+The communication module determines the usable path: Cloud-style WiFi sticks use
+the REMKO Cloud path, optionally redirected to a local broker; devices with
+direct local MQTT use the local MQTT path. The model catalog in
 [`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv) is research
 evidence, not a support guarantee. For split and multi-split systems, the indoor
 unit series is usually more relevant than the outdoor unit. Architecture notes
@@ -87,20 +86,22 @@ There are two local cases:
 
 - **Local MQTT on the stick/device**: the REMKO communication module exposes
   MQTT locally. This is currently seen mainly on heat-pump/SmartControl setups.
-- **Redirected cloud-style stick**: the stick has no local MQTT service, but can
-  be redirected by DNS to a local broker that mimics the cloud-side MQTT broker.
+- **Redirected cloud-style stick**: a REMKO Cloud WiFi stick connects outward to
+  the cloud broker, but DNS redirects only that stick to your local broker.
 
 ```mermaid
 flowchart LR
-  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud["REMKO Cloud"]
-  Cloud --> Stick["Cloud-style WiFi stick"]
-  Stick --> Device["REMKO device"]
+  Device["REMKO device"]
 
-  HA --> Local["Local MQTT<br/>on stick/device"]
-  Local --> Device
+  Stick["Cloud-style WiFi stick"] --> Device
+  Stick --> Cloud["REMKO Cloud broker"]
+  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud
 
-  Stick -. fallback DNS redirect .-> Broker["Local broker<br/>for cloud-style stick"]
-  HA -. experimental fallback .-> Broker
+  Stick -. DNS redirect .-> Broker["Your local MQTT broker<br/>for cloud-style stick"]
+  HA -. local broker client .-> Broker
+
+  Direct["Stick/device with<br/>direct local MQTT"] --> Device
+  HA --> Direct
 ```
 
 Local setup still starts from a cloud-discovered REMKO device where possible.
