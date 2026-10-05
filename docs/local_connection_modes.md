@@ -19,10 +19,6 @@ REMKO's MQTT-over-WebSocket broker, and uses the normal SmartWeb topics:
 This is the production path from `main`. Feature branches must keep this path
 behaviour-compatible unless a deliberate cloud fix is made.
 
-This is also the only proven path for the device families that worked in the
-0.4.x releases. If the README says "Cloud path: confirmed", it means this
-SmartWeb account path, not local MQTT.
-
 ### Local Portal Broker
 
 Some WiFi sticks do not expose MQTT on their own IP. They connect outbound to
@@ -40,10 +36,6 @@ Observed with MXW WiFi sticks:
 
 This mode needs broker/listener diagnostics because failures can look like HA
 state changes while the stick is not subscribed to the command topic.
-
-This path can be useful for cloud-style WiFi sticks, but it should not be read
-as "the device supports direct MQTT". It is a controlled DNS/broker redirect of
-the same stick traffic that normally goes to REMKO.
 
 Recommended broker shape:
 
@@ -87,9 +79,6 @@ Known shape from that project and issue reports:
 - command topic: `<node>/SMTID/CLIENT2HOST`
 - `SMTID` can be a literal topic segment; real IDs may be in the payload
 - credentials may come from the local SmartControl web UI, e.g. `smt.min.js`
-- current external evidence is mainly for WKF/WPM/WSP heat-pump systems, not
-  for the AC/RBW/LTE device families that were originally supported through the
-  REMKO cloud path
 
 This should be implemented as another transport adapter, not as separate HA
 entities or duplicated profile logic.
