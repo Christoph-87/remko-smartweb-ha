@@ -94,6 +94,27 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
     supports_value_write = True
     profile_name = "RBW 302 Pro"
     protocol_name = "rbw_modbus"
+    query_value_ids = (
+        1152,
+        1176,
+        1177,
+        1178,
+        1192,
+        1194,
+        1333,
+        1334,
+        1336,
+        1402,
+        1453,
+        1454,
+        5032,
+        5081,
+        5943,
+        5944,
+        5946,
+        5947,
+        6009,
+    )
     sensor_descriptions = (
         ("dhw_setpoint", "DHW Setpoint", "temperature"),
         ("dhw_top_temperature", "DHW Top Temperature", "temperature"),

@@ -18,6 +18,7 @@ class SmartWebDeviceProfile:
     diagnostics_only = False
     profile_name = "Diagnostics"
     protocol_name = "diagnostics"
+    query_value_ids: tuple[int, ...] = ()
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:
         return None
@@ -27,6 +28,10 @@ class SmartWebDeviceProfile:
 
     def build_value_write(self, overrides: dict) -> dict[str, str] | None:
         return None
+
+    def value_query_ids(self) -> tuple[int, ...]:
+        """Return SmartWeb value IDs this device profile wants to poll."""
+        return self.query_value_ids
 
     def sensors_for_data(self, data: dict | None) -> list[SensorDescription]:
         present = set(data.keys()) if isinstance(data, dict) else set()

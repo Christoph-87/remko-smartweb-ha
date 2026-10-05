@@ -216,10 +216,12 @@ WPM_READ_RANGES = (
 )
 
 
-def _value_query_list(extra_ids=()) -> list[int]:
+def _value_query_list(extra_ids=(), base_ids=None) -> list[int]:
     values = []
     seen = set()
-    for value_id in list(VALUE_STATUS_QUERY_LIST) + [
+    if base_ids is None:
+        base_ids = VALUE_STATUS_QUERY_LIST
+    for value_id in list(base_ids) + [
         int(value_id) for value_id in extra_ids if str(value_id).isdigit()
     ]:
         if value_id in seen:

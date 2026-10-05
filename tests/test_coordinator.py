@@ -1574,6 +1574,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(topic, "V04P27/0123456789ABCDEF/CLIENT2HOST")
         self.assertIn(5039, payload["query_list"])
         self.assertIn(5055, payload["query_list"])
+        self.assertNotIn(1194, payload["query_list"])
 
     def test_wpm_write_falls_back_to_client2host_when_esp_readback_is_cached(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

@@ -356,6 +356,14 @@ class RemkoSmartWebClient:
             return ""
         return str(device_dev)
 
+    def _value_query_ids(self) -> tuple[int, ...] | None:
+        """Return the active profile query IDs, or None for legacy autodetect."""
+        profile = getattr(self, "profile", None)
+        if profile is None or not hasattr(profile, "value_query_ids"):
+            return None
+        ids = profile.value_query_ids()
+        return ids or None
+
     def prime_status_cache(self, status: dict | None) -> None:
         """Seed the write cache from coordinator data before a local SET call."""
         if not isinstance(status, dict):
@@ -1022,7 +1030,7 @@ class RemkoSmartWebClient:
         self._ensure_mqtt()
         poll = {
             "FORCE_RESPONSE": True,
-            "query_list": _api_module._value_query_list(),
+            "query_list": _api_module._value_query_list(base_ids=self._value_query_ids()),
             "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": 0,
             "ISTOUCH": False,
@@ -1043,7 +1051,7 @@ class RemkoSmartWebClient:
         self._ensure_mqtt()
         payload = {
             "values": {str(key): str(value) for key, value in values.items()},
-            "query_list": _api_module._value_query_list(values),
+            "query_list": _api_module._value_query_list(values, base_ids=self._value_query_ids()),
             "FORCE_RESPONSE": True,
             "CLIENT_ID": self._client2host_client_id(),
             "LASTWRITE": int(time.time() * 1000),

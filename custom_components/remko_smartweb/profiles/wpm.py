@@ -13,6 +13,7 @@ def looks_like_wpm_name(device_name: str | None) -> bool:
             "wpm",
             "wpk",
             "wkf",
+            "wsp",
             "wkm",
             "sqw",
             "waermepumpe",
@@ -75,6 +76,24 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
     protocol_name = "wpm_modbus"
     diagnostics_only = True
     supports_value_write = True
+    query_value_ids = (
+        4110,
+        4113,
+        5734,
+        5774,
+        1352,
+        2179,
+        1082,
+        1334,
+        1402,
+        1951,
+        5001,
+        5033,
+        5034,
+        5039,
+        5055,
+    )
+    heat_cool_mode_value_ids = ("4110", "1951")
     sensor_descriptions = (
         ("wpm_heat_cool_mode", "WPM Heat/Cool Mode", None),
         ("wpm_manual_defrost", "WPM Manual Defrost", None),
@@ -98,7 +117,7 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
             return None
         status = {}
         for key, value in (
-            ("wpm_heat_cool_mode", _first_present_byte(values, "4110", "1951")),
+            ("wpm_heat_cool_mode", _first_present_byte(values, *self.heat_cool_mode_value_ids)),
             ("wpm_manual_defrost", _first_present_byte(values, "4113")),
             ("wpm_unit_on", _first_present_byte(values, "5734", "5001")),
             # WKF/WPM 4.26 local MQTT commonly exposes 1082/5033/5034/5039
@@ -142,3 +161,13 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
                 ValueWriteSpec("wpm_setpoint_hp", "2179", digits=4),
             ),
         )
+
+
+class WspDeviceProfile(WpmDeviceProfile):
+    """Experimental WSP heat pump profile with WSP-specific value IDs."""
+
+    profile_name = "WSP Heat Pump"
+    query_value_ids = tuple(
+        value_id for value_id in WpmDeviceProfile.query_value_ids if value_id != 1951
+    ) + (1088,)
+    heat_cool_mode_value_ids = ("1088", "4110", "1951")

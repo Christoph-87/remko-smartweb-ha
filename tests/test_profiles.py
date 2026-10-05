@@ -65,7 +65,7 @@ from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDev
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DHW_MODE_VALUE_IDS, DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
-from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
+from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile, WspDeviceProfile
 from custom_components.remko_smartweb.profiles.value_mapping import ValueWriteSpec, build_value_write
 
 
@@ -174,6 +174,11 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIn(1352, query_list)
         self.assertEqual(query_list.count(1333), 1)
         self.assertGreater(len(query_list), 2)
+
+    def test_value_query_list_uses_profile_base_ids(self):
+        query_list = _value_query_list({"1333": "022B", "9999": "01"}, base_ids=(1194, 1333))
+
+        self.assertEqual(query_list, [1194, 1333, 9999])
 
     def test_wpm_read_ranges_match_frontend_query_chain(self):
         self.assertEqual(
@@ -754,11 +759,25 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["wpm_dhw_hysteresis_top_candidate"], 3.5)
 
     def test_value_query_list_includes_wkf_426_wpm_values(self):
-        query = _value_query_list()
+        query = WpmDeviceProfile().value_query_ids()
 
         for value_id in (1082, 1334, 1402, 1951, 5001, 5033, 5034, 5039, 5055):
             with self.subTest(value_id=value_id):
                 self.assertIn(value_id, query)
+
+    def test_wsp_profile_uses_wsp_main_mode_candidate(self):
+        profile = WspDeviceProfile()
+        status = profile.parse_values_status({"1088": "04", "1951": "03"})
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 4)
+        self.assertIn(1088, profile.value_query_ids())
+        self.assertNotIn(1951, profile.value_query_ids())
+
+    def test_auto_profile_uses_wsp_query_ids_for_wsp_names(self):
+        profile = get_parser_profile("WSP 80")
+
+        self.assertIn(1088, profile.value_query_ids())
+        self.assertNotIn(1951, profile.value_query_ids())
 
     def test_kwt_profile_parses_readonly_climate_values(self):
         values = {

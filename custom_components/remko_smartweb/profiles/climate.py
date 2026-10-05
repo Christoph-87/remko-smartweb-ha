@@ -183,6 +183,34 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
     supports_value_write = True
     profile_name = "Generic AC"
     protocol_name = "default_ac_uart"
+    query_value_ids = (
+        1046,
+        1190,
+        1191,
+        1192,
+        1193,
+        1194,
+        1195,
+        1196,
+        1197,
+        1198,
+        1199,
+        1200,
+        1218,
+        1210,
+        1211,
+        1228,
+        1229,
+        1298,
+        1451,
+        3024,
+        5000,
+        5315,
+        5530,
+        5532,
+        5534,
+        5539,
+    )
     sensor_descriptions = (
         ("room", "Room Temperature", "temperature"),
         ("outdoor", "Outdoor Temperature", "temperature"),
