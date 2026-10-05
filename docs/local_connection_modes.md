@@ -22,17 +22,14 @@ the redirected-stick path; a direct-MQTT device uses the local MQTT path.
 
 ```mermaid
 flowchart LR
-  Device["REMKO device"]
-
-  Stick["Cloud-style WiFi stick"] --> Device
+  Stick["Cloud-style WiFi stick"]
   Stick --> Cloud["REMKO Cloud broker"]
   HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud
 
   Stick -. DNS redirect .-> Broker["Your local MQTT broker<br/>cloud-style listener"]
   HA -. local broker client .-> Broker
 
-  Direct["Stick/device with<br/>direct local MQTT"] --> Device
-  HA --> Direct
+  HA --> Direct["Stick/device with<br/>direct local MQTT"]
 ```
 
 ## Before You Start

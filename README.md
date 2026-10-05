@@ -91,17 +91,14 @@ There are two local cases:
 
 ```mermaid
 flowchart LR
-  Device["REMKO device"]
-
-  Stick["Cloud-style WiFi stick"] --> Device
+  Stick["Cloud-style WiFi stick"]
   Stick --> Cloud["REMKO Cloud broker"]
   HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud
 
   Stick -. DNS redirect .-> Broker["Your local MQTT broker<br/>for cloud-style stick"]
   HA -. local broker client .-> Broker
 
-  Direct["Stick/device with<br/>direct local MQTT"] --> Device
-  HA --> Direct
+  HA --> Direct["Stick/device with<br/>direct local MQTT"]
 ```
 
 Local setup still starts from a cloud-discovered REMKO device where possible.
