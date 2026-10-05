@@ -4,3 +4,13 @@ __pycache__/
 .env
 docs/*.js
 docs/fetch_and_diff.py
+docs/*.local.md
+docs/local/
+docs/*.xlsx
+docs/*.xls
+docs/*.ods
+docs/*.pcap
+docs/*.pcapng
+docs/*.har
+docs/*.log
+docs/*.jsonl

@@ -148,3 +148,11 @@ Yes! The integration can connect to any SmartWeb device and collect diagnostic d
    - Screenshots from the REMKO app showing available settings
 
 > Remove your email, password, and session IDs before sharing any logs.
+
+---
+
+## Contributing
+
+Device reports, redacted logs, documentation fixes, and read-only sensor mappings
+are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for what to include and how
+to keep shared diagnostics safe.
