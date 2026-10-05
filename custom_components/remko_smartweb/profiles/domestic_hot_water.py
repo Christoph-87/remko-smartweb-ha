@@ -99,6 +99,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         ("dhw_top_temperature", "DHW Top Temperature", "temperature"),
         ("dhw_bottom_temperature", "DHW Bottom Temperature", "temperature"),
         ("dhw_ambient_temperature", "DHW Ambient Temperature", "temperature"),
+        ("dhw_hysteresis_bottom", "DHW Heat Pump Startup Hysteresis Bottom", "temperature"),
+        ("dhw_hysteresis_top", "DHW Heat Pump Startup Hysteresis Top", "temperature"),
         ("dhw_mode", "DHW Mode", None),
         ("dhw_power_state", "DHW Power State", None),
         ("compressor_state", "Compressor State", None),
@@ -106,7 +108,6 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         ("compressor_runtime", "Compressor Runtime", "diagnostic_hours"),
         ("electric_heater_runtime", "Electric Heater Runtime", "diagnostic_hours"),
     )
-
     def parse_values_status(self, values: dict) -> dict | None:
         if not isinstance(values, dict):
             return None
@@ -114,6 +115,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
         b1194 = _state_byte(values.get("1194"))
         dhw_mode = _dhw_mode(values.get("1192"))
         dhw_setpoint = _temperature_tenths(values.get("1333"))
+        dhw_hysteresis_bottom = _temperature_tenths(values.get("1334"))
+        dhw_hysteresis_top = _temperature_tenths(values.get("1402"))
         dhw_top = _temperature_tenths(values.get("5943"))
         dhw_bottom = _temperature_tenths(values.get("5944"))
         dhw_ambient = _temperature_tenths(values.get("5032"))
@@ -127,6 +130,8 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             and dhw_current is None
             and dhw_bottom is None
             and dhw_ambient is None
+            and dhw_hysteresis_bottom is None
+            and dhw_hysteresis_top is None
             and dhw_mode is None
             and b1194 is None
             and b1152 is None
@@ -149,6 +154,10 @@ class DomesticHotWaterDeviceProfile(SmartWebDeviceProfile):
             status["dhw_bottom_temperature"] = dhw_bottom
         if dhw_ambient is not None:
             status["dhw_ambient_temperature"] = dhw_ambient
+        if dhw_hysteresis_bottom is not None:
+            status["dhw_hysteresis_bottom"] = dhw_hysteresis_bottom
+        if dhw_hysteresis_top is not None:
+            status["dhw_hysteresis_top"] = dhw_hysteresis_top
         if dhw_mode is not None:
             status["dhw_mode"] = dhw_mode
             status["mode"] = dhw_mode

@@ -244,6 +244,18 @@
       "dhw_ambient_temperature": {
         "name": "DHW ambient temperature"
       },
+      "dhw_hysteresis_bottom": {
+        "name": "DHW heat pump startup hysteresis bottom"
+      },
+      "dhw_hysteresis_top": {
+        "name": "DHW heat pump startup hysteresis top"
+      },
+      "wpm_dhw_hysteresis_bottom_candidate": {
+        "name": "WPM DHW hysteresis bottom candidate"
+      },
+      "wpm_dhw_hysteresis_top_candidate": {
+        "name": "WPM DHW hysteresis top candidate"
+      },
       "dhw_mode": {
         "name": "DHW mode",
         "state": {

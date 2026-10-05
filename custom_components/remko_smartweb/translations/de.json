@@ -244,6 +244,18 @@
       "dhw_ambient_temperature": {
         "name": "Warmwasser-Umgebungstemperatur"
       },
+      "dhw_hysteresis_bottom": {
+        "name": "Warmwasser Einschalthysterese unten"
+      },
+      "dhw_hysteresis_top": {
+        "name": "Warmwasser Einschalthysterese oben"
+      },
+      "wpm_dhw_hysteresis_bottom_candidate": {
+        "name": "WPM Warmwasser-Hysterese unten Kandidat"
+      },
+      "wpm_dhw_hysteresis_top_candidate": {
+        "name": "WPM Warmwasser-Hysterese oben Kandidat"
+      },
       "dhw_mode": {
         "name": "Warmwasser-Modus",
         "state": {
