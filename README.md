@@ -42,47 +42,33 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 
 ## Supported devices
 
-| Device | Models | Cloud path | Redirected WiFi stick | Direct device MQTT / SmartControl | Notes |
-|--------|--------|:----------:|:---------------------:|:---------------------------------:|-------|
-| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ Confirmed | ⚠️ Observed for MXW-style sticks | — | 0.4.x support is cloud-based. Local portal mode redirects the stick to a local broker; it is not native MQTT on the stick IP. |
-| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | ✅ Confirmed | ❓ Unknown | — | 0.4.x support is cloud-based. |
-| ❄️ **Air conditioner** | RKL 495 DC | ✅ Confirmed | ❓ Unknown | — | Freecom UART mapping through the cloud/stick protocol. |
-| ❄️ **Air conditioner** | RKL 355 DC | ✅ Confirmed | ❓ Unknown | — | NWT UART mapping through the cloud/stick protocol. |
-| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ Confirmed | ❓ Unknown | — | AUX UART mapping through the cloud/stick protocol. |
-| 🚿 **Domestic hot water** | RBW 302 Pro | ✅ Confirmed | ❓ Unknown | — | RBW Modbus mapping through the cloud/stick protocol. |
-| 💧 **Dehumidifier** | LTE series | ✅ Confirmed | ❓ Unknown | — | LTE UART mapping through the cloud/stick protocol. |
-| 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ Confirmed | ❓ Unknown | — | KWT Modbus mapping through the cloud/stick protocol. |
-| 🔥 **Heat pump** | WKF/WPM systems | ⚠️ Experimental | ❓ Unknown | ⚠️ Observed in field reports | Community field reports point to direct SmartControl MQTT on some firmware, e.g. `V04P26/#` or `V04P28/#`. |
-| 🔥 **Heat pump** | WSP systems | ❓ Unknown | ❓ Unknown | ⚠️ Observed in field reports | WSP appears to need different register candidates, such as `1088`. Needs logs before write support. |
-| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | ❓ Unknown | ❓ Unknown | — | Catalog evidence says WiFi/Smart-Control may exist, but integration support is not proven. Indoor unit series matters more than outdoor unit. |
-| ❄️ **Multi-split outdoor unit** | MVT DC | — | — | — | System context only; choose the indoor-unit profile. |
-| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | ❓ Unknown | ❓ Unknown | ❓ Unknown | Product catalog hints are not enough to choose a transport. Ask for diagnostics/logs. |
-| ❓ **Other** | Any other SmartWeb device | ⚠️ Diagnostics | — | — | Unknown devices can create a Diagnostics sensor for adding support later. |
+| Device | Models | Cloud path | Redirected WiFi stick | Direct MQTT / SmartControl |
+|--------|--------|:----------:|:---------------------:|:--------------------------:|
+| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | ✅ Confirmed | ⚠️ Observed | — |
+| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | ✅ Confirmed | ❓ Unknown | — |
+| ❄️ **Air conditioner** | RKL 495 DC | ✅ Confirmed | ❓ Unknown | — |
+| ❄️ **Air conditioner** | RKL 355 DC | ✅ Confirmed | ❓ Unknown | — |
+| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | ✅ Confirmed | ❓ Unknown | — |
+| 🚿 **Domestic hot water** | RBW 302 Pro | ✅ Confirmed | ❓ Unknown | — |
+| 💧 **Dehumidifier** | LTE series | ✅ Confirmed | ❓ Unknown | — |
+| 🌡️ **Compact heat pump** | KWT 180–300 DC | ✅ Confirmed | ❓ Unknown | — |
+| 🔥 **Heat pump** | WKF/WPM systems | ⚠️ Experimental | ❓ Unknown | ⚠️ Observed |
+| 🔥 **Heat pump** | WSP systems | ❓ Unknown | ❓ Unknown | ⚠️ Observed |
+| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | ❓ Unknown | ❓ Unknown | — |
+| ❄️ **Multi-split outdoor unit** | MVT DC | — | — | — |
+| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | ❓ Unknown | ❓ Unknown | ❓ Unknown |
+| ❓ **Other** | Any other SmartWeb device | ⚠️ Diagnostics | — | — |
 
 ✅ Confirmed &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown &nbsp;·&nbsp; — Not expected / not applicable
 
-**Cloud path** means the integration logs in with a REMKO SmartWeb account and
-uses REMKO's cloud MQTT/WebSocket path. This is the proven path for devices that
-worked in the 0.4.x releases.
-**Redirected WiFi stick** means the REMKO stick is redirected away from
-REMKO's cloud broker to a local broker by DNS. This is a local transport
-experiment for cloud-style sticks; it does not prove the stick exposes MQTT on
-its own IP address.
-**Direct device MQTT / SmartControl** means the device or a local SmartControl
-bridge exposes MQTT directly, usually with topics like `V04P28/SMTID/...`.
-This is a different architecture and has so far mainly been observed for
-WKF/WPM/WSP heat-pump systems in field reports.
-The model grouping above is intentionally conservative. A researched REMKO
-model catalog is kept in [`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv)
-with notes in [`docs/remko_model_catalog.md`](docs/remko_model_catalog.md).
-`Cloud_Betrieb = Ja` in that catalog means the source evidence mentions
-WiFi/Smart-Web/cloud operation; it is not the same as confirmed integration
-support. For split and multi-split systems, the indoor unit series is usually
-more relevant than the outdoor unit.
-The current profile-based architecture and the comparison with EVCC-style
-templates and OpenEMS-style components are summarized in
+The 0.4.x device families are confirmed through the REMKO SmartWeb cloud path.
+Local support is split into two different experiments: redirected cloud-style
+WiFi sticks, and direct SmartControl MQTT seen mainly on heat pumps. The model
+catalog in [`docs/remko_model_catalog.csv`](docs/remko_model_catalog.csv) is only
+research evidence; it is not a support guarantee. For split and multi-split
+systems, the indoor unit series is usually more relevant than the outdoor unit.
+Architecture notes are in
 [`docs/device_profile_architecture.md`](docs/device_profile_architecture.md).
-Experimental means it works in testing but may behave differently on some units.
 
 For unknown devices, the integration creates a **Diagnostics sensor** that logs data payloads — useful for adding support later.
 
@@ -93,235 +79,33 @@ For unknown devices, the integration creates a **Diagnostics sensor** that logs 
 ## Experimental local MQTT mode
 
 Cloud-only installations do **not** need a local MQTT broker, DNS rewrite, or
-AdGuard rule. The setup below is only for advanced installations that want to
-run one or more REMKO WiFi sticks locally.
+AdGuard rule. Local MQTT is optional and experimental.
 
-There are multiple REMKO local-MQTT architectures:
+There are two different local architectures:
 
-- **Redirected WiFi stick / local portal broker**: the stick does not expose
-  MQTT on its own IP. It normally connects outbound to REMKO's cloud broker.
-  Local operation is possible by redirecting only that stick's DNS lookup for
-  `smartweb.remko.media` to a local MQTT broker.
-- **Direct device MQTT / SmartControl bridge**: some SmartControl/SmartCom
-  installations expose a local MQTT path directly on the device IP or through a
-  separate bridge. This mode is experimental and needs more real-device testing.
-  For some WKF/Firmware 4.26 systems the local broker uses `V04P26/#`. The
-  integration can try to read the local MQTT password from the device's
-  `smt.min.js` web asset when username and password are left empty; the default
-  username for these devices is `0000000000000000`. The discovered password is
-  only stored in Home Assistant options and is never logged.
+- **Redirected WiFi stick / local portal broker**: a cloud-style WiFi stick is
+  redirected by DNS to a local MQTT broker. This keeps the cloud-style topic
+  model, but moves the broker locally.
+- **Direct device MQTT / SmartControl bridge**: the device or SmartControl
+  bridge exposes MQTT directly, commonly with topics such as
+  `V04P28/SMTID/...`. This path is mainly heat-pump evidence so far.
 
-Local setup starts from the normal cloud-discovered REMKO device. Configure it
-from the device's integration options:
+```mermaid
+flowchart LR
+  HA["Home Assistant<br/>REMKO SmartWeb"] --> Cloud["REMKO cloud<br/>SmartWeb MQTT"]
+  Cloud --> Stick["Cloud-style WiFi stick"]
+  Stick --> Device["REMKO device"]
 
-- `Local connection mode`
-  - `Cloud only`
-  - `Redirected WiFi stick / local portal broker`
-  - `Direct device MQTT / SmartControl bridge`
-- `Stick IP address` for validation and mismatch warnings. When the portal
-  metadata contains a device MAC address, the options flow also checks the
-  local ARP/neighbor table and can suggest the matching IP address as a
-  candidate.
-- Shared local broker host, port, username, and password for redirected
-  WiFi-stick setups.
-- `Bridge REMKO app commands through Home Assistant` if the REMKO app should
-  keep working while the stick is redirected to the local broker.
+  Stick -. DNS redirect .-> Broker["Local MQTT broker"]
+  HA -. optional local portal mode .-> Broker
 
-For redirected WiFi sticks, the integration discovers the local stick from
-`V04P27/SMT.../HOST2PORTAL`. ESP read/write commands still use the normal
-SID-based SmartWeb command topic `V04P27/<SID>/ESP` and `/RESP`, so the
-integration keeps both topics:
-
-- stick presence topic: `V04P27/SMT<MAC>/HOST2PORTAL`
-- command/readback topic: `V04P27/<SID>/ESP` and `V04P27/<SID>/RESP`
-
-When a redirected stick is connected to the local broker, the REMKO app may lose
-direct control because the stick is no longer connected to REMKO's cloud broker.
-The optional cloud bridge keeps a second cloud MQTT connection open, listens for
-cloud app commands on the normal SID command topic, forwards those commands to
-the local broker, and mirrors local `RESP`/status frames back to the cloud.
-
-See [`docs/local_connection_modes.md`](docs/local_connection_modes.md) for the
-current architecture and onboarding plan.
-
-### Required infrastructure for redirected WiFi sticks
-
-You need two pieces of local infrastructure:
-
-1. **A local MQTT broker** reachable by Home Assistant and by the redirected
-   REMKO stick.
-2. **A DNS override** that applies only to the selected stick IPs and resolves
-   `smartweb.remko.media` to the local MQTT broker IP.
-
-AdGuard Home is one way to do the DNS override. Pi-hole, dnsmasq, Unbound,
-router DNS, or another DNS server can also work if it supports per-client or
-otherwise tightly scoped overrides.
-
-Do **not** add a broad network-wide rewrite for `smartweb.remko.media`.
-Home Assistant and the optional cloud bridge still need to reach REMKO's real
-cloud endpoints.
-
-### Mosquitto broker setup
-
-The redirected-stick setup has two different MQTT client types:
-
-- Home Assistant connects to the broker as a normal authenticated client.
-- The REMKO sticks connect as if they were connecting to REMKO's cloud broker,
-  usually via TLS on port `8883`.
-
-The recommended setup is Mosquitto **2.x**. The example below uses Mosquitto's
-v2 dynamic security plugin for the authenticated Home Assistant listener. If you
-do not use dynamic security, configure equivalent `password_file` and `acl_file`
-rules instead.
-
-Important broker requirements:
-
-- Publish `1883/tcp` for Home Assistant or other authenticated local clients.
-- Publish `8883/tcp` for redirected REMKO sticks.
-- Use `per_listener_settings true` so the authenticated Home Assistant listener
-  and the unauthenticated stick listener do not accidentally share auth/ACL
-  rules.
-- The stick-facing `8883` listener needs a TLS certificate whose common name or
-  subject alternative name matches `smartweb.remko.media`.
-- The stick-facing listener must allow the REMKO stick to connect with its
-  cloud-style client ID and username.
-
-Minimal Mosquitto example:
-
-```conf
-per_listener_settings true
-
-persistence true
-persistence_location /mosquitto/data/
-
-# Home Assistant / local clients
-listener 1883
-allow_anonymous false
-plugin /usr/lib/mosquitto_dynamic_security.so
-plugin_opt_config_file /mosquitto/config/dynamic-security.json
-
-# Redirected REMKO WiFi sticks
-listener 8883
-allow_anonymous true
-certfile /mosquitto/config/server.crt
-keyfile /mosquitto/config/server.key
-ciphers DEFAULT:@SECLEVEL=0
+  HA --> Direct["Direct device MQTT<br/>SmartControl bridge"]
+  Direct --> HeatPump["Heat pump<br/>WKF / WPM / WSP"]
 ```
 
-If you also run a WebSocket listener, keep it separate as well. Do not redirect
-REMKO's cloud WebSocket traffic broadly to your broker; Home Assistant uses
-REMKO cloud sessions for cloud-only devices and for the cloud bridge.
-
-Example self-signed certificate for a private LAN broker:
-
-```bash
-openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-  -keyout server.key \
-  -out server.crt \
-  -subj "/CN=smartweb.remko.media" \
-  -addext "subjectAltName=DNS:smartweb.remko.media"
-```
-
-Store `server.crt` and `server.key` where the Mosquitto container can read them
-and restart Mosquitto after changing listener settings.
-
-#### About the `smartweb.remko.media` certificate
-
-This part is unusual and worth spelling out: the redirected stick still thinks
-it is connecting to REMKO's MQTT broker at `smartweb.remko.media`. DNS only
-changes the IP address; it does not change the hostname the stick uses for TLS.
-Therefore the local broker must present a certificate for that hostname.
-
-You normally cannot get a public Let's Encrypt or other public CA certificate
-for `smartweb.remko.media`, because you do not own that domain. For local
-redirect setups, use a private/self-signed certificate whose CN/SAN contains
-`smartweb.remko.media`.
-
-The command above creates such a certificate:
-
-- `server.crt` is the certificate Mosquitto presents to redirected sticks.
-- `server.key` is the matching private key and must stay private.
-- The certificate name must be `smartweb.remko.media`; using your broker's LAN
-  hostname or IP address is not enough for sticks that check the TLS hostname.
-
-Observed MXW WiFi sticks accept this local self-signed certificate when the
-hostname matches. Other firmware may be stricter. If a stick repeatedly connects
-to port `8883` and immediately disconnects during TLS setup, the certificate is
-one of the first things to check.
-
-Helpful checks:
-
-```bash
-openssl x509 -in server.crt -noout -subject -issuer -dates -ext subjectAltName
-openssl s_client -connect <broker-ip>:8883 -servername smartweb.remko.media \
-  -showcerts
-```
-
-The integration cannot create or install this certificate automatically because
-the certificate belongs to the external MQTT broker, not to Home Assistant.
-What it can do is report whether the stick reaches the broker, whether
-`HOST2PORTAL` appears, and whether the discovered `SMT...` topic matches the
-configured stick IP.
-
-### DNS rewrite with AdGuard Home
-
-For redirected WiFi-stick setups, the stick must resolve REMKO's broker hostname
-to the local MQTT broker. Scope the rewrite to the selected stick IPs only.
-
-In AdGuard Home, add one custom filtering rule per redirected stick:
-
-```text
-||smartweb.remko.media^$client=<stick-ip>,dnsrewrite=<local-broker-ip>
-```
-
-Example with three REMKO sticks redirected to a broker on `192.168.2.4`:
-
-```text
-||smartweb.remko.media^$client=192.168.2.102,dnsrewrite=192.168.2.4
-||smartweb.remko.media^$client=192.168.2.88,dnsrewrite=192.168.2.4
-||smartweb.remko.media^$client=192.168.2.89,dnsrewrite=192.168.2.4
-```
-
-After saving the rules, reconnect or reboot the selected stick so it performs a
-fresh DNS lookup. In AdGuard's query log you should see the selected stick IP
-query `smartweb.remko.media` and receive the local broker IP as the rewrite
-answer.
-
-The local MQTT status sensor should then start seeing
-`V04P27/SMT.../HOST2PORTAL` for that stick. If the discovered `SMT...` topic
-does not match the MAC derived from the configured stick IP, the integration
-will report a mismatch instead of treating the mapping as healthy.
-
-### Home Assistant diagnostics
-
-Home Assistant exposes a diagnostic **Local MQTT status** sensor for devices
-with local MQTT options enabled. Use it as the first setup checklist:
-
-| Check | Meaning |
-|-------|---------|
-| `local_mqtt_configured` | Local MQTT options are enabled for this Config Entry. |
-| `local_broker_connected` | Home Assistant connected to the configured MQTT broker and subscribed successfully. |
-| `smartweb_device_resolved` | SmartWeb login and device metadata resolution succeeded, so the account still contains the device. |
-| `local_topic_discovered` | The redirected stick was discovered on its local `V04P27/SMT...` announcement topic. |
-| `command_topic_resolved` | The SID-based `V04P27/<SID>` command topic was resolved for ESP commands, or direct local MQTT uses the discovered command topic. |
-| `stick_seen` | The local broker has recently seen stick/device messages such as `HOST2PORTAL` or `HOST2CLIENT`. |
-| `status_readback_seen` | A status payload or ESP `RESP` has been seen since startup. |
-
-If the sensor state is `incomplete`, open its attributes and follow the first
-guidance message. Most local setup problems are broker reachability, SmartWeb
-account/device resolution, MQTT ACL/listener separation, or DNS redirect scope.
-
-Typical redirected-stick success indicators:
-
-- Mosquitto shows the stick connected from its LAN IP on port `8883`.
-- Mosquitto sees `V04P27/SMT<MAC>/HOST2PORTAL`.
-- Home Assistant's Local MQTT status sensor becomes `ready`.
-- The status attributes show both the `V04P27/SMT...` stick topic and the
-  `V04P27/<SID>` command topic.
-
-Local mode may not provide an immediate status readback. Commands can therefore
-be accepted with pending confirmation while the Home Assistant entity updates
-optimistically.
+Local setup still starts from a cloud-discovered REMKO device where possible.
+The detailed setup, DNS/broker requirements, diagnostics, and troubleshooting
+are documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md).
 
 ---
 
