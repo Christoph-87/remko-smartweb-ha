@@ -740,6 +740,7 @@ class ProfileParsingTests(unittest.TestCase):
                 "1082": "01C2",
                 "1951": "03",
                 "5001": "0A",
+                "5032": "0082",
                 "5034": "00FF",
                 "5039": "0212",
                 "5055": "00C8",
@@ -748,7 +749,8 @@ class ProfileParsingTests(unittest.TestCase):
 
         self.assertEqual(status["wpm_heat_cool_mode"], 3)
         self.assertEqual(status["wpm_unit_on"], 10)
-        self.assertEqual(status["wpm_outdoor_temperature"], 20.0)
+        self.assertEqual(status["wpm_outdoor_temperature"], 13.0)
+        self.assertEqual(status["wpm_mixed_temperature"], 20.0)
         self.assertEqual(status["wpm_water_temperature"], 53.0)
         self.assertEqual(status["wpm_target_temperature"], 45.0)
         self.assertEqual(status["wpm_setpoint_ch"], 45.0)
@@ -759,7 +761,7 @@ class ProfileParsingTests(unittest.TestCase):
     def test_value_query_list_includes_wkf_426_wpm_values(self):
         query = WpmDeviceProfile().value_query_ids()
 
-        for value_id in (1082, 1951, 5001, 5033, 5034, 5039, 5055):
+        for value_id in (1082, 1951, 5001, 5032, 5033, 5034, 5039, 5055):
             with self.subTest(value_id=value_id):
                 self.assertIn(value_id, query)
         for value_id in (1334, 1402):

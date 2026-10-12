@@ -330,6 +330,9 @@
       "wpm_outdoor_temperature": {
         "name": "WPM Außentemperatur"
       },
+      "wpm_mixed_temperature": {
+        "name": "WPM gemischte Temperatur"
+      },
       "wpm_water_temperature": {
         "name": "WPM Wassertemperatur"
       },

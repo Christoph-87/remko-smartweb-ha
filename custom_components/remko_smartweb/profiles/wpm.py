@@ -86,6 +86,7 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         1082,
         1951,
         5001,
+        5032,
         5033,
         5034,
         5039,
@@ -96,6 +97,7 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         ("wpm_heat_cool_mode", "WPM Heat/Cool Mode", None),
         ("wpm_manual_defrost", "WPM Manual Defrost", None),
         ("wpm_outdoor_temperature", "WPM Outdoor Temperature", "temperature"),
+        ("wpm_mixed_temperature", "WPM Mixed Temperature", "temperature"),
         ("wpm_water_temperature", "WPM Water Temperature", "temperature"),
         ("wpm_target_temperature", "WPM Target Temperature", "temperature"),
         ("wpm_setpoint_ch", "WPM CH Setpoint", "temperature"),
@@ -116,9 +118,10 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
             ("wpm_heat_cool_mode", _first_present_byte(values, *self.heat_cool_mode_value_ids)),
             ("wpm_manual_defrost", _first_present_byte(values, "4113")),
             ("wpm_unit_on", _first_present_byte(values, "5734", "5001")),
-            # WKF/WPM 4.26 local MQTT commonly exposes 1082/5033/5034/5039
+            # WKF/WPM 4.26 local MQTT commonly exposes 1082/5032/5033/5034/5039/5055
             # instead of the newer SmartWeb IDs used by the cloud profile.
-            ("wpm_outdoor_temperature", _first_present_tenths(values, "5055")),
+            ("wpm_outdoor_temperature", _first_present_tenths(values, "5032", "5055")),
+            ("wpm_mixed_temperature", _first_present_tenths(values, "5055")),
             ("wpm_water_temperature", _first_present_tenths(values, "5039")),
             (
                 "wpm_target_temperature",

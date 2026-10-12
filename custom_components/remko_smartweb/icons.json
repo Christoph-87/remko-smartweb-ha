@@ -46,6 +46,9 @@
       "wpm_target_temperature": {
         "default": "mdi:thermometer"
       },
+      "wpm_mixed_temperature": {
+        "default": "mdi:thermometer"
+      },
       "wpm_setpoint_ch": {
         "default": "mdi:thermometer"
       },
