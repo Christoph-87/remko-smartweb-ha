@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0-beta.15
+- Clarify the runtime split between REMKO Cloud, redirected local portal MQTT, and direct local device MQTT. Direct local MQTT reads no longer require a cloud login once the local broker/topic settings are available.
+- Align WPM/WKF local MQTT temperature parsing with observed local MQTT register mappings: use value ID `5032` for outdoor temperature and expose value ID `5055` as mixed temperature.
+- Add experimental local WPM control entities for domestic hot water target temperature, temperature adjustment, fixed temperature, heating water target temperature, absence mode, party mode, heating circuit mode, and domestic hot water heating.
+- Add experimental local WPM operating mode selects for domestic hot water mode, main operating mode, time mode, and user profile.
+
 ## v0.5.0-beta.14
 - Apply incoming MQTT `HOST2CLIENT`/`PORTAL2CLIENT` value updates to Home Assistant immediately instead of waiting for the next 30-second coordinator poll. The periodic poll remains as a startup/reconnect fallback.
 - Keep the local-portal support README status conservative: REMKO Cloud support is only marked fully supported when read and write are both supported on the main branch.
