@@ -738,8 +738,6 @@ class ProfileParsingTests(unittest.TestCase):
         status = WpmDeviceProfile().parse_values_status(
             {
                 "1082": "01C2",
-                "1334": "0014",
-                "1402": "0023",
                 "1951": "03",
                 "5001": "0A",
                 "5034": "00FF",
@@ -755,15 +753,18 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["wpm_target_temperature"], 45.0)
         self.assertEqual(status["wpm_setpoint_ch"], 45.0)
         self.assertEqual(status["wpm_setpoint_hp"], 25.5)
-        self.assertEqual(status["wpm_dhw_hysteresis_bottom_candidate"], 2.0)
-        self.assertEqual(status["wpm_dhw_hysteresis_top_candidate"], 3.5)
+        self.assertNotIn("wpm_dhw_hysteresis_bottom_candidate", status)
+        self.assertNotIn("wpm_dhw_hysteresis_top_candidate", status)
 
     def test_value_query_list_includes_wkf_426_wpm_values(self):
         query = WpmDeviceProfile().value_query_ids()
 
-        for value_id in (1082, 1334, 1402, 1951, 5001, 5033, 5034, 5039, 5055):
+        for value_id in (1082, 1951, 5001, 5033, 5034, 5039, 5055):
             with self.subTest(value_id=value_id):
                 self.assertIn(value_id, query)
+        for value_id in (1334, 1402):
+            with self.subTest(value_id=value_id):
+                self.assertNotIn(value_id, query)
 
     def test_wsp_profile_uses_wsp_main_mode_candidate(self):
         profile = WspDeviceProfile()

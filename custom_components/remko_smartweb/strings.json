@@ -250,12 +250,6 @@
       "dhw_hysteresis_top": {
         "name": "DHW heat pump startup hysteresis top"
       },
-      "wpm_dhw_hysteresis_bottom_candidate": {
-        "name": "WPM DHW hysteresis bottom candidate"
-      },
-      "wpm_dhw_hysteresis_top_candidate": {
-        "name": "WPM DHW hysteresis top candidate"
-      },
       "dhw_mode": {
         "name": "DHW mode",
         "state": {

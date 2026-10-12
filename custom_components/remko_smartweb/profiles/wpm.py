@@ -84,8 +84,6 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         1352,
         2179,
         1082,
-        1334,
-        1402,
         1951,
         5001,
         5033,
@@ -102,8 +100,6 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         ("wpm_target_temperature", "WPM Target Temperature", "temperature"),
         ("wpm_setpoint_ch", "WPM CH Setpoint", "temperature"),
         ("wpm_setpoint_hp", "WPM HP Setpoint", "temperature"),
-        ("wpm_dhw_hysteresis_bottom_candidate", "WPM DHW Hysteresis Bottom Candidate", "temperature"),
-        ("wpm_dhw_hysteresis_top_candidate", "WPM DHW Hysteresis Top Candidate", "temperature"),
         ("wpm_unit_on", "WPM Unit On", None),
     )
     number_descriptions = (
@@ -142,8 +138,6 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
                 if values.get("2179") is not None
                 else _first_present_tenths(values, "5034", "5039"),
             ),
-            ("wpm_dhw_hysteresis_bottom_candidate", _first_present_tenths(values, "1334")),
-            ("wpm_dhw_hysteresis_top_candidate", _first_present_tenths(values, "1402")),
         ):
             if value is not None:
                 status[key] = value
