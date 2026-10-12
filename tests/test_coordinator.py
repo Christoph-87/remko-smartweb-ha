@@ -132,6 +132,11 @@ class HomeAssistantError(Exception):
     pass
 
 
+class ImmediateLoop:
+    def call_soon_threadsafe(self, callback, *args):
+        callback(*args)
+
+
 class Store:
     def __init__(self, hass, version, key):
         self.hass = hass
@@ -150,9 +155,22 @@ class HomeAssistant:
         self.scheduled_callbacks = []
         self.config_entries = types.SimpleNamespace(async_update_entry=self.async_update_entry)
         self.updated_entries = []
+        self.loop = ImmediateLoop()
+        self.created_tasks = []
 
     async def async_add_executor_job(self, func, *args):
         return func(*args)
+
+    def async_create_task(self, coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            result = asyncio.run(coro)
+            self.created_tasks.append(result)
+            return result
+        task = loop.create_task(coro)
+        self.created_tasks.append(task)
+        return task
 
     def async_update_entry(self, entry, **kwargs):
         self.updated_entries.append((entry, kwargs))
@@ -377,6 +395,20 @@ class CachedStatusClient:
     def read_status(self):
         self._last_status_source = "cached_last_status"
         return self.response
+
+    def initial_status_if_supported(self):
+        return None
+
+
+class PushCallbackClient:
+    def __init__(self):
+        self.callback = None
+
+    def set_mqtt_values_callback(self, callback):
+        self.callback = callback
+
+    def read_status(self):
+        return {"unit": "C"}
 
     def initial_status_if_supported(self):
         return None
@@ -610,6 +642,44 @@ class CoordinatorTests(unittest.TestCase):
             {"dhw_mode": "vacation", "mode": "vacation", "power": "ON", "unit": "C"},
         )
 
+    def test_coordinator_registered_mqtt_push_callback_updates_immediately(self):
+        client = PushCallbackClient()
+
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            client,
+            entry_id="entry",
+            scan_interval=30,
+        )
+
+        self.assertIsNotNone(client.callback)
+        client.callback({"setpoint": 24.0, "unit": "C"}, "V04P26/ABC/HOST2CLIENT")
+
+        self.assertEqual(coordinator.data, {"setpoint": 24.0, "unit": "C"})
+
+    def test_mqtt_push_update_merges_and_updates_coordinator_immediately(self):
+        coordinator = RemkoSmartWebCoordinator(
+            HomeAssistant(),
+            PushCallbackClient(),
+            entry_id="entry",
+            scan_interval=30,
+        )
+        coordinator.async_set_updated_data({"room": 21.0, "setpoint": 22.0, "unit": "C"})
+
+        asyncio.run(
+            coordinator.async_process_mqtt_values_update(
+                {"room": None, "setpoint": 23.0, "unit": "C"},
+                "V04P26/ABC/HOST2CLIENT",
+            )
+        )
+
+        self.assertEqual(
+            coordinator.data,
+            {"room": 21.0, "setpoint": 23.0, "unit": "C"},
+        )
+        self.assertEqual(coordinator._failure_count, 0)
+        self.assertIsNotNone(coordinator.last_successful_update)
+
     def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()
@@ -644,6 +714,31 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
         self.assertEqual(session._received_by_prefix, {"V04P27": 2})
+
+    def test_mqtt_session_calls_values_callback_for_status_values(self):
+        received = []
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._cond = threading.Condition(session._lock)
+        session._last_rx = None
+        session._last_values = None
+        session._last_seen_values = None
+        session._last_tx_echo = None
+        session._last_smt_user = None
+        session._recent_messages = deque(maxlen=20)
+        session._received_non_tx_count = 0
+        session._values_callback = lambda values, topic: received.append((values, topic))
+
+        session._on_message(
+            None,
+            None,
+            types.SimpleNamespace(
+                topic="V04P26/ABC/HOST2CLIENT",
+                payload=b'{"values":{"5039":"0212"}}',
+            ),
+        )
+
+        self.assertEqual(received, [({"5039": "0212"}, "V04P26/ABC/HOST2CLIENT")])
 
     def test_mqtt_session_accepts_portal2client_values_like_frontend(self):
         session = _MqttSession.__new__(_MqttSession)

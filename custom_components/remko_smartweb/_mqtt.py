@@ -13,6 +13,7 @@ import ssl
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
@@ -559,10 +560,12 @@ class _MqttSession:
         broker: _BrokerConfig,
         command_topic: str | None = None,
         local_mqtt_mode: str = LOCAL_MQTT_MODE_AUTO,
+        values_callback: Callable[[dict, str], None] | None = None,
     ) -> None:
         self.topic = topic
         self._command_topic = command_topic
         self._local_mqtt_mode = local_mqtt_mode
+        self._values_callback = values_callback
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._connected = threading.Event()
@@ -693,6 +696,7 @@ class _MqttSession:
                 text = repr(msg.payload)
             _c2h_needs_reply = False
             _h2p_needs_reply = False
+            _values_callback_payload = None
             summary = _mqtt_message_summary(msg.topic, text)
             with self._cond:
                 now = time.time()
@@ -743,6 +747,7 @@ class _MqttSession:
                     self._last_seen_values = values
                     self._last_values_time = now
                     self._last_values_topic = topic_text
+                    _values_callback_payload = (dict(values), topic_text)
                     self._cond.notify_all()
                 local_portal_responder = getattr(
                     self,
@@ -824,6 +829,15 @@ class _MqttSession:
                     )
                 except Exception:
                     pass
+            values_callback = getattr(self, "_values_callback", None)
+            if _values_callback_payload is not None and values_callback is not None:
+                try:
+                    values_callback(*_values_callback_payload)
+                except Exception:
+                    _LOGGER.exception(
+                        "Unexpected error in MQTT values callback (topic=%s)",
+                        _values_callback_payload[1],
+                    )
         except Exception:
             _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 

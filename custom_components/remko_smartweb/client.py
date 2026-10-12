@@ -7,6 +7,7 @@ import re
 import socket
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -146,6 +147,7 @@ class RemkoSmartWebClient:
             local_mqtt_last_probe if isinstance(local_mqtt_last_probe, dict) else None
         )
         self._local_mqtt_cloud_bridge_enabled = bool(local_mqtt_cloud_bridge)
+        self._mqtt_values_callback: Callable[[dict, str], None] | None = None
 
     @property
     def uses_local_mqtt(self) -> bool:
@@ -177,6 +179,13 @@ class RemkoSmartWebClient:
 
     def set_beep_enabled(self, enabled: bool) -> None:
         self._beep = bool(enabled)
+
+    def set_mqtt_values_callback(
+        self,
+        callback: Callable[[dict, str], None] | None,
+    ) -> None:
+        """Register a callback for push-style MQTT value updates."""
+        self._mqtt_values_callback = callback
 
     def _mqtt_credentials_ready(self) -> bool:
         if not self.topic:
@@ -780,6 +789,7 @@ class RemkoSmartWebClient:
                 local_mqtt_mode=(
                     self._local_mqtt_mode if self._local_mqtt_host else LOCAL_MQTT_MODE_AUTO
                 ),
+                values_callback=self._handle_mqtt_values_update,
             )
             if not self._mqtt.ensure_connected():
                 raise DeviceResolveError("MQTT connect failed")
@@ -1041,6 +1051,41 @@ class RemkoSmartWebClient:
             poll["SMT_USER"] = smt_user
         self._mqtt.publish(f"{self.topic}/CLIENT2HOST", poll)
         return self._mqtt.wait_values(timeout=timeout)
+
+    def _parse_values_status_update(
+        self,
+        values: dict | None,
+        *,
+        source: str,
+        merge: bool = True,
+    ) -> dict | None:
+        parsed_values = self.profile.parse_values_status(values) if values else None
+        if not parsed_values:
+            return None
+        if merge and self._last_status:
+            merged = dict(self._last_status)
+            merged.update({k: v for k, v in parsed_values.items() if v is not None})
+        else:
+            merged = parsed_values
+        self._last_status = merged
+        self._last_status_source = source
+        return merged
+
+    def _handle_mqtt_values_update(self, values: dict, topic: str) -> None:
+        parsed_values = self._parse_values_status_update(
+            values,
+            source="mqtt_push_values",
+        )
+        if not parsed_values:
+            return
+        self._log_poll_summary(
+            "mqtt_push_values",
+            parsed=parsed_values,
+            values=values,
+        )
+        callback = self._mqtt_values_callback
+        if callback is not None:
+            callback(parsed_values, topic)
 
     def _mqtt_write_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> dict | None:
         """Write Smart-Web value IDs via CLIENT2HOST and wait for a values update."""
