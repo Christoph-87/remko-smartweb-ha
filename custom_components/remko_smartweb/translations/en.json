@@ -168,6 +168,18 @@
       "wpm_target_temperature": {
         "name": "WPM target temperature"
       },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM DHW target temperature"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM temperature adjustment"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM fixed temperature"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM heating water target temperature"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
       },
@@ -339,6 +351,18 @@
       "wpm_target_temperature": {
         "name": "WPM target temperature"
       },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM DHW target temperature"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM temperature adjustment"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM fixed temperature"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM heating water target temperature"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
       },
@@ -347,6 +371,18 @@
       },
       "wpm_unit_on": {
         "name": "WPM unit on"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM absence mode"
+      },
+      "wpm_party_mode": {
+        "name": "WPM party mode"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM heating circuit mode"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM one-time DHW heating"
       },
       "diagnostics": {
         "name": "Diagnostics"
@@ -388,6 +424,18 @@
       },
       "wpm_manual_defrost": {
         "name": "WPM manual defrost"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM absence mode"
+      },
+      "wpm_party_mode": {
+        "name": "WPM party mode"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM heating circuit mode"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM one-time DHW heating"
       }
     },
     "water_heater": {

@@ -46,8 +46,17 @@
       "wpm_target_temperature": {
         "default": "mdi:thermometer"
       },
-      "wpm_mixed_temperature": {
-        "default": "mdi:thermometer"
+      "wpm_dhw_target_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "wpm_temperature_adjustment": {
+        "default": "mdi:thermometer-plus"
+      },
+      "wpm_fixed_temperature": {
+        "default": "mdi:thermometer-lines"
+      },
+      "wpm_heating_water_target_temperature": {
+        "default": "mdi:radiator"
       },
       "wpm_setpoint_ch": {
         "default": "mdi:thermometer"
@@ -198,6 +207,21 @@
       "wpm_target_temperature": {
         "default": "mdi:thermometer"
       },
+      "wpm_dhw_target_temperature": {
+        "default": "mdi:thermometer-water"
+      },
+      "wpm_temperature_adjustment": {
+        "default": "mdi:thermometer-plus"
+      },
+      "wpm_fixed_temperature": {
+        "default": "mdi:thermometer-lines"
+      },
+      "wpm_heating_water_target_temperature": {
+        "default": "mdi:radiator"
+      },
+      "wpm_mixed_temperature": {
+        "default": "mdi:thermometer"
+      },
       "wpm_setpoint_ch": {
         "default": "mdi:thermometer"
       },
@@ -241,6 +265,18 @@
       },
       "wpm_manual_defrost": {
         "default": "mdi:snowflake-melt"
+      },
+      "wpm_absence_mode": {
+        "default": "mdi:home-export-outline"
+      },
+      "wpm_party_mode": {
+        "default": "mdi:party-popper"
+      },
+      "wpm_heating_circuit_mode": {
+        "default": "mdi:radiator"
+      },
+      "wpm_dhw_heating": {
+        "default": "mdi:water-boiler"
       }
     },
     "water_heater": {

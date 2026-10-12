@@ -2540,6 +2540,41 @@ class CoordinatorTests(unittest.TestCase):
         self.assertTrue(entity.wrote_state)
         self.assertEqual(len(hass.scheduled_callbacks), 1)
 
+    def test_wpm_local_control_switches_write_value_ids(self):
+        cases = (
+            ("wpm_absence_mode", True, {"1893": "01"}),
+            ("wpm_party_mode", False, {"1894": "00"}),
+            ("wpm_heating_circuit_mode", True, {"1972": "01"}),
+            ("wpm_dhw_heating", True, {"5693": "01"}),
+        )
+        for key, state, expected in cases:
+            with self.subTest(key=key):
+                hass = HomeAssistant()
+                coordinator = types.SimpleNamespace(
+                    hass=hass,
+                    data={key: not state},
+                    async_request_refresh=lambda: None,
+                )
+                client = ValueCaptureClient()
+                entity = RemkoSmartWebSwitch(
+                    coordinator,
+                    client,
+                    "WIFI Stick - Waermepumpe",
+                    key,
+                    key,
+                    WpmDeviceProfile(),
+                )
+
+                if state:
+                    asyncio.run(entity.async_turn_on())
+                else:
+                    asyncio.run(entity.async_turn_off())
+
+                self.assertEqual(client.values, expected)
+                self.assertEqual(coordinator.data[key], state)
+                self.assertTrue(entity.wrote_state)
+                self.assertEqual(len(hass.scheduled_callbacks), 1)
+
     def test_lte_power_switch_entity_writes_main_value_id(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(
@@ -2591,6 +2626,10 @@ class CoordinatorTests(unittest.TestCase):
     def test_wpm_number_entities_write_main_value_ids(self):
         cases = (
             ("wpm_target_temperature", 42, 45, {"5774": "002D"}),
+            ("wpm_dhw_target_temperature", 42, 45.5, {"1082": "01C7"}),
+            ("wpm_temperature_adjustment", 0, -2.5, {"1946": "FFE7"}),
+            ("wpm_fixed_temperature", 30, 35.0, {"1974": "015E"}),
+            ("wpm_heating_water_target_temperature", 35, 40.0, {"5085": "0190"}),
             ("wpm_setpoint_ch", 42, 45, {"1352": "002D"}),
             ("wpm_setpoint_hp", 42, 45, {"2179": "002D"}),
         )

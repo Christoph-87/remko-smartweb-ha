@@ -113,6 +113,12 @@ class ProfileParsingTests(unittest.TestCase):
             {"1000": "022B", "1001": "02"},
         )
 
+    def test_value_write_spec_encodes_signed_values(self):
+        specs = (ValueWriteSpec("offset", "1946", digits=4, scale=10, signed=True),)
+
+        self.assertEqual(build_value_write({"offset": -2.5}, specs), {"1946": "FFE7"})
+        self.assertEqual(build_value_write({"offset": 2.5}, specs), {"1946": "0019"})
+
     def test_value_write_spec_ignores_unknown_enum_values(self):
         specs = (ValueWriteSpec("mode", "1002", enum={"eco": 9}),)
 
@@ -734,24 +740,67 @@ class ProfileParsingTests(unittest.TestCase):
             {"4110": "01", "1352": "002D"},
         )
 
+    def test_wpm_profile_builds_local_mqtt_control_values(self):
+        profile = WpmDeviceProfile()
+
+        self.assertEqual(
+            profile.build_value_write(
+                {
+                    "wpm_dhw_target_temperature": 45.5,
+                    "wpm_temperature_adjustment": -2.5,
+                    "wpm_fixed_temperature": 35.0,
+                    "wpm_heating_water_target_temperature": 40.0,
+                    "wpm_absence_mode": True,
+                    "wpm_party_mode": False,
+                    "wpm_heating_circuit_mode": True,
+                    "wpm_dhw_heating": True,
+                }
+            ),
+            {
+                "1082": "01C7",
+                "1893": "01",
+                "1894": "00",
+                "1946": "FFE7",
+                "1972": "01",
+                "1974": "015E",
+                "5085": "0190",
+                "5693": "01",
+            },
+        )
+
     def test_wpm_profile_parses_wkf_426_local_mqtt_values(self):
         status = WpmDeviceProfile().parse_values_status(
             {
                 "1082": "01C2",
+                "1893": "01",
+                "1894": "00",
                 "1951": "03",
+                "1946": "FFE7",
+                "1972": "01",
+                "1974": "015E",
                 "5001": "0A",
                 "5032": "0082",
                 "5034": "00FF",
                 "5039": "0212",
                 "5055": "00C8",
+                "5085": "0190",
+                "5693": "01",
             }
         )
 
         self.assertEqual(status["wpm_heat_cool_mode"], 3)
         self.assertEqual(status["wpm_unit_on"], 10)
+        self.assertEqual(status["wpm_absence_mode"], 1)
+        self.assertEqual(status["wpm_party_mode"], 0)
+        self.assertEqual(status["wpm_heating_circuit_mode"], 1)
+        self.assertEqual(status["wpm_dhw_heating"], 1)
         self.assertEqual(status["wpm_outdoor_temperature"], 13.0)
         self.assertEqual(status["wpm_mixed_temperature"], 20.0)
         self.assertEqual(status["wpm_water_temperature"], 53.0)
+        self.assertEqual(status["wpm_dhw_target_temperature"], 45.0)
+        self.assertEqual(status["wpm_temperature_adjustment"], -2.5)
+        self.assertEqual(status["wpm_fixed_temperature"], 35.0)
+        self.assertEqual(status["wpm_heating_water_target_temperature"], 40.0)
         self.assertEqual(status["wpm_target_temperature"], 45.0)
         self.assertEqual(status["wpm_setpoint_ch"], 45.0)
         self.assertEqual(status["wpm_setpoint_hp"], 25.5)
@@ -761,7 +810,23 @@ class ProfileParsingTests(unittest.TestCase):
     def test_value_query_list_includes_wkf_426_wpm_values(self):
         query = WpmDeviceProfile().value_query_ids()
 
-        for value_id in (1082, 1951, 5001, 5032, 5033, 5034, 5039, 5055):
+        for value_id in (
+            1082,
+            1893,
+            1894,
+            1946,
+            1951,
+            1972,
+            1974,
+            5001,
+            5032,
+            5033,
+            5034,
+            5039,
+            5055,
+            5085,
+            5693,
+        ):
             with self.subTest(value_id=value_id):
                 self.assertIn(value_id, query)
         for value_id in (1334, 1402):

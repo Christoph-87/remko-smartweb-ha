@@ -19,6 +19,10 @@ SWITCHES = [
     ("bioclean", "Bioclean"),
     ("wpm_heat_cool_mode", "WPM Heat/Cool Mode"),
     ("wpm_manual_defrost", "WPM Manual Defrost"),
+    ("wpm_absence_mode", "WPM Absence Mode"),
+    ("wpm_party_mode", "WPM Party Mode"),
+    ("wpm_heating_circuit_mode", "WPM Heating Circuit Mode"),
+    ("wpm_dhw_heating", "WPM One-Time DHW Heating"),
 ]
 
 C0_CLIMATE_SWITCH_KEYS = {

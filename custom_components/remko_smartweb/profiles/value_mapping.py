@@ -10,6 +10,7 @@ class ValueWriteSpec:
     digits: int = 2
     scale: float = 1.0
     enum: dict | None = None
+    signed: bool = False
 
     def encode(self, value) -> str | None:
         if self.enum is not None:
@@ -19,6 +20,8 @@ class ValueWriteSpec:
         else:
             raw_value = round(float(value) * self.scale)
         max_value = (1 << (self.digits * 4)) - 1
+        if self.signed and raw_value < 0:
+            raw_value = (max_value + 1) + int(raw_value)
         return f"{max(0, min(max_value, int(raw_value))):0{self.digits}X}"
 
 

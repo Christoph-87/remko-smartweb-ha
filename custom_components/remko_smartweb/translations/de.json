@@ -168,6 +168,18 @@
       "wpm_target_temperature": {
         "name": "WPM Zieltemperatur"
       },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM Warmwasser-Solltemperatur"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM Temperaturkorrektur"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM Festwerttemperatur"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM Heizwasser-Solltemperatur"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
       },
@@ -339,6 +351,18 @@
       "wpm_target_temperature": {
         "name": "WPM Zieltemperatur"
       },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM Warmwasser-Solltemperatur"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM Temperaturkorrektur"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM Festwerttemperatur"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM Heizwasser-Solltemperatur"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
       },
@@ -347,6 +371,18 @@
       },
       "wpm_unit_on": {
         "name": "WPM Gerät Ein"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM Abwesenheitsmodus"
+      },
+      "wpm_party_mode": {
+        "name": "WPM Partymodus"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM Heizkreis-Modus"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM einmalige Warmwasserbereitung"
       },
       "diagnostics": {
         "name": "Diagnose"
@@ -388,6 +424,18 @@
       },
       "wpm_manual_defrost": {
         "name": "WPM manuelle Abtauung"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM Abwesenheitsmodus"
+      },
+      "wpm_party_mode": {
+        "name": "WPM Partymodus"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM Heizkreis-Modus"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM einmalige Warmwasserbereitung"
       }
     },
     "water_heater": {
