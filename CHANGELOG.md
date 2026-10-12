@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.5.0-beta.16
+- Treat parsed local MQTT push value updates (`mqtt_push_values`) and direct local value polls (`local_device_values`) as fresh communication status sources, so diagnostic status no longer flips to degraded just because there is no ESP `/RESP` after a recent value push.
+
 ## v0.5.0-beta.15
 - Clarify the runtime split between REMKO Cloud, redirected local portal MQTT, and direct local device MQTT. Direct local MQTT reads no longer require a cloud login once the local broker/topic settings are available.
 - Align WPM/WKF local MQTT temperature parsing with observed local MQTT register mappings: use value ID `5032` for outdoor temperature and expose value ID `5055` as mixed temperature.

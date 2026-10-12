@@ -1874,6 +1874,58 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.local_portal_diagnostics()["status"], "ready")
         self.assertEqual(client.communication_diagnostics()["status"], "ready")
 
+    def test_diagnostics_treat_mqtt_push_values_as_fresh_status(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P26/SMTABCDEF123456"
+        client._local_mqtt_host = "192.168.2.50"
+        client._local_mqtt_port = 1883
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_DEVICE_MQTT
+        client._local_mqtt_command_topic = "V04P26/SMTABCDEF123456"
+        client.profile = WpmDeviceProfile()
+        client.device_portal_id = None
+        client.device_portal_name = None
+        client.device_type = None
+        client.device_dev = None
+        client.device_mac = None
+        client._local_mqtt_cloud_bridge_enabled = False
+        client._last_status = {"wpm_target_temperature": 28.0, "unit": "C"}
+        client._last_status_source = "mqtt_push_values"
+        client._mqtt_credentials_ready = lambda: True
+        client._cloud_bridge_diagnostic_snapshot = lambda: {"enabled": False}
+        client._mqtt_diagnostic_snapshot = lambda: {
+            "mqtt_connected": True,
+            "subscribed_topics": [
+                "V04P26/SMTABCDEF123456/HOST2CLIENT",
+                "V04P26/SMTABCDEF123456/CLIENT2HOST",
+            ],
+            "recent_messages": [
+                {"topic": "V04P26/SMTABCDEF123456/HOST2CLIENT"},
+            ],
+            "last_connack_rc": 0,
+            "last_esp_publish_age_s": 4.0,
+            "last_esp_publish_topic": "V04P26/SMTABCDEF123456/ESP",
+            "last_resp_age_s": None,
+            "last_resp_topic": None,
+            "last_resp_after_last_esp": False,
+            "last_values_age_s": 0.0,
+            "last_values": {"5039": "0212"},
+            "last_host2portal_age_s": None,
+            "last_portal2host_age_s": None,
+        }
+
+        local_diagnostics = client.local_portal_diagnostics()
+        communication_diagnostics = client.communication_diagnostics()
+
+        self.assertEqual(local_diagnostics["status"], "ready")
+        self.assertEqual(communication_diagnostics["status"], "ready")
+        self.assertTrue(local_diagnostics["checks"]["status_readback_seen"])
+        self.assertTrue(communication_diagnostics["checks"]["status_readback_seen"])
+        self.assertFalse(local_diagnostics["last_resp_after_last_esp"])
+        self.assertEqual(local_diagnostics["last_status_source"], "mqtt_push_values")
+        self.assertEqual(communication_diagnostics["last_status_source"], "mqtt_push_values")
+
     def test_diagnostic_metadata_derives_mac_from_stick_topic(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.topic = "V04P27/SMT1C9DC263C758"
