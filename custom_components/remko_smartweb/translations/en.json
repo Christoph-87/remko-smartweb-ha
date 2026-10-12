@@ -180,6 +180,18 @@
       "wpm_heating_water_target_temperature": {
         "name": "WPM heating water target temperature"
       },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
       },
@@ -363,6 +375,18 @@
       "wpm_heating_water_target_temperature": {
         "name": "WPM heating water target temperature"
       },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
       },
@@ -436,6 +460,32 @@
       },
       "wpm_dhw_heating": {
         "name": "WPM one-time DHW heating"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
+      }
+    },
+    "select": {
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
       }
     },
     "water_heater": {

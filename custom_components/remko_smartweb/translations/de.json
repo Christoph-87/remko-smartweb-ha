@@ -180,6 +180,18 @@
       "wpm_heating_water_target_temperature": {
         "name": "WPM Heizwasser-Solltemperatur"
       },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
       },
@@ -363,6 +375,18 @@
       "wpm_heating_water_target_temperature": {
         "name": "WPM Heizwasser-Solltemperatur"
       },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
+      },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
       },
@@ -436,6 +460,32 @@
       },
       "wpm_dhw_heating": {
         "name": "WPM einmalige Warmwasserbereitung"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
+      }
+    },
+    "select": {
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
       }
     },
     "water_heater": {

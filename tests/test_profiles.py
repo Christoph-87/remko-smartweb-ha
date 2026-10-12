@@ -754,15 +754,23 @@ class ProfileParsingTests(unittest.TestCase):
                     "wpm_party_mode": False,
                     "wpm_heating_circuit_mode": True,
                     "wpm_dhw_heating": True,
+                    "wpm_dhw_mode": "solar_pv_only",
+                    "wpm_main_mode": "standby",
+                    "wpm_time_mode": "deactivation",
+                    "wpm_user_profile": "profile_c",
                 }
             ),
             {
+                "1079": "02",
                 "1082": "01C7",
                 "1893": "01",
                 "1894": "00",
+                "1936": "02",
                 "1946": "FFE7",
+                "1951": "03",
                 "1972": "01",
                 "1974": "015E",
+                "2149": "01",
                 "5085": "0190",
                 "5693": "01",
             },
@@ -772,12 +780,15 @@ class ProfileParsingTests(unittest.TestCase):
         status = WpmDeviceProfile().parse_values_status(
             {
                 "1082": "01C2",
+                "1079": "02",
                 "1893": "01",
                 "1894": "00",
+                "1936": "02",
                 "1951": "03",
                 "1946": "FFE7",
                 "1972": "01",
                 "1974": "015E",
+                "2149": "01",
                 "5001": "0A",
                 "5032": "0082",
                 "5034": "00FF",
@@ -794,6 +805,10 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["wpm_party_mode"], 0)
         self.assertEqual(status["wpm_heating_circuit_mode"], 1)
         self.assertEqual(status["wpm_dhw_heating"], 1)
+        self.assertEqual(status["wpm_dhw_mode"], "solar_pv_only")
+        self.assertEqual(status["wpm_main_mode"], "standby")
+        self.assertEqual(status["wpm_time_mode"], "deactivation")
+        self.assertEqual(status["wpm_user_profile"], "profile_c")
         self.assertEqual(status["wpm_outdoor_temperature"], 13.0)
         self.assertEqual(status["wpm_mixed_temperature"], 20.0)
         self.assertEqual(status["wpm_water_temperature"], 53.0)
@@ -812,12 +827,15 @@ class ProfileParsingTests(unittest.TestCase):
 
         for value_id in (
             1082,
+            1079,
             1893,
             1894,
+            1936,
             1946,
             1951,
             1972,
             1974,
+            2149,
             5001,
             5032,
             5033,
@@ -990,11 +1008,21 @@ class ProfileParsingTests(unittest.TestCase):
             "bioclean",
             "wpm_heat_cool_mode",
             "wpm_manual_defrost",
+            "wpm_absence_mode",
+            "wpm_party_mode",
+            "wpm_heating_circuit_mode",
+            "wpm_dhw_heating",
+        }
+        select_keys = {
+            key
+            for profile in profiles
+            for key, _name, _options in profile.select_descriptions
         }
 
         self.assertLessEqual(sensor_keys, set(translations["sensor"]))
         self.assertLessEqual(number_keys, set(translations["number"]))
         self.assertLessEqual(switch_keys, set(translations["switch"]))
+        self.assertLessEqual(select_keys, set(translations["select"]))
         self.assertIn("dhw_vacation_end_date", translations["date"])
         self.assertEqual(
             set(DHW_MODE_VALUE_IDS),

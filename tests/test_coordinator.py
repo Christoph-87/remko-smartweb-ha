@@ -28,6 +28,7 @@ ha_climate = types.ModuleType("homeassistant.components.climate")
 ha_climate_const = types.ModuleType("homeassistant.components.climate.const")
 ha_date = types.ModuleType("homeassistant.components.date")
 ha_number = types.ModuleType("homeassistant.components.number")
+ha_select = types.ModuleType("homeassistant.components.select")
 ha_switch = types.ModuleType("homeassistant.components.switch")
 ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
@@ -54,6 +55,11 @@ class DateEntity:
 
 
 class NumberEntity:
+    def async_write_ha_state(self):
+        self.wrote_state = True
+
+
+class SelectEntity:
     def async_write_ha_state(self):
         self.wrote_state = True
 
@@ -231,6 +237,7 @@ def _vol_marker(*args, **kwargs):
 
 ha_date.DateEntity = DateEntity
 ha_number.NumberEntity = NumberEntity
+ha_select.SelectEntity = SelectEntity
 ha_climate.ClimateEntity = ClimateEntity
 ha_climate_const.HVACMode = HVACMode
 ha_climate_const.HVACAction = HVACAction
@@ -266,6 +273,7 @@ sys.modules.setdefault("homeassistant.components.climate", ha_climate)
 sys.modules.setdefault("homeassistant.components.climate.const", ha_climate_const)
 sys.modules.setdefault("homeassistant.components.date", ha_date)
 sys.modules.setdefault("homeassistant.components.number", ha_number)
+sys.modules.setdefault("homeassistant.components.select", ha_select)
 sys.modules.setdefault("homeassistant.components.switch", ha_switch)
 sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
@@ -298,6 +306,7 @@ import custom_components.remko_smartweb.config_flow as config_flow_module
 from custom_components.remko_smartweb._account import DeviceResolveError
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.number import RemkoSmartWebNumber
+from custom_components.remko_smartweb.select import RemkoSmartWebSelect
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebAccount,
     RemkoSmartWebClient,
@@ -2655,6 +2664,41 @@ class CoordinatorTests(unittest.TestCase):
                 )
 
                 asyncio.run(entity.async_set_native_value(updated))
+
+                self.assertEqual(client.values, expected)
+                self.assertEqual(coordinator.data[key], updated)
+                self.assertTrue(entity.wrote_state)
+                self.assertEqual(len(hass.scheduled_callbacks), 1)
+
+    def test_wpm_select_entities_write_mode_value_ids(self):
+        cases = (
+            ("wpm_dhw_mode", "automatic_comfort", "solar_pv_only", {"1079": "02"}),
+            ("wpm_main_mode", "auto", "standby", {"1951": "03"}),
+            ("wpm_time_mode", "reduction", "deactivation", {"2149": "01"}),
+            ("wpm_user_profile", "profile_a", "profile_c", {"1936": "02"}),
+        )
+        for key, initial, updated, expected in cases:
+            with self.subTest(key=key):
+                hass = HomeAssistant()
+                coordinator = types.SimpleNamespace(
+                    hass=hass,
+                    data={key: initial},
+                    async_request_refresh=lambda: None,
+                )
+                client = ValueCaptureClient()
+                profile = WpmDeviceProfile()
+                description = next(
+                    item for item in profile.select_descriptions if item[0] == key
+                )
+                entity = RemkoSmartWebSelect(
+                    coordinator,
+                    client,
+                    "WIFI Stick - Waermepumpe",
+                    profile,
+                    description,
+                )
+
+                asyncio.run(entity.async_select_option(updated))
 
                 self.assertEqual(client.values, expected)
                 self.assertEqual(coordinator.data[key], updated)

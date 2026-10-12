@@ -231,6 +231,18 @@
       "wpm_unit_on": {
         "default": "mdi:power"
       },
+      "wpm_dhw_mode": {
+        "default": "mdi:water-boiler"
+      },
+      "wpm_main_mode": {
+        "default": "mdi:sun-snowflake"
+      },
+      "wpm_time_mode": {
+        "default": "mdi:calendar-clock"
+      },
+      "wpm_user_profile": {
+        "default": "mdi:account-cog"
+      },
       "diagnostics": {
         "default": "mdi:clipboard-pulse-outline"
       },
@@ -277,6 +289,20 @@
       },
       "wpm_dhw_heating": {
         "default": "mdi:water-boiler"
+      }
+    },
+    "select": {
+      "wpm_dhw_mode": {
+        "default": "mdi:water-boiler"
+      },
+      "wpm_main_mode": {
+        "default": "mdi:sun-snowflake"
+      },
+      "wpm_time_mode": {
+        "default": "mdi:calendar-clock"
+      },
+      "wpm_user_profile": {
+        "default": "mdi:account-cog"
       }
     },
     "water_heater": {

@@ -4,12 +4,14 @@ from ..const import DEVICE_KIND_DIAGNOSTICS
 
 SensorDescription = tuple[str, str, str | None]
 NumberDescription = tuple[str, str, float, float, float, str | None]
+SelectDescription = tuple[str, str, tuple[str, ...]]
 
 
 class SmartWebDeviceProfile:
     kind = DEVICE_KIND_DIAGNOSTICS
     sensor_descriptions: tuple[SensorDescription, ...] = ()
     number_descriptions: tuple[NumberDescription, ...] = ()
+    select_descriptions: tuple[SelectDescription, ...] = ()
     supports_climate = False
     supports_climate_write = False
     supports_water_heater = False

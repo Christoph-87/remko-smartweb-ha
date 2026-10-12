@@ -68,6 +68,22 @@ def _first_present_byte(values: dict, *value_ids: str):
     return None
 
 
+WPM_DHW_MODE_OPTIONS = ("automatic_comfort", "automatic_eco", "solar_pv_only", "off")
+WPM_MAIN_MODE_OPTIONS = ("auto", "heating", "standby", "cooling")
+WPM_TIME_MODE_OPTIONS = ("reduction", "deactivation")
+WPM_USER_PROFILE_OPTIONS = ("profile_a", "profile_b", "profile_c")
+
+
+def _option_from_byte(values: dict, value_id: str, options: tuple[str, ...], offset: int = 0):
+    value = _first_byte(values.get(value_id))
+    if value is None:
+        return None
+    index = value - offset
+    if 0 <= index < len(options):
+        return options[index]
+    return None
+
+
 class WpmDeviceProfile(SmartWebDeviceProfile):
     """Experimental diagnostics/write profile for WPM/WPK/WKM/SQW heat pumps."""
 
@@ -77,6 +93,7 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
     diagnostics_only = True
     supports_value_write = True
     query_value_ids = (
+        1079,
         4110,
         4113,
         5734,
@@ -86,10 +103,12 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         1082,
         1893,
         1894,
+        1936,
         1951,
         1946,
         1972,
         1974,
+        2149,
         5001,
         5032,
         5033,
@@ -118,6 +137,10 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         ("wpm_party_mode", "WPM Party Mode", None),
         ("wpm_heating_circuit_mode", "WPM Heating Circuit Mode", None),
         ("wpm_dhw_heating", "WPM One-Time DHW Heating", None),
+        ("wpm_dhw_mode", "WPM DHW Mode", None),
+        ("wpm_main_mode", "WPM Main Mode", None),
+        ("wpm_time_mode", "WPM Time Mode", None),
+        ("wpm_user_profile", "WPM User Profile", None),
     )
     number_descriptions = (
         ("wpm_target_temperature", "WPM Target Temperature", 0, 80, 1, "temperature"),
@@ -127,6 +150,12 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
         ("wpm_heating_water_target_temperature", "WPM Heating Water Target Temperature", 20, 60, 0.5, "temperature"),
         ("wpm_setpoint_ch", "WPM CH Setpoint", 0, 80, 1, "temperature"),
         ("wpm_setpoint_hp", "WPM HP Setpoint", 0, 80, 1, "temperature"),
+    )
+    select_descriptions = (
+        ("wpm_dhw_mode", "WPM DHW Mode", WPM_DHW_MODE_OPTIONS),
+        ("wpm_main_mode", "WPM Main Mode", WPM_MAIN_MODE_OPTIONS),
+        ("wpm_time_mode", "WPM Time Mode", WPM_TIME_MODE_OPTIONS),
+        ("wpm_user_profile", "WPM User Profile", WPM_USER_PROFILE_OPTIONS),
     )
 
     def parse_values_status(self, values: dict) -> dict | None:
@@ -141,6 +170,10 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
             ("wpm_party_mode", _first_present_byte(values, "1894")),
             ("wpm_heating_circuit_mode", _first_present_byte(values, "1972")),
             ("wpm_dhw_heating", _first_present_byte(values, "5693")),
+            ("wpm_dhw_mode", _option_from_byte(values, "1079", WPM_DHW_MODE_OPTIONS)),
+            ("wpm_main_mode", _option_from_byte(values, "1951", WPM_MAIN_MODE_OPTIONS, offset=1)),
+            ("wpm_time_mode", _option_from_byte(values, "2149", WPM_TIME_MODE_OPTIONS)),
+            ("wpm_user_profile", _option_from_byte(values, "1936", WPM_USER_PROFILE_OPTIONS)),
             # WKF/WPM 4.26 local MQTT commonly exposes 1082/5032/5033/5034/5039/5055
             # instead of the newer SmartWeb IDs used by the cloud profile.
             ("wpm_outdoor_temperature", _first_present_tenths(values, "5032", "5055")),
@@ -184,6 +217,38 @@ class WpmDeviceProfile(SmartWebDeviceProfile):
                 ValueWriteSpec("wpm_party_mode", "1894"),
                 ValueWriteSpec("wpm_heating_circuit_mode", "1972"),
                 ValueWriteSpec("wpm_dhw_heating", "5693"),
+                ValueWriteSpec(
+                    "wpm_dhw_mode",
+                    "1079",
+                    enum={
+                        option: index
+                        for index, option in enumerate(WPM_DHW_MODE_OPTIONS)
+                    },
+                ),
+                ValueWriteSpec(
+                    "wpm_main_mode",
+                    "1951",
+                    enum={
+                        option: index + 1
+                        for index, option in enumerate(WPM_MAIN_MODE_OPTIONS)
+                    },
+                ),
+                ValueWriteSpec(
+                    "wpm_time_mode",
+                    "2149",
+                    enum={
+                        option: index
+                        for index, option in enumerate(WPM_TIME_MODE_OPTIONS)
+                    },
+                ),
+                ValueWriteSpec(
+                    "wpm_user_profile",
+                    "1936",
+                    enum={
+                        option: index
+                        for index, option in enumerate(WPM_USER_PROFILE_OPTIONS)
+                    },
+                ),
                 ValueWriteSpec("wpm_target_temperature", "5774", digits=4),
                 ValueWriteSpec("wpm_dhw_target_temperature", "1082", digits=4, scale=10),
                 ValueWriteSpec(
