@@ -42,24 +42,30 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 
 ## Supported devices
 
-| Device | Models | Connection path |
-|--------|--------|-----------------|
-| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | REMKO Cloud ✅, redirect observed ⚠️ |
-| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | REMKO Cloud ✅ |
-| ❄️ **Air conditioner** | RKL 495 DC | REMKO Cloud ✅ |
-| ❄️ **Air conditioner** | RKL 355 DC | REMKO Cloud ✅ |
-| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | REMKO Cloud ✅ |
-| 🚿 **Domestic hot water** | RBW 302 Pro | REMKO Cloud ✅ |
-| 💧 **Dehumidifier** | LTE series | REMKO Cloud ✅ |
-| 🌡️ **Compact heat pump** | KWT 180–300 DC | REMKO Cloud ✅ |
-| 🔥 **Heat pump** | WKF/WPM systems | Local MQTT on stick/device ⚠️ |
-| 🔥 **Heat pump** | WSP systems | Local MQTT on stick/device ⚠️ |
-| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | Unknown ❓ |
-| ❄️ **Multi-split outdoor unit** | MVT DC | Use matching indoor unit |
-| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | Unknown ❓ |
-| ❓ **Other** | Any other SmartWeb device | Diagnostics / unknown ❓ |
+| Device | Models | Connection path | Read | Write |
+|--------|--------|-----------------|:----:|:-----:|
+| ❄️ **Air conditioner** | MXW 204 / 264 / 354 / 524 | REMKO Cloud, redirect observed ⚠️ | ✅ | ✅ |
+| ❄️ **Air conditioner** | SKW 521 DC, RVD 525 DC | REMKO Cloud | ✅ | ✅ |
+| ❄️ **Air conditioner** | RKL 495 DC | REMKO Cloud | ✅ | ⚠️ |
+| ❄️ **Air conditioner** | RKL 355 DC | REMKO Cloud | ✅ | ⚠️ |
+| ❄️ **Air conditioner** | BL 264–354 DC, BL 353 DC | REMKO Cloud | ✅ | ⚠️ |
+| 🚿 **Domestic hot water** | RBW 302 Pro | REMKO Cloud | ✅ | ✅ |
+| 💧 **Dehumidifier** | LTE series | REMKO Cloud | ✅ | ⚠️ |
+| 🌡️ **Compact heat pump** | KWT 180–300 DC | REMKO Cloud | ✅ | ⚠️ |
+| 🔥 **Heat pump** | WKF/WPM systems | Local MQTT on stick/device ⚠️ | ⚠️ | ⚠️ |
+| 🔥 **Heat pump** | WSP systems | Local MQTT on stick/device ⚠️ | ⚠️ | ⚠️ |
+| ❄️ **Air conditioner candidates** | MXD 204–524, MXT 355/525, ATY / ATY Deko, ML DC, RVD/RVT/RWT/RXK/RXT DC | Unknown ❓ | ❓ | ❓ |
+| ❄️ **Multi-split outdoor unit** | MVT DC | Use matching indoor unit | ❓ | ❓ |
+| 🔥 **Heat pump candidates** | WKM / WKM Pro, WPK, SQW 405 Pro, HTS Duo, MWL | Unknown ❓ | ❓ | ❓ |
+| ❓ **Other** | Any other SmartWeb device | Diagnostics / unknown ❓ | ⚠️ | — |
 
-✅ Confirmed &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown
+✅ Supported &nbsp;·&nbsp; ⚠️ Experimental / device-dependent &nbsp;·&nbsp; ❓ Unknown &nbsp;·&nbsp; — Not available
+
+**Read** = sensor values are shown in Home Assistant.
+**Write** = you can change settings (temperature, mode, on/off) from Home Assistant.
+Cloud read/write status follows the `main` branch; this branch does not mark a
+REMKO Cloud family as fully supported unless both read and write are fully
+supported there.
 
 The 0.4.x device families are confirmed through the REMKO SmartWeb cloud path.
 The communication module determines the usable path: Cloud-style WiFi sticks use
