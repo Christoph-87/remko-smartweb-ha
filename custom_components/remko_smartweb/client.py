@@ -154,16 +154,29 @@ class RemkoSmartWebClient:
         return bool(self._local_mqtt_host)
 
     @property
+    def uses_cloud_transport(self) -> bool:
+        """Return whether this runtime path needs the REMKO SmartWeb cloud account."""
+        return not self.uses_local_device_mqtt
+
+    @property
     def local_mqtt_mode(self) -> str:
         return self._local_mqtt_mode
 
     @property
     def uses_local_portal_broker(self) -> bool:
-        return bool(self._local_mqtt_host) and self._local_mqtt_mode != LOCAL_MQTT_MODE_DEVICE_MQTT
+        return (
+            bool(self._local_mqtt_host)
+            and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
+            != LOCAL_MQTT_MODE_DEVICE_MQTT
+        )
 
     @property
     def uses_local_device_mqtt(self) -> bool:
-        return bool(self._local_mqtt_host) and self._local_mqtt_mode == LOCAL_MQTT_MODE_DEVICE_MQTT
+        return (
+            bool(self._local_mqtt_host)
+            and getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
+            == LOCAL_MQTT_MODE_DEVICE_MQTT
+        )
 
     @property
     def cloud_bridge_enabled(self) -> bool:
@@ -1552,7 +1565,8 @@ class RemkoSmartWebClient:
 
     def read_status(self) -> dict:
         started = time.monotonic()
-        self._ensure_login()
+        if self.uses_cloud_transport:
+            self._ensure_login()
         self._ensure_device()
         self._ensure_mqtt()
         protocol_name = getattr(self.profile, "protocol_name", "")
@@ -1560,10 +1574,11 @@ class RemkoSmartWebClient:
             values = self._mqtt_poll_values(timeout=10)
             if isinstance(values, dict):
                 self._log_mapping_snapshot("local_device_values", values)
-            parsed_values = self.profile.parse_values_status(values) if values else None
+            parsed_values = self._parse_values_status_update(
+                values,
+                source="local_device_values",
+            )
             if parsed_values:
-                self._last_status = parsed_values
-                self._last_status_source = "local_device_values"
                 self._log_poll_summary(
                     "local_device_values",
                     parsed=parsed_values,
@@ -1595,27 +1610,16 @@ class RemkoSmartWebClient:
             if parsed_kwt:
                 return parsed_kwt
         elif protocol_name == "wpm_modbus":
-            # WPM/WKF cloud MQTT often returns useful SmartWeb value payloads
-            # while the direct ESP Modbus roundtrip only echoes Tx.
+            # WPM/WKF SmartWeb values are the most reliable readback for both
+            # cloud transport and direct local MQTT; ESP Modbus is a fallback.
             values = self._mqtt_poll_values(timeout=10)
             if isinstance(values, dict):
                 self._log_mapping_snapshot("client2host_values", values)
-            parsed_values = self.profile.parse_values_status(values) if values else None
+            parsed_values = self._parse_values_status_update(
+                values,
+                source="client2host_values",
+            )
             if parsed_values:
-                if self._last_status:
-                    merged = dict(self._last_status)
-                    merged.update({k: v for k, v in parsed_values.items() if v is not None})
-                    self._last_status = merged
-                    self._last_status_source = "client2host_values"
-                    self._log_poll_summary(
-                        "client2host_values",
-                        parsed=merged,
-                        values=values,
-                        duration=time.monotonic() - started,
-                    )
-                    return merged
-                self._last_status = parsed_values
-                self._last_status_source = "client2host_values"
                 self._log_poll_summary(
                     "client2host_values",
                     parsed=parsed_values,
@@ -1660,22 +1664,11 @@ class RemkoSmartWebClient:
         values = self._mqtt_poll_values(timeout=10)
         if isinstance(values, dict):
             self._log_mapping_snapshot("client2host_values", values)
-        parsed_values = self.profile.parse_values_status(values) if values else None
+        parsed_values = self._parse_values_status_update(
+            values,
+            source="client2host_values",
+        )
         if parsed_values:
-            if self._last_status:
-                merged = dict(self._last_status)
-                merged.update({k: v for k, v in parsed_values.items() if v is not None})
-                self._last_status = merged
-                self._last_status_source = "client2host_values"
-                self._log_poll_summary(
-                    "client2host_values",
-                    parsed=merged,
-                    values=values,
-                    duration=time.monotonic() - started,
-                )
-                return merged
-            self._last_status = parsed_values
-            self._last_status_source = "client2host_values"
             self._log_poll_summary(
                 "client2host_values",
                 parsed=parsed_values,

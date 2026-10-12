@@ -1671,6 +1671,38 @@ class CoordinatorTests(unittest.TestCase):
         self.assertIn(5055, payload["query_list"])
         self.assertNotIn(1194, payload["query_list"])
 
+    def test_local_device_mqtt_read_status_does_not_require_cloud_login(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = None
+        client.sk = None
+        client.topic = "V04P26/SMTABCDEF123456/HOST2CLIENT".rsplit("/", 1)[0]
+        client.smt_user = None
+        client.device_dev = None
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client._local_mqtt_host = "192.168.2.50"
+        client._local_mqtt_mode = LOCAL_MQTT_MODE_DEVICE_MQTT
+        client._local_mqtt_command_topic = None
+        client._last_status = None
+        client._mqtt = FakeMqtt({"5039": "0212", "5055": "00C8", "1951": "03"})
+        client._ensure_login = lambda: (_ for _ in ()).throw(
+            AssertionError("direct local MQTT read_status must not log in to SmartWeb")
+        )
+        client._ensure_mqtt = lambda: None
+        client._log_mapping_snapshot = lambda *args, **kwargs: None
+        client._log_poll_summary = lambda *args, **kwargs: None
+
+        status = client.read_status()
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 3)
+        self.assertEqual(status["wpm_outdoor_temperature"], 20.0)
+        self.assertEqual(status["wpm_water_temperature"], 53.0)
+        self.assertEqual(client._last_status_source, "local_device_values")
+        topic, payload = client._mqtt.published[0]
+        self.assertEqual(topic, "V04P26/SMTABCDEF123456/CLIENT2HOST")
+        self.assertRegex(payload["CLIENT_ID"], r"^SMT[12][0-9]{2}I0{16}$")
+        self.assertNotIn("SMT_USER", payload)
+
     def test_wpm_write_falls_back_to_client2host_when_esp_readback_is_cached(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "WKF 120"
