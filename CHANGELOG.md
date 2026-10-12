@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.5.0-beta.14
+- Apply incoming MQTT `HOST2CLIENT`/`PORTAL2CLIENT` value updates to Home Assistant immediately instead of waiting for the next 30-second coordinator poll. The periodic poll remains as a startup/reconnect fallback.
+- Keep the local-portal support README status conservative: REMKO Cloud support is only marked fully supported when read and write are both supported on the main branch.
+- Remove the unobserved WPM/WKF DHW hysteresis candidate sensors and stop querying value IDs `1334` and `1402` on the WPM profile after tester feedback confirmed those IDs are not returned by the local WKF/WPM 4.26 value path.
+
 ## v0.5.0-beta.10
 - Prefer the `CLIENT2HOST` SmartWeb value path for WPM/WKF cloud MQTT polling before trying the slower direct ESP Modbus roundtrip, avoiding long waits when the stick only echoes ESP `Tx` messages
 - Query the WKF/WPM firmware 4.26 value IDs explicitly (`1082`, `1951`, `5001`, `5033`, `5034`, `5039`, `5055`) so supported temperature/mode values are returned more reliably
