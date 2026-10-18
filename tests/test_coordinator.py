@@ -306,6 +306,7 @@ import custom_components.remko_smartweb.config_flow as config_flow_module
 from custom_components.remko_smartweb._account import DeviceResolveError
 from custom_components.remko_smartweb.date import RemkoSmartWebVacationEndDate
 from custom_components.remko_smartweb.number import RemkoSmartWebNumber
+from custom_components.remko_smartweb._pending import PENDING_STATE_TIMEOUT
 from custom_components.remko_smartweb.select import RemkoSmartWebSelect
 from custom_components.remko_smartweb.api import (
     RemkoSmartWebAccount,
@@ -1925,6 +1926,31 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(local_diagnostics["last_resp_after_last_esp"])
         self.assertEqual(local_diagnostics["last_status_source"], "mqtt_push_values")
         self.assertEqual(communication_diagnostics["last_status_source"], "mqtt_push_values")
+        self.assertEqual(communication_diagnostics["last_values_count"], 1)
+        self.assertEqual(communication_diagnostics["last_value_ids"], ["5039"])
+
+    def test_communication_diagnostics_lists_observed_value_ids_numerically(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.topic = "V04P26/SMTABCDEF123456"
+        client._local_mqtt_host = "192.168.2.50"
+        client._local_mqtt_command_topic = "V04P26/SMTABCDEF123456"
+        client._last_status_source = "mqtt_push_values"
+        client._mqtt_credentials_ready = lambda: True
+        client._cloud_bridge_diagnostic_snapshot = lambda: {"enabled": False}
+        client.diagnostic_metadata = lambda: {"Connection Mode": "local"}
+        client._mqtt_diagnostic_snapshot = lambda: {
+            "mqtt_connected": True,
+            "last_values_age_s": 0.0,
+            "last_values": {"1079": "00", "999": "01", "alpha": "02"},
+        }
+
+        diagnostics = client.communication_diagnostics()
+
+        self.assertEqual(diagnostics["last_values_count"], 3)
+        self.assertEqual(
+            diagnostics["last_value_ids"],
+            ["999", "1079", "alpha"],
+        )
 
     def test_diagnostic_metadata_derives_mac_from_stick_topic(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
@@ -2290,6 +2316,19 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.state_writes, [{"power": True, "mode": "cool"}])
         self.assertEqual(client.value_writes, [])
         self.assertIs(client.primed_status, coordinator.data)
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertEqual(coordinator.data["mode"], "auto")
+        self.assertEqual(entity.hvac_mode, HVACMode.COOL)
+        self.assertTrue(entity.extra_state_attributes["pending_confirmation"])
+
+        coordinator.data = {
+            **coordinator.data,
+            "power": "ON",
+            "mode": "cool",
+        }
+
+        self.assertEqual(entity.hvac_mode, HVACMode.COOL)
+        self.assertFalse(entity.extra_state_attributes["pending_confirmation"])
 
     def test_cloud_generic_ac_climate_falls_back_to_value_write_without_c0_payload(self):
         hass = HomeAssistant()
@@ -2347,7 +2386,9 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client.value_writes, [{"1190": "2B"}])
         self.assertEqual(client.state_writes, [])
         self.assertEqual(coordinator.data["setpoint"], 20.0)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(entity.target_temperature, 21.5)
+        self.assertTrue(entity.extra_state_attributes["pending_confirmation"])
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_kwt_climate_entity_writes_main_value_ids_for_power_and_mode(self):
         hass = HomeAssistant()
@@ -2376,9 +2417,11 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [{"1194": "01", "1192": "04"}])
         self.assertEqual(client.state_writes, [])
-        self.assertEqual(coordinator.data["power"], "ON")
-        self.assertEqual(coordinator.data["mode"], "cool")
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertEqual(coordinator.data["mode"], "auto")
+        self.assertEqual(entity.hvac_mode, HVACMode.COOL)
+        self.assertTrue(entity.extra_state_attributes["pending_confirmation"])
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_kwt_climate_entity_writes_main_value_ids_for_fan_and_swing(self):
         hass = HomeAssistant()
@@ -2409,8 +2452,10 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [{"1191": "05"}, {"1193": "04"}])
         self.assertEqual(client.state_writes, [])
-        self.assertEqual(coordinator.data["fan"], "high")
-        self.assertEqual(coordinator.data["swing"], "vertical")
+        self.assertEqual(coordinator.data["fan"], "auto")
+        self.assertEqual(coordinator.data["swing"], "off")
+        self.assertEqual(entity.fan_mode, "high")
+        self.assertEqual(entity.swing_mode, "vertical")
 
     def test_generic_ac_extended_switches_are_available_without_value_write_specs(self):
         profile = ClimateDeviceProfile()
@@ -2474,7 +2519,8 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [{"1194": "01"}])
         self.assertEqual(client.state_writes, [])
-        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertTrue(entity.is_on)
 
     def test_local_generic_ac_power_switch_uses_c0_set_values(self):
         hass = HomeAssistant()
@@ -2497,7 +2543,8 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [])
         self.assertEqual(client.state_writes, [{"power": True}])
-        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertTrue(entity.is_on)
 
     def test_local_device_mqtt_power_switch_uses_value_write(self):
         hass = HomeAssistant()
@@ -2521,7 +2568,8 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(client.value_writes, [{"1194": "01"}])
         self.assertEqual(client.state_writes, [])
-        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertTrue(entity.is_on)
 
     def test_generic_ac_extended_switches_fall_back_to_c0_set_values(self):
         for key in ("eco", "frost_protection", "turbo", "sleep", "bioclean"):
@@ -2551,7 +2599,8 @@ class CoordinatorTests(unittest.TestCase):
 
                 self.assertEqual(client.value_writes, [])
                 self.assertEqual(client.state_writes, [{key: True}])
-                self.assertTrue(coordinator.data[key])
+                self.assertFalse(coordinator.data[key])
+                self.assertTrue(entity.is_on)
 
     def test_wpm_switch_entity_writes_heat_cool_mode_value_id(self):
         hass = HomeAssistant()
@@ -2573,9 +2622,10 @@ class CoordinatorTests(unittest.TestCase):
         asyncio.run(entity.async_turn_on())
 
         self.assertEqual(client.values, {"4110": "01"})
-        self.assertEqual(coordinator.data["wpm_heat_cool_mode"], True)
+        self.assertEqual(coordinator.data["wpm_heat_cool_mode"], 0)
+        self.assertTrue(entity.is_on)
         self.assertTrue(entity.wrote_state)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_wpm_switch_entity_writes_manual_defrost_value_id(self):
         hass = HomeAssistant()
@@ -2597,9 +2647,10 @@ class CoordinatorTests(unittest.TestCase):
         asyncio.run(entity.async_turn_off())
 
         self.assertEqual(client.values, {"4113": "00"})
-        self.assertEqual(coordinator.data["wpm_manual_defrost"], False)
+        self.assertEqual(coordinator.data["wpm_manual_defrost"], 1)
+        self.assertFalse(entity.is_on)
         self.assertTrue(entity.wrote_state)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_wpm_local_control_switches_write_value_ids(self):
         cases = (
@@ -2632,9 +2683,10 @@ class CoordinatorTests(unittest.TestCase):
                     asyncio.run(entity.async_turn_off())
 
                 self.assertEqual(client.values, expected)
-                self.assertEqual(coordinator.data[key], state)
+                self.assertEqual(coordinator.data[key], not state)
+                self.assertEqual(entity.is_on, state)
                 self.assertTrue(entity.wrote_state)
-                self.assertEqual(len(hass.scheduled_callbacks), 1)
+                self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_lte_power_switch_entity_writes_main_value_id(self):
         hass = HomeAssistant()
@@ -2656,9 +2708,10 @@ class CoordinatorTests(unittest.TestCase):
         asyncio.run(entity.async_turn_on())
 
         self.assertEqual(client.values, {"1194": "01"})
-        self.assertEqual(coordinator.data["power"], "ON")
+        self.assertEqual(coordinator.data["power"], "OFF")
+        self.assertTrue(entity.is_on)
         self.assertTrue(entity.wrote_state)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_lte_number_entity_writes_target_humidity_value_id(self):
         hass = HomeAssistant()
@@ -2680,9 +2733,10 @@ class CoordinatorTests(unittest.TestCase):
         asyncio.run(entity.async_set_native_value(55))
 
         self.assertEqual(client.values, {"1302": "37"})
-        self.assertEqual(coordinator.data["target_humidity"], 55)
+        self.assertEqual(coordinator.data["target_humidity"], 45)
+        self.assertEqual(entity.native_value, 55)
         self.assertTrue(entity.wrote_state)
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_wpm_number_entities_write_main_value_ids(self):
         cases = (
@@ -2718,9 +2772,10 @@ class CoordinatorTests(unittest.TestCase):
                 asyncio.run(entity.async_set_native_value(updated))
 
                 self.assertEqual(client.values, expected)
-                self.assertEqual(coordinator.data[key], updated)
+                self.assertEqual(coordinator.data[key], initial)
+                self.assertEqual(entity.native_value, updated)
                 self.assertTrue(entity.wrote_state)
-                self.assertEqual(len(hass.scheduled_callbacks), 1)
+                self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_wpm_select_entities_write_mode_value_ids(self):
         cases = (
@@ -2752,10 +2807,129 @@ class CoordinatorTests(unittest.TestCase):
 
                 asyncio.run(entity.async_select_option(updated))
 
+                self.assertTrue(entity.available)
                 self.assertEqual(client.values, expected)
-                self.assertEqual(coordinator.data[key], updated)
+                self.assertEqual(coordinator.data[key], initial)
+                self.assertEqual(entity.current_option, updated)
+                self.assertEqual(
+                    entity.extra_state_attributes,
+                    {
+                        "confirmed_option": initial,
+                        "pending_confirmation": True,
+                        "pending_values": {key: updated},
+                    },
+                )
                 self.assertTrue(entity.wrote_state)
-                self.assertEqual(len(hass.scheduled_callbacks), 1)
+                self.assertEqual(len(hass.scheduled_callbacks), 2)
+
+                coordinator.data = {key: updated}
+
+                self.assertEqual(entity.current_option, updated)
+                self.assertEqual(
+                    entity.extra_state_attributes,
+                    {
+                        "confirmed_option": updated,
+                        "pending_confirmation": False,
+                        "pending_values": None,
+                    },
+                )
+
+    def test_wpm_select_is_unavailable_and_does_not_write_without_readback(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_target_temperature": 42},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        profile = WpmDeviceProfile()
+        description = next(
+            item
+            for item in profile.select_descriptions
+            if item[0] == "wpm_dhw_mode"
+        )
+        entity = RemkoSmartWebSelect(
+            coordinator,
+            client,
+            "WIFI Stick - Waermepumpe",
+            profile,
+            description,
+        )
+
+        asyncio.run(entity.async_select_option("solar_pv_only"))
+
+        self.assertFalse(entity.available)
+        self.assertIsNone(entity.current_option)
+        self.assertIsNone(client.values)
+        self.assertNotIn("wpm_dhw_mode", coordinator.data)
+        self.assertFalse(hasattr(entity, "wrote_state"))
+        self.assertEqual(hass.scheduled_callbacks, [])
+
+    def test_wpm_select_pending_state_rolls_back_after_timeout(self):
+        class Coordinator:
+            def __init__(self, hass):
+                self.hass = hass
+                self.data = {"wpm_dhw_mode": "automatic_comfort"}
+                self.refresh_count = 0
+
+            async def async_request_refresh(self):
+                self.refresh_count += 1
+
+        hass = HomeAssistant()
+        coordinator = Coordinator(hass)
+        client = ValueCaptureClient()
+        profile = WpmDeviceProfile()
+        description = next(
+            item
+            for item in profile.select_descriptions
+            if item[0] == "wpm_dhw_mode"
+        )
+        entity = RemkoSmartWebSelect(
+            coordinator,
+            client,
+            "WIFI Stick - Waermepumpe",
+            profile,
+            description,
+        )
+
+        asyncio.run(entity.async_select_option("solar_pv_only"))
+        _delay, expire_callback = next(
+            scheduled
+            for scheduled in hass.scheduled_callbacks
+            if scheduled[0] == PENDING_STATE_TIMEOUT
+        )
+        asyncio.run(expire_callback(None))
+
+        self.assertEqual(entity.current_option, "automatic_comfort")
+        self.assertFalse(entity.extra_state_attributes["pending_confirmation"])
+        self.assertEqual(coordinator.refresh_count, 1)
+
+    def test_wpm_select_write_error_rolls_back_pending_state(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_dhw_mode": "automatic_comfort"},
+            async_request_refresh=lambda: None,
+        )
+        profile = WpmDeviceProfile()
+        description = next(
+            item
+            for item in profile.select_descriptions
+            if item[0] == "wpm_dhw_mode"
+        )
+        entity = RemkoSmartWebSelect(
+            coordinator,
+            WriteFailureClient(),
+            "WIFI Stick - Waermepumpe",
+            profile,
+            description,
+        )
+
+        with self.assertRaises(UnsupportedPayload):
+            asyncio.run(entity.async_select_option("solar_pv_only"))
+
+        self.assertEqual(entity.current_option, "automatic_comfort")
+        self.assertFalse(entity.extra_state_attributes["pending_confirmation"])
 
     def test_mxw_timer_service_writes_main_timer_value_ids(self):
         class Services:
@@ -3102,7 +3276,7 @@ class CoordinatorTests(unittest.TestCase):
             },
         )
         self.assertEqual(client.values, {"1333": "022B"})
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_water_heater_vacation_mode_requires_end_date(self):
         hass = HomeAssistant()
@@ -3186,6 +3360,7 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertEqual(entity.native_min_value, date.today())
         self.assertEqual(entity.native_value, vacation_end_date)
+        self.assertNotIn("dhw_vacation_end_date", coordinator.data)
         self.assertEqual(
             client.values,
             {
@@ -3195,7 +3370,7 @@ class CoordinatorTests(unittest.TestCase):
                 "rbw_register:1132": f"{vacation_end_date.day:04X}",
             },
         )
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_vacation_end_date_entity_allows_today_and_rejects_past_dates(self):
         hass = HomeAssistant()
@@ -3225,8 +3400,8 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaises(HomeAssistantError):
             asyncio.run(entity.async_set_value(date.today() - timedelta(days=1)))
 
-        self.assertEqual(coordinator.data["dhw_vacation_end_date"], date.today().isoformat())
-        self.assertEqual(len(hass.scheduled_callbacks), 1)
+        self.assertNotIn("dhw_vacation_end_date", coordinator.data)
+        self.assertEqual(len(hass.scheduled_callbacks), 2)
 
     def test_water_heater_vacation_mode_allows_today_end_date(self):
         hass = HomeAssistant()

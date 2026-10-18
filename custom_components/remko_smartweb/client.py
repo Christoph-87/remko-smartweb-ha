@@ -677,6 +677,18 @@ class RemkoSmartWebClient:
         local_mqtt_command_topic = getattr(self, "_local_mqtt_command_topic", None)
         command_topic = local_mqtt_command_topic if local_mqtt_host else self.topic
         mqtt_connected = bool(mqtt_diagnostics.get("mqtt_connected"))
+        last_values = mqtt_diagnostics.get("last_values")
+        last_value_ids = (
+            sorted(
+                (str(value_id) for value_id in last_values),
+                key=lambda value_id: (
+                    not value_id.isdigit(),
+                    int(value_id) if value_id.isdigit() else value_id,
+                ),
+            )
+            if isinstance(last_values, dict)
+            else None
+        )
         last_status_source = getattr(self, "_last_status_source", None)
         last_status_cached = last_status_source == "cached_last_status"
         last_resp_age_s = mqtt_diagnostics.get("last_resp_age_s")
@@ -755,10 +767,11 @@ class RemkoSmartWebClient:
             "last_resp_after_last_esp": last_resp_after_last_esp,
             "last_values_age_s": last_values_age_s,
             "last_values_count": (
-                len(mqtt_diagnostics["last_values"])
-                if isinstance(mqtt_diagnostics.get("last_values"), dict)
+                len(last_values)
+                if isinstance(last_values, dict)
                 else None
             ),
+            "last_value_ids": last_value_ids,
             "last_host2portal_age_s": mqtt_diagnostics.get("last_host2portal_age_s"),
             "last_portal2host_age_s": mqtt_diagnostics.get("last_portal2host_age_s"),
             "cloud_bridge": self._cloud_bridge_diagnostic_snapshot(),

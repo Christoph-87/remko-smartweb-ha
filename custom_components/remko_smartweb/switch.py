@@ -5,8 +5,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_call_later
 
+from ._pending import PendingStateMixin
 from .const import CONF_BEEP, DOMAIN
 
 SWITCHES = [
@@ -86,13 +86,14 @@ def _should_add_switch(profile, present: set[str], key: str) -> bool:
     return False
 
 
-class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
+class RemkoSmartWebSwitch(PendingStateMixin, CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator, client, device_name: str, key: str, name: str, profile, entry=None):
         super().__init__(coordinator)
         self._client = client
         self._key = key
         self._profile = profile
         self._entry = entry
+        self._init_pending_state()
         self._attr_has_entity_name = True
         self._attr_translation_key = key
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_switch"
@@ -108,8 +109,8 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         if self._key == CONF_BEEP:
             return bool(getattr(self._client, "beep_enabled", False))
         if self._key == "power":
-            return self.coordinator.data.get("power") == "ON"
-        return bool(self.coordinator.data.get(self._key))
+            return self._display_value("power") == "ON"
+        return bool(self._display_value(self._key))
 
     async def async_turn_on(self, **kwargs):
         await self._async_set(True)
@@ -140,36 +141,37 @@ class RemkoSmartWebSwitch(CoordinatorEntity, SwitchEntity):
         overrides = {self._key: state}
         if self._key == "power":
             overrides = {"power": state}
-        # Optimistic UI update to avoid flicker.
-        if self.coordinator.data is not None:
-            data = dict(self.coordinator.data)
-            if self._key == "power":
-                data["power"] = "ON" if state else "OFF"
-            else:
-                data[self._key] = bool(state)
-            self.coordinator.data = data
-            self.async_write_ha_state()
-
-        async def _do_refresh(_now):
-            await self.coordinator.async_request_refresh()
-
         prefer_c0_write = (
             _client_uses_local_portal_broker(self._client)
             and getattr(self._profile, "supports_climate_write", False)
             and self._key in C0_CLIMATE_SWITCH_KEYS
         )
         value_write = None if prefer_c0_write else self._profile.build_value_write(overrides)
-        if value_write:
-            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
-            async_call_later(self.hass, 2.0, _do_refresh)
-            return
-        if (
+        use_c0_write = (
             getattr(self._profile, "supports_climate_write", False)
             and self._key in C0_CLIMATE_SWITCH_KEYS
-        ):
-            await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        elif getattr(self._profile, "supports_value_write", False):
+        )
+        if not value_write and not use_c0_write:
             return
-        else:
-            await self.hass.async_add_executor_job(self._client.set_values, overrides)
-        async_call_later(self.hass, 2.0, _do_refresh)
+
+        pending_key = "power" if self._key == "power" else self._key
+        pending_value = (
+            "ON" if state else "OFF"
+        ) if self._key == "power" else bool(state)
+        pending_values = {pending_key: pending_value}
+        pending_generation = self._start_pending_state(pending_values)
+        try:
+            if value_write:
+                await self.hass.async_add_executor_job(
+                    self._client.set_value_ids,
+                    value_write,
+                )
+            else:
+                await self.hass.async_add_executor_job(
+                    self._client.set_values,
+                    overrides,
+                )
+        except Exception:
+            self._rollback_pending_state(pending_generation)
+            raise
+        self._schedule_readback_refresh()

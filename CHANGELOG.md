@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Only expose experimental WPM operating-mode selects when their register has actually been observed in device readback; unavailable selects also reject direct service writes.
+- Show requested device state immediately through a pending overlay for climate, water-heater, number, switch, select, and vacation-date controls across cloud and local transports, without overwriting confirmed coordinator data; device readback confirms it, while write errors or a bounded timeout restore the last confirmed state.
+- Include the numerically sorted Value IDs from the latest device readback in communication diagnostics to make register support visible without exposing register contents.
 
 ## v0.5.0-beta.16
 - Treat parsed local MQTT push value updates (`mqtt_push_values`) and direct local value polls (`local_device_values`) as fresh communication status sources, so diagnostic status no longer flips to degraded just because there is no ESP `/RESP` after a recent value push.
