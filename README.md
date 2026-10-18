@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
-![Version](https://img.shields.io/badge/version-v0.5.0--beta.15-blue)
+![Version](https://img.shields.io/badge/version-v0.5.0--beta.17-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device from Home Assistant — temperatures, operating modes, switches, and more. Works via the REMKO SmartWeb cloud (internet connection required).
 
@@ -100,6 +100,26 @@ The detailed setup for redirected WiFi sticks, including optional REMKO app
 bridging, DNS/broker requirements, diagnostics, and troubleshooting, is
 documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md).
 
+### Write confirmation and pending state
+
+Device-bound controls use the same confirmation behavior with the REMKO Cloud,
+redirected local portal MQTT, and direct local device MQTT:
+
+- Home Assistant shows a requested value immediately as pending, without
+  replacing the last device-confirmed coordinator value.
+- A matching device readback confirms the value and clears the pending state.
+- A write error, or no matching readback within 30 seconds, restores the last
+  confirmed state.
+- Entity attributes expose `pending_confirmation` and `pending_values` for
+  diagnostics.
+
+Experimental WPM operating-mode selects are only available when their value ID
+has actually appeared in device readback. An unavailable select means that the
+current device/firmware did not expose the required register; it must not be
+used as evidence that switching the corresponding mode is safe. In particular,
+WKF/WPM DHW mode readback and DHW hysteresis control remain device-dependent and
+unconfirmed unless the device reports the required values.
+
 ---
 
 ## Troubleshooting
@@ -109,7 +129,7 @@ documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md)
 | No entities after install | Restart Home Assistant |
 | Entities unavailable | Check internet access · reduce the polling interval in options |
 | `SmartWeb returned an empty or unparseable device list from /rest/liste` | Update to the latest version and restart Home Assistant. REMKO may block non-browser HTTP clients; current versions keep a browser-like user agent on the full SmartWeb session, not only during login. |
-| `SET readback mismatch` after a climate command | The device may report the old state for a few seconds after accepting a command. Current versions retry the immediate readback and log pending confirmation instead of warning too early. |
+| `SET readback mismatch` after a command | The device may report the old state for a few seconds after accepting a command. Current versions keep the requested state pending while preserving the last confirmed value, then confirm it from readback or restore the confirmed state after 30 seconds. |
 | Local MQTT device accepts commands slowly or times out | Update to a local-portal build that sends ESP SET frames to the SID-based command topic and treats local readback as pending. Also verify Mosquitto listener authentication is separated so the stick's `8883` subscriptions are not denied by the authenticated HA listener. |
 | Commands feel slow | SmartWeb is cloud-based — a few seconds of delay is normal |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
