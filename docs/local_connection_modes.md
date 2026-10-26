@@ -142,8 +142,9 @@ impact.
    **Local connection**.
 3. For **Local MQTT mode**, choose
    **Redirected WiFi stick / local portal broker**.
-4. Enter the **Stick IP candidate**. This is only used for validation; it is not
-   the MQTT broker host.
+4. Enter the **Stick IP candidate**. It anchors validation and, when its ARP/MAC
+   mapping is unambiguous, the expected stick topic; it is not the MQTT broker
+   host.
 5. Leave **Bridge REMKO app commands through Home Assistant** disabled unless
    you want the REMKO app to keep working through Home Assistant while the stick
    is redirected locally.
@@ -155,6 +156,11 @@ impact.
 
 The stick itself should connect to the stick-facing listener after DNS is
 changed. Home Assistant connects to the Home Assistant listener.
+
+The configured stick IP is also a safety anchor on shared brokers. When its
+ARP/MAC mapping is available and unambiguous, the integration derives the
+expected `V04P27/SMT...` topic from it and repairs a stale stored topic instead
+of accepting another stick's discovered topic.
 
 ## Expected Topics
 
@@ -201,6 +207,7 @@ only after local control is healthy.
 | Stick connects then disconnects | TLS/certificate mismatch | Certificate CN/SAN should match `smartweb.remko.media`; check broker TLS logs. |
 | Home Assistant connects but device does not react | Stick is not subscribed to the command topic or SID mapping is wrong | Check `HOST2PORTAL`, `/ESP`, `/RESP`, and diagnostics for command topic freshness. |
 | Another stick appears | DNS rule affected the wrong client or multiple sticks share generic hostnames | Redirect one stick IP at a time and compare the observed `SMT...` topic. |
+| Portal-poll warning immediately after Home Assistant starts | The first stick heartbeat has not arrived yet | Current versions allow a three-minute startup grace period. If the warning appears after that, verify the per-stick DNS redirect and `HOST2PORTAL` traffic. |
 | REMKO app no longer works | Expected when the selected stick is redirected locally | Remove the DNS rule or switch back to REMKO Cloud mode. |
 
 ## What To Include In An Issue

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## v0.5.0-beta.18
 - Correct stale redirected-local-MQTT topics from the configured stick IP's unambiguous ARP/MAC mapping, avoiding cross-device topic selection on shared brokers.
 - Count native `HOST2PORTAL` traffic as local portal activity and allow the first heartbeat cycle after startup, so healthy redirected sticks no longer produce false idle warnings.
 - Keep the cloud/local bridge while its three MQTT connection legs are still pending and only recycle it after an actual connection failure.

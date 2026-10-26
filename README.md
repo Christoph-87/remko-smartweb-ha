@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
-![Version](https://img.shields.io/badge/version-v0.5.0--beta.17-blue)
+![Version](https://img.shields.io/badge/version-v0.5.0--beta.18-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device from Home Assistant — temperatures, operating modes, switches, and more. Works via the REMKO SmartWeb cloud (internet connection required).
 
@@ -100,6 +100,16 @@ The detailed setup for redirected WiFi sticks, including optional REMKO app
 bridging, DNS/broker requirements, diagnostics, and troubleshooting, is
 documented in [`docs/local_connection_modes.md`](docs/local_connection_modes.md).
 
+For redirected cloud-style sticks, configure the specific stick IP for each
+entry. The integration derives the stick topic from that IP's ARP/MAC mapping
+and corrects a stale stored topic when the mapping is unambiguous. This avoids
+selecting another device's topic when several sticks share one broker.
+
+The local portal health check treats native `HOST2PORTAL` heartbeats as active
+traffic and allows the first heartbeat cycle after startup before warning. The
+optional REMKO-app bridge also waits for all three MQTT connection legs instead
+of repeatedly rebuilding a bridge that is still connecting.
+
 ### Write confirmation and pending state
 
 Device-bound controls use the same confirmation behavior with the REMKO Cloud,
@@ -131,6 +141,8 @@ unconfirmed unless the device reports the required values.
 | `SmartWeb returned an empty or unparseable device list from /rest/liste` | Update to the latest version and restart Home Assistant. REMKO may block non-browser HTTP clients; current versions keep a browser-like user agent on the full SmartWeb session, not only during login. |
 | `SET readback mismatch` after a command | The device may report the old state for a few seconds after accepting a command. Current versions keep the requested state pending while preserving the last confirmed value, then confirm it from readback or restore the confirmed state after 30 seconds. |
 | Local MQTT device accepts commands slowly or times out | Update to a local-portal build that sends ESP SET frames to the SID-based command topic and treats local readback as pending. Also verify Mosquitto listener authentication is separated so the stick's `8883` subscriptions are not denied by the authenticated HA listener. |
+| Redirected stick uses the wrong topic on a shared broker | Set the correct **Stick IP candidate** for that integration entry. Current versions derive the expected `SMT...` topic from the stick's ARP/MAC mapping and repair a stale stored topic when the mapping is unambiguous. |
+| `no portal poll trigger received yet` appears after startup | Wait for the initial three-minute heartbeat grace period. If the warning appears later, verify the per-stick DNS redirect and confirm that the broker receives that stick's `HOST2PORTAL` topic. |
 | Commands feel slow | SmartWeb is cloud-based — a few seconds of delay is normal |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
 
