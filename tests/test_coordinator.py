@@ -7,6 +7,7 @@ from collections import deque
 from datetime import date, timedelta
 import sys
 import threading
+import time
 import types
 import unittest
 from pathlib import Path
@@ -1074,6 +1075,24 @@ class CoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(bridge._forward_counts["cloud_to_local"], 1)
 
+    def test_cloud_local_bridge_waits_for_all_connection_legs(self):
+        bridge = _CloudLocalMqttBridge.__new__(_CloudLocalMqttBridge)
+        bridge._lock = threading.Lock()
+        bridge._connected = threading.Event()
+        bridge._closed = False
+        bridge._last_cloud_connack_rc = 0
+        bridge._last_cloud_stick_connack_rc = None
+        bridge._last_local_connack_rc = 0
+
+        bridge._signal_connection_progress()
+        self.assertFalse(bridge._connected.is_set())
+        self.assertFalse(bridge.connection_failed())
+
+        bridge._last_cloud_stick_connack_rc = 0
+        bridge._signal_connection_progress()
+        self.assertTrue(bridge._connected.is_set())
+        self.assertTrue(bridge.ensure_connected(timeout=0))
+
     def test_cloud_local_bridge_forwards_local_resp_to_cloud(self):
         class FakeMqttClient:
             def __init__(self):
@@ -1447,7 +1466,7 @@ class CoordinatorTests(unittest.TestCase):
         session._last_tx_echo = None
         session._last_smt_user = None
         session._last_c2h_time = None
-        session._no_c2h_warned = False
+        session._no_c2h_warned = True
         session._local_portal = True
         session._local_host2portal_mode = True
         session._command_topic = None
@@ -1553,6 +1572,19 @@ class CoordinatorTests(unittest.TestCase):
             session.client.published,
             [("V04P27/SMTABC/PORTAL2HOST", {"WSID": ""}, 0, False)],
         )
+        self.assertIsNotNone(session._last_c2h_time)
+        self.assertFalse(session._no_c2h_warned)
+
+    def test_local_portal_health_allows_initial_heartbeat_grace_period(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._local_host2portal_mode = True
+        session._local_portal_started_time = time.time()
+        session._last_c2h_time = 0.0
+        session._no_c2h_warned = False
+
+        session.check_local_portal_health("MXW")
+
+        self.assertFalse(session._no_c2h_warned)
 
     def test_smartweb_value_confirmation_allows_left_padded_hex_values(self):
         self.assertTrue(_smartweb_value_matches("09", "00000000000000000009"))
@@ -2071,7 +2103,7 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(client._esp_topic(), "V04P27/FEDCBA9876543210/ESP")
         self.assertTrue(client._mqtt_credentials_ready())
 
-    def test_local_mqtt_topic_discovery_rejects_stick_ip_mismatch(self):
+    def test_local_mqtt_topic_discovery_prefers_unambiguous_stick_ip(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"
         client.topic = None
@@ -2094,14 +2126,14 @@ class CoordinatorTests(unittest.TestCase):
             lambda host: "V04P27/SMT222222222222"
         )
         try:
-            self.assertFalse(client._ensure_local_topic())
+            self.assertTrue(client._ensure_local_topic())
         finally:
             client_module.discover_local_topic = original_discover
             client_module._stick_topic_from_host = original_expected_topic
 
-        self.assertIsNone(client.topic)
+        self.assertEqual(client.topic, "V04P27/SMT222222222222")
 
-    def test_stored_local_mqtt_topic_rejects_stick_ip_mismatch(self):
+    def test_stored_local_mqtt_topic_corrects_from_unambiguous_stick_ip(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"
         client.topic = "V04P27/SMT111111111111"
@@ -2117,13 +2149,13 @@ class CoordinatorTests(unittest.TestCase):
             lambda host: "V04P27/SMT222222222222"
         )
         try:
-            self.assertFalse(client._ensure_local_topic())
+            self.assertTrue(client._ensure_local_topic())
         finally:
             client_module._stick_topic_from_host = original_expected_topic
 
-        self.assertIsNone(client.topic)
+        self.assertEqual(client.topic, "V04P27/SMT222222222222")
 
-    def test_ensure_device_validates_stored_local_mqtt_topic(self):
+    def test_ensure_device_corrects_stored_local_mqtt_topic(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"
         client.topic = "V04P27/SMT111111111111"
@@ -2140,12 +2172,12 @@ class CoordinatorTests(unittest.TestCase):
             lambda host: "V04P27/SMT222222222222"
         )
         try:
-            with self.assertRaises(DeviceResolveError):
-                client._ensure_device()
+            client._ensure_local_command_topic = lambda: None
+            client._ensure_device()
         finally:
             client_module._stick_topic_from_host = original_expected_topic
 
-        self.assertIsNone(client.topic)
+        self.assertEqual(client.topic, "V04P27/SMT222222222222")
 
     def test_expected_stick_topic_refreshes_neighbor_once(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)

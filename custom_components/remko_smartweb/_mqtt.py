@@ -601,6 +601,7 @@ class _MqttSession:
         )
         self._pending_set_tx: str | None = None
         self._pending_set_done = threading.Event()
+        self._local_portal_started_time: float = time.time()
         self._last_c2h_time: float = 0.0
         self._no_c2h_warned: bool = False
         self._last_connack_rc: int | None = None
@@ -721,6 +722,12 @@ class _MqttSession:
                 topic_text = str(msg.topic)
                 if topic_text.endswith("/HOST2PORTAL"):
                     self._last_host2portal_time = now
+                    # HOST2PORTAL is the redirected WiFi stick's native poll
+                    # trigger.  Treat it as portal activity for the legacy
+                    # health check as well; otherwise healthy portal-broker
+                    # setups are incorrectly warned as idle.
+                    self._last_c2h_time = now
+                    self._no_c2h_warned = False
                 if topic_text.endswith("/PORTAL2HOST"):
                     self._last_portal2host_time = now
                 # Rx hex for ESP status
@@ -899,6 +906,12 @@ class _MqttSession:
     def check_local_portal_health(self, device_name: str) -> None:
         """Emit a one-shot warning when local-mode prerequisites appear unmet."""
         if not self._local_host2portal_mode:
+            return
+        if (
+            not self._last_c2h_time
+            and time.time() - getattr(self, "_local_portal_started_time", time.time())
+            < 180
+        ):
             return
         age_s = (time.time() - self._last_c2h_time) if self._last_c2h_time else None
         stale = age_s is None or age_s > 300
@@ -1083,6 +1096,19 @@ class _CloudLocalMqttBridge:
             self._closed = True
         self._connected.set()
 
+    def _signal_connection_progress(self) -> None:
+        """Wake waiters once all legs connected or one leg failed."""
+        with self._lock:
+            results = (
+                self._last_cloud_connack_rc,
+                self._last_cloud_stick_connack_rc,
+                self._last_local_connack_rc,
+            )
+            if any(rc is not None and rc != 0 for rc in results) or all(
+                rc is not None for rc in results
+            ):
+                self._connected.set()
+
     def _on_cloud_connect(self, client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
         try:
@@ -1091,7 +1117,7 @@ class _CloudLocalMqttBridge:
             self._last_cloud_connack_rc = None
         if rc != 0:
             _LOGGER.warning("REMKO SmartWeb cloud bridge cloud MQTT connect failed rc=%s", rc)
-            self._connected.set()
+            self._signal_connection_progress()
             return
         client.subscribe(
             [
@@ -1099,7 +1125,7 @@ class _CloudLocalMqttBridge:
                 (f"{self.cloud_topic}/CLIENT2HOST", 2),
             ]
         )
-        self._connected.set()
+        self._signal_connection_progress()
 
     def _on_cloud_stick_connect(self, client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
@@ -1109,10 +1135,10 @@ class _CloudLocalMqttBridge:
             self._last_cloud_stick_connack_rc = None
         if rc != 0:
             _LOGGER.warning("REMKO SmartWeb cloud bridge stick MQTT connect failed rc=%s", rc)
-            self._connected.set()
+            self._signal_connection_progress()
             return
         client.subscribe([(f"{self.local_topic}/PORTAL2HOST", 2)])
-        self._connected.set()
+        self._signal_connection_progress()
 
     def _on_local_connect(self, client, userdata, flags, reason_code, properties=None):
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
@@ -1122,7 +1148,7 @@ class _CloudLocalMqttBridge:
             self._last_local_connack_rc = None
         if rc != 0:
             _LOGGER.warning("REMKO SmartWeb cloud bridge local MQTT connect failed rc=%s", rc)
-            self._connected.set()
+            self._signal_connection_progress()
             return
         client.subscribe(
             [
@@ -1134,7 +1160,7 @@ class _CloudLocalMqttBridge:
                 (f"{self.local_topic}/PORTAL2CLIENT", 2),
             ]
         )
-        self._connected.set()
+        self._signal_connection_progress()
 
     def _forward(self, target_client, target_topic: str, payload: bytes, direction: str, source_topic: str):
         target_client.publish(target_topic, payload, qos=2, retain=False)
@@ -1206,6 +1232,18 @@ class _CloudLocalMqttBridge:
                 and self._last_cloud_connack_rc == 0
                 and self._last_cloud_stick_connack_rc == 0
                 and self._last_local_connack_rc == 0
+            )
+
+    def connection_failed(self) -> bool:
+        """Return whether a bridge leg failed instead of merely being pending."""
+        with self._lock:
+            return self._closed or any(
+                rc is not None and rc != 0
+                for rc in (
+                    self._last_cloud_connack_rc,
+                    self._last_cloud_stick_connack_rc,
+                    self._last_local_connack_rc,
+                )
             )
 
     def diagnostic_snapshot(self) -> dict:

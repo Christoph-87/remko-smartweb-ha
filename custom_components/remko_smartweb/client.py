@@ -212,6 +212,22 @@ class RemkoSmartWebClient:
             return False
         expected_topic = self._expected_stick_topic()
         if self.topic:
+            if (
+                expected_topic
+                and getattr(self, "_local_mqtt_stick_host", None)
+                and self.topic != expected_topic
+            ):
+                _LOGGER.warning(
+                    "REMKO SmartWeb local MQTT for %r has stored topic %s, but "
+                    "the configured stick IP %s maps unambiguously to %s; "
+                    "correcting the stale stored topic",
+                    self.device_name,
+                    _redact_debug_text(self.topic),
+                    self._local_mqtt_stick_host,
+                    _redact_debug_text(expected_topic),
+                )
+                self.topic = expected_topic
+                return True
             if not self._local_topic_matches_configured_stick(expected_topic):
                 self.topic = None
                 return False
@@ -249,13 +265,13 @@ class RemkoSmartWebClient:
         if expected_topic and topic != expected_topic:
             _LOGGER.warning(
                 "REMKO SmartWeb local MQTT for %r discovered %s, but the configured "
-                "stick IP %s maps to %s; refusing this mismatched topic",
+                "stick IP %s maps unambiguously to %s; using the configured stick",
                 self.device_name,
                 _redact_debug_text(topic),
                 self._local_mqtt_stick_host,
                 _redact_debug_text(expected_topic),
             )
-            return False
+            topic = expected_topic
         self.topic = topic
         if getattr(self, "_local_mqtt_mode", LOCAL_MQTT_MODE_AUTO) == LOCAL_MQTT_MODE_AUTO:
             self._local_mqtt_mode = detected_mode
@@ -837,9 +853,11 @@ class RemkoSmartWebClient:
         command_topic = getattr(self, "_local_mqtt_command_topic", None)
         if not command_topic:
             return
-        if self._mqtt_cloud_bridge is not None and self._mqtt_cloud_bridge.ensure_connected(timeout=0.1):
-            return
         if self._mqtt_cloud_bridge is not None:
+            if self._mqtt_cloud_bridge.ensure_connected(timeout=0.1):
+                return
+            if not self._mqtt_cloud_bridge.connection_failed():
+                return
             self._mqtt_cloud_bridge.close()
             self._mqtt_cloud_bridge = None
         local_broker = _LocalBrokerConfig(
