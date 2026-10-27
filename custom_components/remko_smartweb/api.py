@@ -1514,6 +1514,7 @@ class _MqttSession:
         self._cond = threading.Condition(self._lock)
         self._connected = threading.Event()
         self._closed = False
+        self._mqtt_connected = False
         self._last_rx = None
         self._last_values = None
         self._last_seen_values = None
@@ -1546,17 +1547,27 @@ class _MqttSession:
         rc = reason_code.value if hasattr(reason_code, "value") else reason_code
         if rc != 0:
             _LOGGER.warning("MQTT connect failed rc=%s", rc)
+            with self._lock:
+                self._mqtt_connected = False
             self._connected.set()
             return
         subscriptions = _build_mqtt_response_topics(self.topic)
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
+            self._mqtt_connected = True
         self._connected.set()
 
     def _on_disconnect(self, client, userdata, *args):
-        self._closed = True
-        self._connected.set()
+        with self._lock:
+            self._mqtt_connected = False
+            closed = self._closed
+        if closed:
+            self._connected.set()
+        else:
+            # Paho reconnects this same client from its loop thread. Keep the
+            # session alive instead of replacing it with another connection.
+            self._connected.clear()
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -1601,8 +1612,15 @@ class _MqttSession:
             _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
-        self._connected.wait(timeout=timeout)
-        return not self._closed
+        with self._lock:
+            if self._closed:
+                return False
+            if self._mqtt_connected:
+                return True
+        if not self._connected.wait(timeout=timeout):
+            return False
+        with self._lock:
+            return self._mqtt_connected and not self._closed
 
     def publish(self, topic: str, payload: dict):
         self.client.publish(topic, json.dumps(payload), qos=2, retain=False)
@@ -1657,12 +1675,15 @@ class _MqttSession:
             }
 
     def close(self):
+        with self._lock:
+            self._closed = True
+            self._mqtt_connected = False
+        self._connected.set()
         try:
-            self.client.loop_stop()
             self.client.disconnect()
+            self.client.loop_stop()
         except Exception:
             pass
-        self._closed = True
 
 
 # ----------------- client -----------------
@@ -1932,10 +1953,12 @@ class RemkoSmartWebClient:
     def _ensure_mqtt(self) -> None:
         if not _valid_credential_part(self.sid) or not _valid_credential_part(self.sk) or self.topic != _build_mqtt_topic(self.sid):
             raise DeviceResolveError("Device MQTT credentials are incomplete")
-        if self._mqtt is None or not self._mqtt.ensure_connected():
+        if self._mqtt is None:
             self._mqtt = _MqttSession(self.sid, self.sk, self.topic)
-            if not self._mqtt.ensure_connected():
-                raise DeviceResolveError("MQTT connect failed")
+        if not self._mqtt.ensure_connected():
+            # Paho's loop thread owns reconnects. Replacing this object here
+            # would leave its old loop alive and multiply broker connections.
+            raise DeviceResolveError("MQTT connect failed")
 
     def _account_request(self, method: str, url: str, **kwargs):
         return self.account.account_request(method, url, **kwargs)

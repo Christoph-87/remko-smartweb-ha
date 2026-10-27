@@ -462,6 +462,60 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(session._last_values, {"1333": "0226"})
         self.assertEqual(session.last_smt_user(), 12345)
 
+    def test_mqtt_session_timeout_is_not_reported_as_connected(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._mqtt_connected = False
+
+        self.assertFalse(session.ensure_connected(timeout=0))
+
+    def test_mqtt_session_reuses_same_client_across_reconnect(self):
+        class FakeMqttClient:
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._mqtt_connected = False
+        session._subscribed_topics = []
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+        self.assertTrue(session.ensure_connected(timeout=0))
+
+        session._on_disconnect(client, None, 1)
+        self.assertFalse(session.ensure_connected(timeout=0))
+
+        session._on_connect(client, None, None, 0)
+        self.assertTrue(session.ensure_connected(timeout=0))
+
+    def test_client_does_not_replace_disconnected_mqtt_session(self):
+        class DisconnectedSession:
+            def __init__(self):
+                self.ensure_calls = 0
+
+            def ensure_connected(self, timeout=8.0):
+                self.ensure_calls += 1
+                return False
+
+        session = DisconnectedSession()
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.sid = "0123456789ABCDEF"
+        client.sk = "FEDCBA9876543210"
+        client.topic = "V04P27/0123456789ABCDEF"
+        client._mqtt = session
+
+        with self.assertRaises(api_module.DeviceResolveError):
+            client._ensure_mqtt()
+
+        self.assertIs(client._mqtt, session)
+        self.assertEqual(session.ensure_calls, 1)
+
     def test_mqtt_session_handles_double_encoded_rx_payload(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()
