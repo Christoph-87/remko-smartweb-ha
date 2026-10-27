@@ -99,19 +99,21 @@ Unknown SmartWeb devices receive a **Diagnostics sensor** to help add support.
 
 ## Connection options
 
-<!-- Generated from docs/diagrams/connection-options.d2 via Kroki. -->
-![REMKO SmartWeb connection options: REMKO Cloud, direct local MQTT, and a redirected cloud-style stick](docs/images/connection-options.svg)
+<!-- Generated from docs/diagrams/connection-options.d2 via Kroki; D2's canvas
+background rectangle is removed so the SVG remains transparent. -->
+![REMKO connection options: a cloud-connected stick or a stick/device that exposes local MQTT](docs/images/connection-options.svg)
+
+REMKO communication modules fall into two basic cases:
+
+- **Cloud-connected WiFi stick**: it connects to REMKO Cloud by default. You can
+  optionally redirect that stick to a local MQTT broker; an experimental bridge
+  can preserve access through the REMKO app.
+- **Stick/device with local MQTT**: the communication module already exposes
+  MQTT on the local network, so Home Assistant connects directly.
 
 Cloud installations do **not** need a local MQTT broker, DNS rewrite, or AdGuard
 rule. Local MQTT is opt-in; support is still experimental for some device
 families.
-
-There are two local cases:
-
-- **Local MQTT on the stick/device**: the REMKO communication module exposes
-  MQTT locally. This is currently seen mainly on heat-pump/SmartControl setups.
-- **Redirected cloud-style stick**: a REMKO Cloud WiFi stick connects outward to
-  the cloud broker, but DNS redirects only that stick to your local broker.
 
 Local setup still starts from a cloud-discovered REMKO device where possible.
 Broker, DNS, app-bridge, verification, and troubleshooting steps are documented

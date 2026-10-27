@@ -1,82 +1,94 @@
+# After Kroki rendering, remove D2's full-canvas background rectangle so the
+# committed SVG remains transparent in GitHub light and dark modes.
 direction: down
 
-cloud: {
-  label: "REMKO Cloud · default"
-  direction: right
+question: "Which connection does the REMKO module use?" {
+  shape: rectangle
+  width: 420
+  height: 72
   style.fill: "#f8fafc"
-  style.stroke: "#94a3b8"
-  style.border-radius: 12
-
-  ha: "Home Assistant" {
-    shape: rectangle
-    style.fill: "#e0f2fe"
-    style.stroke: "#0284c7"
-    style.border-radius: 8
-  }
-  service: "REMKO Cloud" {
-    shape: cloud
-    style.fill: "#f1f5f9"
-    style.stroke: "#64748b"
-  }
-  device: "REMKO device" {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
-    style.border-radius: 8
-  }
-
-  ha -> service: "Internet"
-  service -> device
+  style.stroke: "#64748b"
+  style.font-color: "#0f172a"
+  style.border-radius: 10
 }
 
-direct: {
-  label: "Local MQTT on stick/device"
-  direction: right
-  style.fill: "#f8fafc"
-  style.stroke: "#94a3b8"
-  style.border-radius: 12
-
-  ha: "Home Assistant" {
-    shape: rectangle
-    style.fill: "#e0f2fe"
-    style.stroke: "#0284c7"
-    style.border-radius: 8
-  }
-  device: "Stick/device\nwith MQTT" {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
-    style.border-radius: 8
-  }
-
-  ha -> device: "LAN · MQTT"
+cloud_case: "1 · Connects to REMKO Cloud" {
+  shape: rectangle
+  width: 350
+  height: 72
+  style.fill: "#e0f2fe"
+  style.stroke: "#0284c7"
+  style.font-color: "#0c4a6e"
+  style.border-radius: 10
 }
 
-redirected: {
-  label: "Redirected cloud-style stick"
-  direction: right
+local_case: "2 · Exposes local MQTT" {
+  shape: rectangle
+  width: 350
+  height: 72
+  style.fill: "#dcfce7"
+  style.stroke: "#16a34a"
+  style.font-color: "#14532d"
+  style.border-radius: 10
+}
+
+cloud_default: "Default\nHome Assistant ↔ REMKO Cloud ↔ stick" {
+  shape: rectangle
+  width: 350
+  height: 88
   style.fill: "#f8fafc"
+  style.stroke: "#64748b"
+  style.font-color: "#0f172a"
+  style.border-radius: 10
+}
+
+cloud_redirect: "Optional local redirect\nHome Assistant ↔ local broker ↔ stick" {
+  shape: rectangle
+  width: 350
+  height: 88
+  style.fill: "#fff7ed"
+  style.stroke: "#ea580c"
+  style.font-color: "#7c2d12"
+  style.border-radius: 10
+}
+
+app_bridge: "Optional REMKO app bridge" {
+  shape: rectangle
+  width: 350
+  height: 72
+  style.fill: "#faf5ff"
+  style.stroke: "#9333ea"
+  style.font-color: "#581c87"
+  style.stroke-dash: 5
+  style.border-radius: 10
+}
+
+direct_local: "Direct local MQTT\nHome Assistant ↔ stick/device" {
+  shape: rectangle
+  width: 350
+  height: 88
+  style.fill: "#f8fafc"
+  style.stroke: "#64748b"
+  style.font-color: "#0f172a"
+  style.border-radius: 10
+}
+
+question -> cloud_case: {
   style.stroke: "#94a3b8"
-  style.border-radius: 12
-
-  ha: "Home Assistant" {
-    shape: rectangle
-    style.fill: "#e0f2fe"
-    style.stroke: "#0284c7"
-    style.border-radius: 8
-  }
-  broker: "Local MQTT broker" {
-    shape: queue
-    style.fill: "#fff7ed"
-    style.stroke: "#ea580c"
-  }
-  stick: "REMKO WiFi stick" {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
-    style.border-radius: 8
-  }
-
-  ha -> broker: "LAN · MQTT"
-  broker -> stick: "DNS redirect"
+}
+question -> local_case: {
+  style.stroke: "#94a3b8"
+}
+cloud_case -> cloud_default: {
+  style.stroke: "#94a3b8"
+}
+cloud_case -> cloud_redirect: {
+  style.stroke: "#94a3b8"
+}
+cloud_redirect -> app_bridge: {
+  style.stroke: "#a855f7"
+  style.stroke-dash: 5
+}
+local_case -> direct_local: {
+  style.stroke: "#94a3b8"
 }
