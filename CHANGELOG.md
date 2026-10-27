@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.5.0-beta.20
+- Keep one MQTT client per configured device across transient disconnects and connection timeouts instead of replacing the session while Paho's old network loop may still reconnect. This prevents orphaned loop threads and an increasing number of broker connections.
+- Report MQTT connectivity only after a successful CONNACK and shut sessions down deterministically on integration unload.
+
 ## v0.5.0-beta.19
 - Keep the generic AC packet checksum within one byte when the packet sum is already divisible by 256, preventing malformed climate commands such as the affected power-off frame.
 
