@@ -97,7 +97,10 @@ Unknown SmartWeb devices receive a **Diagnostics sensor** to help add support.
 
 ---
 
-## Optional local MQTT
+## Connection options
+
+<!-- Generated from docs/diagrams/connection-options.d2 via Kroki. -->
+![REMKO SmartWeb connection options: REMKO Cloud, direct local MQTT, and a redirected cloud-style stick](docs/images/connection-options.svg)
 
 Cloud installations do **not** need a local MQTT broker, DNS rewrite, or AdGuard
 rule. Local MQTT is opt-in; support is still experimental for some device

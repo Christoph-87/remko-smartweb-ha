@@ -1,0 +1,82 @@
+direction: down
+
+cloud: {
+  label: "REMKO Cloud · default"
+  direction: right
+  style.fill: "#f8fafc"
+  style.stroke: "#94a3b8"
+  style.border-radius: 12
+
+  ha: "Home Assistant" {
+    shape: rectangle
+    style.fill: "#e0f2fe"
+    style.stroke: "#0284c7"
+    style.border-radius: 8
+  }
+  service: "REMKO Cloud" {
+    shape: cloud
+    style.fill: "#f1f5f9"
+    style.stroke: "#64748b"
+  }
+  device: "REMKO device" {
+    shape: rectangle
+    style.fill: "#f0fdf4"
+    style.stroke: "#16a34a"
+    style.border-radius: 8
+  }
+
+  ha -> service: "Internet"
+  service -> device
+}
+
+direct: {
+  label: "Local MQTT on stick/device"
+  direction: right
+  style.fill: "#f8fafc"
+  style.stroke: "#94a3b8"
+  style.border-radius: 12
+
+  ha: "Home Assistant" {
+    shape: rectangle
+    style.fill: "#e0f2fe"
+    style.stroke: "#0284c7"
+    style.border-radius: 8
+  }
+  device: "Stick/device\nwith MQTT" {
+    shape: rectangle
+    style.fill: "#f0fdf4"
+    style.stroke: "#16a34a"
+    style.border-radius: 8
+  }
+
+  ha -> device: "LAN · MQTT"
+}
+
+redirected: {
+  label: "Redirected cloud-style stick"
+  direction: right
+  style.fill: "#f8fafc"
+  style.stroke: "#94a3b8"
+  style.border-radius: 12
+
+  ha: "Home Assistant" {
+    shape: rectangle
+    style.fill: "#e0f2fe"
+    style.stroke: "#0284c7"
+    style.border-radius: 8
+  }
+  broker: "Local MQTT broker" {
+    shape: queue
+    style.fill: "#fff7ed"
+    style.stroke: "#ea580c"
+  }
+  stick: "REMKO WiFi stick" {
+    shape: rectangle
+    style.fill: "#f0fdf4"
+    style.stroke: "#16a34a"
+    style.border-radius: 8
+  }
+
+  ha -> broker: "LAN · MQTT"
+  broker -> stick: "DNS redirect"
+}
