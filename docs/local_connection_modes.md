@@ -1,87 +1,65 @@
-# Local Connection Modes
+# Local MQTT Setup
 
-This page explains the optional local connection modes for REMKO devices and how
-to run a REMKO Cloud-style WiFi stick through your own local broker.
+Local MQTT is optional and experimental. Configure one device at a time and
+confirm reliable status updates before testing controls. If you are unsure which
+mode applies, keep using **REMKO Cloud**.
 
-Most users should start with the normal REMKO Cloud setup. Local mode is
-experimental and should be enabled one device at a time.
+## Choose the Correct Mode
 
-## Which Path Do I Need?
+There are two hardware cases:
 
-The communication module determines which local path is possible:
+| Your communication module | Integration mode |
+|---------------------------|------------------|
+| Connects to REMKO Cloud | Keep **REMKO Cloud**, or intentionally redirect this stick to a local broker with **Redirected WiFi stick / local portal broker** |
+| Exposes MQTT on its own IP or through SmartControl | Use **Direct device MQTT / SmartControl bridge** |
 
-| Path | Use when | Notes |
-|------|----------|-------|
-| REMKO Cloud | The device works through the REMKO app or SmartWeb portal | This is the confirmed path for the 0.4.x device families. |
-| Redirected cloud-style stick | The device uses a REMKO Cloud WiFi stick that connects outward to REMKO's broker, and you want to run that traffic locally | DNS redirects only that stick to your local broker. Home Assistant talks to the same local broker. |
-| Local MQTT on stick/device | The stick/device exposes MQTT directly on its own IP or through a SmartControl bridge | Mainly observed on heat-pump/SmartControl setups so far. This is not the same as redirecting a Cloud stick. |
+Do not configure a DNS redirect for a device that already exposes local MQTT.
 
-Do not configure DNS redirect for a stick/device that already exposes local MQTT
-directly. A Cloud-style WiFi stick normally needs either the REMKO Cloud path or
-the redirected-stick path; a direct-MQTT device uses the local MQTT path.
+## Direct Device MQTT
 
-## Redirected WiFi Stick Overview
+Use this mode only when the stick/device provides an MQTT service on the local
+network.
 
-Without bridging, the redirected stick talks only to your local broker. Home
-Assistant can control it locally, but the REMKO app can no longer reach the
-stick through REMKO's broker while the DNS redirect is active.
+1. Open the REMKO SmartWeb integration options for the device.
+2. Under **Local connection**, select
+   **Direct device MQTT / SmartControl bridge**.
+3. Enter the stick/device MQTT host, port, and credentials.
+4. Save and check the communication-status sensor for fresh local data.
+5. Verify status updates before testing a control.
 
-```mermaid
-flowchart LR
-  Stick["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Local["Your local MQTT broker"]
-  HA["Home Assistant"] --> Local
-```
+No DNS rewrite or separate MQTT broker is required for this mode.
 
-With **Bridge REMKO app commands through Home Assistant** enabled, Home
-Assistant also keeps MQTT connections to REMKO's cloud broker. It forwards app
-commands from the cloud broker to the local broker and forwards local responses
-back to the cloud broker. The stick still stays on your local broker; Home
-Assistant acts as the bridge.
+## Redirect a Cloud-Connected WiFi Stick
 
-```mermaid
-flowchart LR
-  App["REMKO app"] --> Cloud["REMKO Cloud broker"]
-  HA["Home Assistant<br/>bridge enabled"] <--> Cloud
-  HA <--> Local["Your local MQTT broker"]
-  Stick["Cloud-style WiFi stick"] -->|"DNS: smartweb.remko.media -> local broker"| Local
-```
+This setup replaces the stick's connection to REMKO's broker with your own
+broker. Home Assistant then communicates with the stick locally.
 
-Bridge mode is optional and experimental. Local Home Assistant control uses the
-local broker. REMKO app passthrough still needs working REMKO cloud credentials
-and connectivity because Home Assistant has to relay the cloud-side commands.
-In practice, Home Assistant subscribes to the cloud-side command topics such as
-`/ESP` and `/CLIENT2HOST`, publishes them to the local broker, and mirrors local
-responses such as `/RESP`, `/HOST2CLIENT`, and stick heartbeat traffic back to
-the cloud side.
+Without the optional app bridge, the REMKO app cannot reach the redirected
+stick. Enabling **Bridge REMKO app commands through Home Assistant** lets Home
+Assistant relay app commands between REMKO Cloud and the local broker. The
+bridge is experimental and still requires internet access and valid REMKO
+credentials.
 
-## Before You Start
+### Requirements
 
-For a redirected WiFi-stick setup you need:
-
-- a device that already works through the REMKO Cloud path
-- the IP address of the selected REMKO WiFi stick
+- a device that already works through REMKO Cloud
+- the selected WiFi stick's IP address
 - a local MQTT broker reachable from Home Assistant
-- a stick-facing MQTT listener for the redirected stick
-- a DNS rule that affects only the selected stick
+- a client-specific DNS rewrite for that stick
+- a TLS certificate accepted by the stick for `smartweb.remko.media`
 
-Keep the REMKO Cloud entry working until local readback is confirmed. Do not
-redirect all devices at once.
+Keep the cloud setup working until local status readback is confirmed.
 
-## Recommended Redirect Setup
+### Broker Listeners
 
-The redirected-stick setup has two MQTT sides:
+Use separate broker listeners for Home Assistant and the redirected stick:
 
-| Side | Used by | Typical port | Authentication |
-|------|---------|--------------|----------------|
-| Home Assistant listener | Home Assistant integration | `1883` | username/password recommended |
-| Stick-facing listener | REMKO WiFi stick after DNS redirect | `8883` | allow the stick to connect without Home Assistant credentials |
+| Listener | Typical port | Authentication |
+|----------|--------------|----------------|
+| Home Assistant | `1883` | Username/password recommended |
+| Redirected stick | `8883` | Must match the stick's TLS and authentication behavior |
 
-Use separate listener settings so the stick is not rejected by the Home
-Assistant listener's username/password rules. In Mosquitto this usually means
-`per_listener_settings true`, with authentication enabled on the Home
-Assistant-facing listener and disabled on the stick-facing listener.
-
-Example Mosquitto shape:
+Example Mosquitto structure:
 
 ```conf
 per_listener_settings true
@@ -97,158 +75,82 @@ keyfile /mosquitto/config/smartweb.remko.media.key
 allow_anonymous true
 ```
 
-This is only a shape, not a drop-in configuration. Keep your own broker paths,
-ACLs, container mounts, and certificate handling consistent with your setup.
-The important point is that the redirected REMKO stick can connect to the
-`8883` listener, while Home Assistant uses the separate `1883` listener.
+Adapt paths, credentials, ACLs, and certificate handling to your broker. This is
+not a complete drop-in configuration.
 
-## Certificate Requirement
+The certificate presented on the stick-facing listener needs
+`smartweb.remko.media` as its CN or SAN. The integration does not create or
+manage broker certificates.
 
-The redirected stick connects to `smartweb.remko.media`. For a local redirect,
-the stick-facing broker certificate therefore needs `smartweb.remko.media` as
-CN/SAN.
+### DNS Redirect
 
-Most users cannot get a public CA certificate for that name because they do not
-control the domain. In practice, redirected setups usually use a private or
-self-signed certificate for the stick-facing listener.
+Redirect only the selected stick. Home Assistant and other clients must still
+be able to reach the real REMKO endpoint.
 
-The integration does not create broker certificates. Certificate setup belongs
-to your MQTT broker and network environment.
-
-## DNS Redirect
-
-Redirect only the selected stick, not the whole network. Home Assistant and
-other devices may still need the real REMKO cloud endpoint.
-
-With AdGuard Home, prefer a client-scoped rule:
+Example client-scoped AdGuard Home rule:
 
 ```text
 ||smartweb.remko.media^$client=<stick-ip>,dnsrewrite=<broker-ip>
 ```
 
-Replace:
+Replace `<stick-ip>` and `<broker-ip>` with the corresponding local addresses.
+Equivalent client-specific rules in other DNS servers are fine. Avoid a global
+rewrite.
 
-- `<stick-ip>` with the REMKO WiFi stick IP
-- `<broker-ip>` with the local MQTT broker IP
+### Integration Setup
 
-Equivalent per-client rules in Pi-hole, dnsmasq, Unbound, router DNS, or another
-DNS server are fine. Avoid a global rewrite unless you fully understand the
-impact.
+1. Keep or add the device through the normal REMKO Cloud setup.
+2. Open its integration options and go to **Local connection**.
+3. Select **Redirected WiFi stick / local portal broker**.
+4. Enter the **Stick IP candidate**. It identifies the expected stick; it is not
+   the broker address.
+5. Enable the REMKO app bridge only if you need the original app after the
+   redirect.
+6. Enter the local broker host, Home Assistant listener port, and credentials.
+7. Save the options, apply the DNS rule, and reconnect the stick.
 
-## Home Assistant Integration Setup
+## Verify Before Using Controls
 
-1. Add or keep the device through the normal REMKO Cloud setup.
-2. Open the integration options for the selected device and go to
-   **Local connection**.
-3. For **Local MQTT mode**, choose
-   **Redirected WiFi stick / local portal broker**.
-4. Enter the **Stick IP candidate**. It anchors validation and, when its ARP/MAC
-   mapping is unambiguous, the expected stick topic; it is not the MQTT broker
-   host.
-5. Leave **Bridge REMKO app commands through Home Assistant** disabled unless
-   you want the REMKO app to keep working through Home Assistant while the stick
-   is redirected locally.
-6. In the shared broker step, enter the local broker host and Home Assistant
-   listener port, commonly `1883`.
-7. Enter the Home Assistant-side MQTT username/password if your broker requires
-   it.
-8. Save and check the diagnostics sensors/logs before relying on controls.
+For either local mode:
 
-The stick itself should connect to the stick-facing listener after DNS is
-changed. Home Assistant connects to the Home Assistant listener.
+1. Confirm that the integration's communication-status sensor reports a local
+   MQTT connection.
+2. Confirm that status values update from the device.
+3. Change one harmless setting and wait for matching device readback.
+4. Configure another device only after the first one remains stable.
 
-The configured stick IP is also a safety anchor on shared brokers. When its
-ARP/MAC mapping is available and unambiguous, the integration derives the
-expected `V04P27/SMT...` topic from it and repairs a stale stored topic instead
-of accepting another stick's discovered topic.
+For a redirected stick, also confirm:
 
-## Expected Topics
+- the stick resolves `smartweb.remko.media` to the local broker
+- the broker sees the stick on the stick-facing listener
+- `V04P27/SMT.../HOST2PORTAL` traffic arrives
 
-For redirected cloud-style sticks, useful evidence is:
-
-- stick heartbeat: `V04P27/SMT.../HOST2PORTAL`
-- local portal reply: `V04P27/SMT.../PORTAL2HOST`
-- command/readback path after cloud identity is known:
-  - `V04P27/<SID>/ESP`
-  - `V04P27/<SID>/RESP`
-
-For local MQTT on stick/device, useful evidence is different:
-
-- data topic: `<node>/SMTID/HOST2CLIENT`
-- command topic: `<node>/SMTID/CLIENT2HOST`
-
-If you see `HOST2PORTAL`, you are looking at the redirected cloud-style stick
-path. If you see `HOST2CLIENT` / `CLIENT2HOST` directly on a device MQTT node,
-you are looking at the local MQTT on stick/device path.
-
-## Verify the Redirect
-
-After applying the DNS rule and restarting the stick if needed, check:
-
-1. The stick can resolve `smartweb.remko.media` to the local broker IP.
-2. The broker sees a connection on the stick-facing listener, usually `8883`.
-3. The broker receives `V04P27/SMT.../HOST2PORTAL`.
-4. Home Assistant can connect to the broker on the Home Assistant listener.
-5. The integration diagnostics show local broker connectivity and recent local
-   MQTT traffic.
-6. A state readback arrives before you depend on write controls.
-
-If the REMKO app stops controlling the device while the local broker sees stick
-traffic, that is expected for a redirected cloud-style setup. The stick is no
-longer connected to REMKO's broker while redirected locally. Enable bridge mode
-only after local control is healthy.
+For direct device MQTT, typical data and command topics end in
+`HOST2CLIENT` and `CLIENT2HOST`.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | What to check |
-|---------|--------------|---------------|
-| No `HOST2PORTAL` topic | DNS rule not applied, wrong stick IP, stick did not reconnect | Verify per-client DNS, restart the stick, check broker `8883` logs. |
-| TCP works but MQTT auth fails | Home Assistant listener and stick listener share auth settings | Use separate listener settings such as Mosquitto `per_listener_settings true`. |
-| Stick connects then disconnects | TLS/certificate mismatch | Certificate CN/SAN should match `smartweb.remko.media`; check broker TLS logs. |
-| Home Assistant connects but device does not react | Stick is not subscribed to the command topic or SID mapping is wrong | Check `HOST2PORTAL`, `/ESP`, `/RESP`, and diagnostics for command topic freshness. |
-| Another stick appears | DNS rule affected the wrong client or multiple sticks share generic hostnames | Redirect one stick IP at a time and compare the observed `SMT...` topic. |
-| Portal-poll warning immediately after Home Assistant starts | The first stick heartbeat has not arrived yet | Current versions allow a three-minute startup grace period. If the warning appears after that, verify the per-stick DNS redirect and `HOST2PORTAL` traffic. |
-| REMKO app no longer works | Expected when the selected stick is redirected locally | Remove the DNS rule or switch back to REMKO Cloud mode. |
+| Symptom | Check |
+|---------|-------|
+| No local status | Host, port, credentials, ACLs, and communication-status diagnostics |
+| Redirected stick never connects | Client-specific DNS rule, stick IP, port `8883`, and broker logs |
+| TLS connection fails | Certificate CN/SAN must include `smartweb.remko.media` |
+| Home Assistant connects but the stick does not react | `HOST2PORTAL` traffic and the detected stick/topic mapping |
+| Another stick appears | The DNS rule or broker discovery is not limited to the intended stick |
+| REMKO app stops working after redirect | This is expected without the optional app bridge |
 
-## What To Include In An Issue
+To return a redirected stick to REMKO Cloud, remove its DNS rule, select
+**REMKO Cloud** in the integration options, and reconnect the stick.
 
-If the redirect does not work, open an issue with:
+## Reporting a Problem
 
-- device model and WiFi stick model if known
-- whether the same device works through REMKO Cloud
-- selected local mode in the integration options
+Open an issue and include:
+
+- device and communication-module model, if known
+- selected local mode
 - broker type and listener ports
-- whether the broker sees `HOST2PORTAL`
-- redacted diagnostics attributes from the integration
-- redacted debug logs around startup and one test command
+- whether local MQTT traffic is visible
+- redacted integration diagnostics and debug logs
 
-Remove email addresses, passwords, cookies, session IDs, access keys, public IPs,
-and full account details before posting logs.
-
-## Technical Notes For Contributors
-
-The integration should keep one semantic read/write layer:
-
-```text
-HA entity -> profile write/read plan -> transport adapter
-```
-
-Transport adapters should own:
-
-- broker connection setup
-- topic naming
-- client ID style
-- local portal heartbeat replies
-- diagnostics for freshness, auth, subscriptions, and readback
-
-Profiles should not need to know whether the device is using REMKO Cloud,
-redirected cloud-style stick mode, or local MQTT on stick/device.
-
-## Open Questions
-
-- There is no reliable public device-model matrix yet. Hardware module and
-  firmware seem more important than REMKO product family.
-- RBW/DHW users may be useful testers for non-MXW cloud contracts, but local
-  support depends on the actual communication module.
-- Local MQTT on stick/device needs more redacted captures before it can be
-  considered broadly supported.
+Remove credentials, cookies, session IDs, access keys, public IP addresses, and
+account details before posting.

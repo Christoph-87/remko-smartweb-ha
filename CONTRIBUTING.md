@@ -33,14 +33,11 @@ Open an issue and include:
 Remove email addresses, passwords, cookies, session IDs, access keys, exact
 account details, and private network details before posting logs publicly.
 
-## Documentation Data
+## Documentation
 
-Curated Markdown and CSV files in `docs/` can be committed when they are useful
-for users or contributors. Raw research files should not be committed, including
-spreadsheets, packet captures, HAR exports, debug logs, and local-only runbooks.
-
-The model catalog is evidence for triage and grouping, not a support guarantee.
-Runtime support belongs in code profiles and tests.
+Keep public documentation task-oriented and useful to users or contributors.
+Do not commit raw research files, spreadsheets, packet captures, HAR exports,
+debug logs, or local-only runbooks.
 
 ## Checks Before a Pull Request
 
