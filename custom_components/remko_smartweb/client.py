@@ -817,7 +817,7 @@ class RemkoSmartWebClient:
     def _ensure_mqtt(self) -> None:
         if not self._mqtt_credentials_ready():
             raise DeviceResolveError("Device MQTT credentials are incomplete")
-        if self._mqtt is None or not self._mqtt.ensure_connected():
+        if self._mqtt is None:
             if self._local_mqtt_host:
                 broker: _BrokerConfig = _LocalBrokerConfig(
                     self._local_mqtt_host,
@@ -841,8 +841,11 @@ class RemkoSmartWebClient:
                 ),
                 values_callback=self._handle_mqtt_values_update,
             )
-            if not self._mqtt.ensure_connected():
-                raise DeviceResolveError("MQTT connect failed")
+        if not self._mqtt.ensure_connected():
+            # Keep the existing Paho client. Its loop thread owns automatic
+            # reconnects; replacing it here would leave the old loop alive and
+            # create an ever-growing set of broker connections.
+            raise DeviceResolveError("MQTT connect failed")
         self._ensure_cloud_bridge()
 
     def _ensure_cloud_bridge(self) -> None:

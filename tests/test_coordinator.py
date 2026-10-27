@@ -934,6 +934,7 @@ class CoordinatorTests(unittest.TestCase):
         session._lock = threading.Lock()
         session._connected = threading.Event()
         session._closed = False
+        session._mqtt_connected = False
         session._local_portal = False
         session._local_host2portal_mode = False
         session._subscribed_topics = []
@@ -952,6 +953,62 @@ class CoordinatorTests(unittest.TestCase):
                 "V04P27/ABC/CLIENT2HOST",
             ],
         )
+
+    def test_mqtt_session_timeout_is_not_reported_as_connected(self):
+        session = _MqttSession.__new__(_MqttSession)
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._mqtt_connected = False
+
+        self.assertFalse(session.ensure_connected(timeout=0))
+
+    def test_mqtt_session_reuses_same_client_across_reconnect(self):
+        class FakeMqttClient:
+            def subscribe(self, subscriptions):
+                self.subscriptions = subscriptions
+
+        session = _MqttSession.__new__(_MqttSession)
+        session.topic = "V04P27/ABC"
+        session._lock = threading.Lock()
+        session._connected = threading.Event()
+        session._closed = False
+        session._mqtt_connected = False
+        session._last_connack_rc = None
+        session._local_portal = False
+        session._local_host2portal_mode = False
+        session._subscribed_topics = []
+        session._command_topic = None
+        client = FakeMqttClient()
+
+        session._on_connect(client, None, None, 0)
+        self.assertTrue(session.ensure_connected(timeout=0))
+
+        session._on_disconnect(client, None, 1)
+        self.assertFalse(session.ensure_connected(timeout=0))
+
+        session._on_connect(client, None, None, 0)
+        self.assertTrue(session.ensure_connected(timeout=0))
+
+    def test_client_does_not_replace_disconnected_mqtt_session(self):
+        class DisconnectedSession:
+            def __init__(self):
+                self.ensure_calls = 0
+
+            def ensure_connected(self, timeout=8.0):
+                self.ensure_calls += 1
+                return False
+
+        session = DisconnectedSession()
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client._mqtt = session
+        client._mqtt_credentials_ready = lambda: True
+
+        with self.assertRaises(DeviceResolveError):
+            client._ensure_mqtt()
+
+        self.assertIs(client._mqtt, session)
+        self.assertEqual(session.ensure_calls, 1)
 
     def test_mqtt_session_cloud_subscriptions_include_targeted_response_diagnostics(self):
         class FakeMqttClient:
@@ -1396,7 +1453,8 @@ class CoordinatorTests(unittest.TestCase):
 
         snapshot = session.diagnostic_snapshot()
         self.assertTrue(session._connected.is_set())
-        self.assertTrue(session._closed)
+        self.assertFalse(session._closed)
+        self.assertFalse(session.ensure_connected(timeout=0))
         self.assertEqual(snapshot["last_connack_rc"], 5)
         self.assertFalse(snapshot["mqtt_connected"])
 

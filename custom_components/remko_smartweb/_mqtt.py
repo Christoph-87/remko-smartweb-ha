@@ -570,6 +570,7 @@ class _MqttSession:
         self._cond = threading.Condition(self._lock)
         self._connected = threading.Event()
         self._closed = False
+        self._mqtt_connected = False
         self._last_rx = None
         self._last_values = None
         self._last_seen_values = None
@@ -632,7 +633,8 @@ class _MqttSession:
         self._last_connack_rc = int(rc) if str(rc).isdigit() else None
         if rc != 0:
             _LOGGER.warning("MQTT connect failed rc=%s", rc)
-            self._closed = True
+            with self._lock:
+                self._mqtt_connected = False
             self._connected.set()
             return
         subscriptions = [
@@ -678,11 +680,19 @@ class _MqttSession:
         client.subscribe(subscriptions)
         with self._lock:
             self._subscribed_topics = [topic for topic, _qos in subscriptions]
+            self._mqtt_connected = True
         self._connected.set()
 
     def _on_disconnect(self, client, userdata, *args):
-        self._closed = True
-        self._connected.set()
+        with self._lock:
+            self._mqtt_connected = False
+            closed = self._closed
+        if closed:
+            self._connected.set()
+        else:
+            # Paho's loop thread reconnects this same client automatically.
+            # Keep waiters blocked until that reconnect gets a fresh CONNACK.
+            self._connected.clear()
 
     def _record_esp_publish(self, topic: str) -> None:
         with self._lock:
@@ -849,8 +859,15 @@ class _MqttSession:
             _LOGGER.exception("Unexpected error in MQTT message handler (topic=%s)", msg.topic)
 
     def ensure_connected(self, timeout: float = 8.0) -> bool:
-        self._connected.wait(timeout=timeout)
-        return not self._closed
+        with self._lock:
+            if self._closed:
+                return False
+            if self._mqtt_connected:
+                return True
+        if not self._connected.wait(timeout=timeout):
+            return False
+        with self._lock:
+            return self._mqtt_connected and not self._closed
 
     def publish(self, topic: str, payload: dict):
         if str(topic).endswith("/CLIENT2HOST") and isinstance(payload, dict):
@@ -1001,12 +1018,15 @@ class _MqttSession:
 
     def close(self):
         self.cancel_pending_set()  # Unblock any thread in wait_set_executed
+        with self._lock:
+            self._closed = True
+            self._mqtt_connected = False
+        self._connected.set()
         try:
-            self.client.loop_stop()
             self.client.disconnect()
+            self.client.loop_stop()
         except Exception:
             pass
-        self._closed = True
 
 
 class _CloudLocalMqttBridge:
