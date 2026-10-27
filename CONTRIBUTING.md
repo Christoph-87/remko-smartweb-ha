@@ -1,65 +1,85 @@
-# Contributing to REMKO SmartWeb for Home Assistant
+# 🤝 Contributing to REMKO SmartWeb for Home Assistant
 
-Thanks for helping improve this integration. Device reports are especially
+Thanks for helping improve the integration. Device reports are especially
 valuable because REMKO model names, communication modules, and firmware versions
 do not always map cleanly to one protocol.
 
-## Good First Contributions
+## 🌱 Ways to Contribute
 
-- Confirm whether a model works through the REMKO SmartWeb cloud path.
-- Share redacted diagnostics for an unsupported or unknown device.
-- Improve documentation for a tested device family.
-- Add read-only sensors when the payload meaning is clear.
-- Add tests for an existing profile or transport behavior.
+- Confirm a device model and its connection path.
+- Share redacted diagnostics for an unsupported device.
+- Improve documentation for tested hardware.
+- Add read-only sensors when the payload meaning is known.
+- Add tests for an existing device profile or transport.
 
-Please be careful with write support. New writes should stay disabled or
-diagnostic-only until the command payload, readback, and failure behavior are
-understood.
+Write support needs extra care. Do not enable a new write path until its command
+payload, device readback, and failure behavior are understood and tested.
 
-## Reporting a Device
+## 🐛 Reporting a Bug
 
-Open an issue and include:
+[Open a GitHub issue](https://github.com/Christoph-87/remko-smartweb-ha/issues/new/choose)
+and include:
 
-- REMKO model name and, for split or multi-split systems, the indoor unit series.
-- Whether the device works in the REMKO app or SmartWeb portal.
-- Integration version and Home Assistant version.
+- integration and Home Assistant versions
+- exact REMKO model and communication module, if known
+- connection mode: REMKO Cloud, redirected WiFi stick, or direct device MQTT
+- expected and actual behavior
+- redacted diagnostics and relevant debug-log lines
+- steps that reproduce the problem
+
+Remove email addresses, passwords, cookies, session IDs, access keys, account
+details, and private network information before posting.
+
+## 🧩 Reporting a New Device
+
+Use the **New device support** issue template and include:
+
+- the model name shown by REMKO
+- for split or multi-split systems, the indoor-unit series
+- whether it works in the REMKO app or SmartWeb portal
 - Diagnostics sensor attributes such as `detected_profile`, `portal_type`, and
-  `portal_dev`.
-- Redacted debug logs around startup and, if relevant, one controlled setting
-  change made in the REMKO app.
-- For local MQTT tests, the detected mode: cloud, redirected WiFi stick, or
-  direct device MQTT / SmartControl.
+  `portal_dev`
+- a redacted debug log around startup
+- screenshots of the settings available in the REMKO app
 
-Remove email addresses, passwords, cookies, session IDs, access keys, exact
-account details, and private network details before posting logs publicly.
+When investigating writable values, change only one setting at a time in the
+REMKO app and note what changed and when.
 
-## Documentation
+## 💻 Development Workflow
 
-Keep public documentation task-oriented and useful to users or contributors.
-Do not commit raw research files, spreadsheets, packet captures, HAR exports,
-debug logs, or local-only runbooks.
-
-## Checks Before a Pull Request
-
-Run the local checks that match your change:
+1. Fork the repository and create a focused branch from `main`.
+2. Make the change and add tests for parser, profile, or write-path behavior.
+3. Update user documentation when behavior or device support changes.
+4. Run the local checks.
+5. Open a pull request and explain which hardware, firmware, or logs were used.
 
 ```bash
-python -m unittest discover -s tests -v
-python -m py_compile custom_components/remko_smartweb/api.py
-```
-
-For documentation-only changes, at least run:
-
-```bash
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q custom_components/remko_smartweb
 git diff --check
 ```
 
-GitHub Actions also run validation and hassfest for pull requests.
+GitHub Actions also run unit tests, HACS validation, and hassfest.
 
-## Pull Request Guidelines
+## ✅ Pull Request Checklist
 
-- Keep changes focused on one device family, transport, or documentation topic.
+- Keep the change focused on one device family, transport, or documentation
+  topic.
 - Prefer profile-specific behavior over broad global mappings.
-- Add tests for parser changes, write paths, and profile-specific query IDs.
-- Update the README or docs when user-visible support changes.
-- Explain what hardware, firmware, or logs were used for validation.
+- Include tests for parsing, writes, and readback where applicable.
+- Keep new or uncertain writes disabled until safely verified.
+- Do not include credentials, personal data, raw packet captures, or debug logs.
+- Update the README or local MQTT guide for user-visible changes.
+
+## 📝 Documentation
+
+Keep public documentation concise and task-oriented. Do not commit raw research
+files, spreadsheets, packet captures, HAR exports, debug logs, or local-only
+runbooks.
+
+## 💡 Proposing a Feature
+
+[Open an issue](https://github.com/Christoph-87/remko-smartweb-ha/issues/new/choose)
+describing the use case, affected hardware, and expected Home Assistant behavior.
+Protocol observations or redacted diagnostics are more useful than a proposed UI
+alone.

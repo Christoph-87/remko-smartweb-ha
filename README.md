@@ -1,4 +1,4 @@
-# REMKO SmartWeb — Home Assistant Integration
+# 🌡️ REMKO SmartWeb — Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-stable-green)
@@ -13,14 +13,14 @@ optionally use local MQTT.
 
 ---
 
-## Requirements
+## 📋 Requirements
 
 - A REMKO device with **SmartWeb** connectivity
 - An active **REMKO SmartWeb account** (the same login you use in the REMKO app)
 
 ---
 
-## Installation
+## 📦 Installation
 
 **Via HACS (recommended)**
 
@@ -41,7 +41,7 @@ Copy the `custom_components/remko_smartweb/` folder into your Home Assistant con
 
 </details>
 
-### Updating from 0.4.x
+### 🔄 Updating from 0.4.x
 
 Version 0.5.0 substantially changes the integration's internal communication
 architecture and adds optional local MQTT. Existing REMKO Cloud setups were
@@ -56,7 +56,7 @@ Assistant. Keep the existing config entry; local MQTT settings introduced in
 
 ---
 
-## Supported devices
+## ✅ Supported devices
 
 | Device | Models | Connection path | Status |
 |--------|--------|-----------------|:------:|
@@ -82,7 +82,7 @@ here may still work and receive a **Diagnostics sensor** for verification.
 
 ---
 
-## Connection options
+## 🔌 Connection options
 
 <!-- Generated from docs/diagrams/connection-options.d2 via Kroki; D2's canvas
 background rectangle is removed so the SVG remains transparent. -->
@@ -94,7 +94,7 @@ is optional and experimental; configure one device at a time by following
 
 ---
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 | Problem | What to try |
 |---------|-------------|
@@ -113,7 +113,7 @@ sharing it.
 
 ---
 
-## My device isn't supported — can you add it?
+## 🧩 My device isn't supported — can you add it?
 
 The integration can collect diagnostics from unknown SmartWeb devices to help
 add support.
@@ -131,7 +131,8 @@ add support.
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Device reports, redacted logs, documentation fixes, and read-only sensor
-mappings are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+mappings are welcome. See the [`CONTRIBUTING.md`](CONTRIBUTING.md) guide for
+development setup, testing, device reports, and safe diagnostics.

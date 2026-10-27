@@ -1,10 +1,10 @@
-# Local MQTT Setup
+# 🔌 Local MQTT Setup
 
 Local MQTT is optional and experimental. Configure one device at a time and
 confirm reliable status updates before testing controls. If you are unsure which
 mode applies, keep using **REMKO Cloud**.
 
-## Choose the Correct Mode
+## 🧭 Choose the Correct Mode
 
 There are two hardware cases:
 
@@ -15,7 +15,7 @@ There are two hardware cases:
 
 Do not configure a DNS redirect for a device that already exposes local MQTT.
 
-## Direct Device MQTT
+## 📡 Direct Device MQTT
 
 Use this mode only when the stick/device provides an MQTT service on the local
 network.
@@ -29,7 +29,7 @@ network.
 
 No DNS rewrite or separate MQTT broker is required for this mode.
 
-## Redirect a Cloud-Connected WiFi Stick
+## 🔀 Redirect a Cloud-Connected WiFi Stick
 
 This setup replaces the stick's connection to REMKO's broker with your own
 broker. Home Assistant then communicates with the stick locally.
@@ -40,7 +40,7 @@ Assistant relay app commands between REMKO Cloud and the local broker. The
 bridge is experimental and still requires internet access and valid REMKO
 credentials.
 
-### Requirements
+### 📋 Requirements
 
 - a device that already works through REMKO Cloud
 - the selected WiFi stick's IP address
@@ -50,7 +50,7 @@ credentials.
 
 Keep the cloud setup working until local status readback is confirmed.
 
-### Broker Listeners
+### 🔧 Broker Listeners
 
 Use separate broker listeners for Home Assistant and the redirected stick:
 
@@ -82,7 +82,7 @@ The certificate presented on the stick-facing listener needs
 `smartweb.remko.media` as its CN or SAN. The integration does not create or
 manage broker certificates.
 
-### DNS Redirect
+### 🌐 DNS Redirect
 
 Redirect only the selected stick. Home Assistant and other clients must still
 be able to reach the real REMKO endpoint.
@@ -97,7 +97,7 @@ Replace `<stick-ip>` and `<broker-ip>` with the corresponding local addresses.
 Equivalent client-specific rules in other DNS servers are fine. Avoid a global
 rewrite.
 
-### Integration Setup
+### ⚙️ Integration Setup
 
 1. Keep or add the device through the normal REMKO Cloud setup.
 2. Open its integration options and go to **Local connection**.
@@ -109,7 +109,7 @@ rewrite.
 6. Enter the local broker host, Home Assistant listener port, and credentials.
 7. Save the options, apply the DNS rule, and reconnect the stick.
 
-## Verify Before Using Controls
+## ✅ Verify Before Using Controls
 
 For either local mode:
 
@@ -128,7 +128,7 @@ For a redirected stick, also confirm:
 For direct device MQTT, typical data and command topics end in
 `HOST2CLIENT` and `CLIENT2HOST`.
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 | Symptom | Check |
 |---------|-------|
@@ -142,7 +142,7 @@ For direct device MQTT, typical data and command topics end in
 To return a redirected stick to REMKO Cloud, remove its DNS rule, select
 **REMKO Cloud** in the integration options, and reconnect the stick.
 
-## Reporting a Problem
+## 🐛 Reporting a Problem
 
 Open an issue and include:
 
