@@ -3201,6 +3201,34 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(payload["CLIENT_ID"], "SMTACUARTTEST")
         self.assertIn("Tx", payload)
 
+    def test_local_host2portal_climate_off_wraps_zero_checksum_to_byte(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "WIFI Stick - Klima Erdgeschoss"
+        client.topic = "V04P27/SMTABCDEF123456"
+        client._local_mqtt_command_topic = "V04P27/FEDCBA9876543210"
+        client.profile = ClimateDeviceProfile()
+        client._beep = False
+        client._last_payload = bytes.fromhex(
+            "c00186287f7f003c000000675900000000000000000099"
+        )
+        client._last_status = None
+        client._local_mqtt_host = "192.168.2.4"
+        client._ensure_login = lambda: None
+        client._ensure_device = lambda: None
+        client._ensure_mqtt = lambda: None
+        client._mqtt = FakeMqtt()
+        client._mqtt.local_portal = True
+        client._mqtt.local_host2portal_mode = True
+
+        client.set_values({"power": False})
+
+        _topic, payload = client._mqtt.published[0]
+        self.assertEqual(
+            payload["Tx"],
+            "AA24AC00000000000302400286287F7F003C00000000000000000000000000000000000100",
+        )
+        self.assertEqual(len(payload["Tx"]), 74)
+
     def test_climate_set_values_retries_stale_readback_before_mismatch_warning(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.device_name = "MXW"

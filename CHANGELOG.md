@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Keep the generic AC packet checksum within one byte when the packet sum is already divisible by 256, preventing malformed climate commands such as the affected power-off frame.
 
 ## v0.5.0-beta.18
 - Correct stale redirected-local-MQTT topics from the configured stick IP's unambiguous ARP/MAC mapping, avoiding cross-device topic selection on shared brokers.

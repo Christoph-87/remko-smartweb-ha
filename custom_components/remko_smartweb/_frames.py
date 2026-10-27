@@ -72,7 +72,7 @@ def _checksum(data: list[int]) -> int:
     s = 0
     for i in range(1, len(data)):
         s += data[i]
-    return 256 - (s % 256)
+    return (-s) % 256
 
 
 # ---------------------------------------------------------------------------
