@@ -33,6 +33,8 @@
     },
     "error": {
       "cannot_connect": "Verbindung fehlgeschlagen. Prüfe Zugangsdaten und Gerätenamen.",
+      "local_mqtt_auth_failed": "Lokaler MQTT-Login oder ACL-Prüfung fehlgeschlagen. Prüfe Benutzername, Passwort, Listener-Einstellungen und Rechte.",
+      "local_mqtt_tcp_failed": "Home Assistant erreicht den lokalen MQTT-Host und Port nicht.",
       "no_devices": "Keine neuen Geräte für dieses Konto gefunden."
     }
   },
@@ -41,7 +43,6 @@
       "init": {
         "title": "REMKO SmartWeb Optionen",
         "data": {
-          "scan_interval": "Polling-Intervall (Sekunden)",
           "device_kind": "Gerätetyp"
         }
       },
@@ -53,6 +54,71 @@
           "max_temp": "Maximale Temperatur (Override)",
           "beep": "Bestätigungston (Gerät piept bei jedem Befehl)"
         }
+      },
+      "local_broker": {
+        "title": "Lokale Verbindung",
+        "description": "Wähle, wie dieses Gerät verbunden werden soll. Vorgeschlagene Stick-IPs: {candidate_list}. Vorschläge, die bereits von einem anderen REMKO-Eintrag genutzt werden, werden ausgeblendet. Du kannst die Stick-IP immer manuell eintragen oder korrigieren.",
+        "data": {
+          "local_mqtt_mode": "Lokaler MQTT-Modus",
+          "local_mqtt_stick_host": "Stick-IP-Kandidat (zur Prüfung)",
+          "local_mqtt_cloud_bridge": "REMKO-App-Befehle über Home Assistant weiterleiten"
+        },
+        "data_description": {
+          "local_mqtt_mode": "Cloud nutzt nur REMKO SmartWeb. Direktes Geräte-MQTT verbindet zur Stick-IP. Umgeleitete WiFi-Sticks nutzen den gemeinsamen lokalen Broker aus dem nächsten Schritt.",
+          "local_mqtt_stick_host": "Nur als Hinweis für Mismatch-Erkennung. Dieses Feld wird nicht als Broker-Host verwendet.",
+          "local_mqtt_cloud_bridge": "Experimentell. Nur für umgeleitete WiFi-Sticks verwenden, bei denen die REMKO-App die Steuerung verliert, während der Stick lokal verbunden ist."
+        }
+      },
+      "local_device": {
+        "title": "Direktes Geräte-MQTT",
+        "description": "Nur für Sticks oder SmartControl-Geräte verwenden, die MQTT direkt auf ihrer eigenen IP anbieten. Wenn Benutzername und Passwort leer bleiben, versucht die Integration die lokale smt.min.js-Datei zu lesen und mit dem Standardbenutzer 0000000000000000 zu prüfen.",
+        "data": {
+          "local_mqtt_host": "Stick-MQTT-Host",
+          "local_mqtt_port": "Stick-MQTT-Port",
+          "local_mqtt_user": "Stick-MQTT-Benutzername",
+          "local_mqtt_password": "Stick-MQTT-Passwort"
+        }
+      },
+      "global_broker": {
+        "title": "Gemeinsamer lokaler MQTT-Broker",
+        "description": "Diese Broker-Einstellungen werden von allen umgeleiteten REMKO WiFi-Sticks gemeinsam genutzt. Gerätespezifisch werden nur Modus und Stick-IP-Hinweis gespeichert.",
+        "data": {
+          "local_mqtt_host": "Lokaler Broker-Host",
+          "local_mqtt_port": "Lokaler Broker-Port",
+          "local_mqtt_user": "Lokaler Broker-Benutzername",
+          "local_mqtt_password": "Lokales Broker-Passwort"
+        }
+      }
+    }
+  },
+  "selector": {
+    "account": {
+      "options": {
+        "new": "Neue Zugangsdaten verwenden"
+      }
+    },
+    "device_kind": {
+      "options": {
+        "auto": "Automatisch erkennen",
+        "climate": "Klimagerät",
+        "dhw": "Warmwasser",
+        "diagnostics": "Nur Diagnose"
+      }
+    },
+    "local_mqtt_mode": {
+      "options": {
+        "cloud": "Nur REMKO Cloud",
+        "portal_broker": "Umgeleiteter WiFi-Stick / lokaler Portal-Broker",
+        "device_mqtt": "Direktes Geräte-MQTT / SmartControl-Bridge"
+      }
+    },
+    "model": {
+      "options": {
+        "mxw_204": "MXW 204",
+        "mxw_264": "MXW 264",
+        "mxw_354": "MXW 354",
+        "mxw_524": "MXW 524",
+        "other": "Andere / unbekannt"
       }
     }
   },
@@ -101,6 +167,30 @@
       },
       "wpm_target_temperature": {
         "name": "WPM Zieltemperatur"
+      },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM Warmwasser-Solltemperatur"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM Temperaturkorrektur"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM Festwerttemperatur"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM Heizwasser-Solltemperatur"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
       },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
@@ -177,6 +267,12 @@
       },
       "dhw_ambient_temperature": {
         "name": "Warmwasser-Umgebungstemperatur"
+      },
+      "dhw_hysteresis_bottom": {
+        "name": "Warmwasser Einschalthysterese unten"
+      },
+      "dhw_hysteresis_top": {
+        "name": "Warmwasser Einschalthysterese oben"
       },
       "dhw_mode": {
         "name": "Warmwasser-Modus",
@@ -255,8 +351,41 @@
       "wpm_manual_defrost": {
         "name": "WPM manuelle Abtauung"
       },
+      "wpm_outdoor_temperature": {
+        "name": "WPM Außentemperatur"
+      },
+      "wpm_mixed_temperature": {
+        "name": "WPM gemischte Temperatur"
+      },
+      "wpm_water_temperature": {
+        "name": "WPM Wassertemperatur"
+      },
       "wpm_target_temperature": {
         "name": "WPM Zieltemperatur"
+      },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM Warmwasser-Solltemperatur"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM Temperaturkorrektur"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM Festwerttemperatur"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM Heizwasser-Solltemperatur"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
       },
       "wpm_setpoint_ch": {
         "name": "WPM Solltemperatur CH"
@@ -267,14 +396,35 @@
       "wpm_unit_on": {
         "name": "WPM Gerät Ein"
       },
+      "wpm_absence_mode": {
+        "name": "WPM Abwesenheitsmodus"
+      },
+      "wpm_party_mode": {
+        "name": "WPM Partymodus"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM Heizkreis-Modus"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM einmalige Warmwasserbereitung"
+      },
       "diagnostics": {
         "name": "Diagnose"
+      },
+      "communication_status": {
+        "name": "Kommunikationsstatus"
+      },
+      "local_portal_status": {
+        "name": "Lokaler MQTT-Status"
       },
       "last_sync": {
         "name": "Letzte Synchronisation"
       }
     },
     "switch": {
+      "beep": {
+        "name": "Bestätigungston"
+      },
       "power": {
         "name": "Ein/Aus"
       },
@@ -298,6 +448,44 @@
       },
       "wpm_manual_defrost": {
         "name": "WPM manuelle Abtauung"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM Abwesenheitsmodus"
+      },
+      "wpm_party_mode": {
+        "name": "WPM Partymodus"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM Heizkreis-Modus"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM einmalige Warmwasserbereitung"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
+      }
+    },
+    "select": {
+      "wpm_dhw_mode": {
+        "name": "WPM Warmwasser-Modus"
+      },
+      "wpm_main_mode": {
+        "name": "WPM Hauptmodus"
+      },
+      "wpm_time_mode": {
+        "name": "WPM Zeitprogramm-Funktion"
+      },
+      "wpm_user_profile": {
+        "name": "WPM Benutzerprofil"
       }
     },
     "water_heater": {

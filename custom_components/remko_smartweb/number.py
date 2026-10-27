@@ -5,9 +5,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from ._pending import PendingStateMixin
 from .const import DOMAIN
 
 
@@ -24,13 +24,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(entities)
 
 
-class RemkoSmartWebNumber(CoordinatorEntity, NumberEntity):
+class RemkoSmartWebNumber(PendingStateMixin, CoordinatorEntity, NumberEntity):
     def __init__(self, coordinator, client, device_name: str, profile, description):
         super().__init__(coordinator)
         key, name, min_value, max_value, step, unit = description
         self._client = client
         self._profile = profile
         self._key = key
+        self._init_pending_state()
         self._attr_has_entity_name = True
         self._attr_translation_key = key
         self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_{key}_number"
@@ -50,21 +51,16 @@ class RemkoSmartWebNumber(CoordinatorEntity, NumberEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get(self._key)
+        return self._display_value(self._key)
 
     async def async_set_native_value(self, value: float) -> None:
         value_write = self._profile.build_value_write({self._key: value})
         if not value_write:
             return
-        if self.coordinator.data is not None:
-            data = dict(self.coordinator.data)
-            data[self._key] = value
-            self.coordinator.data = data
-            self.async_write_ha_state()
-
-        await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
-
-        async def _do_refresh(_now):
-            await self.coordinator.async_request_refresh()
-
-        async_call_later(self.hass, 2.0, _do_refresh)
+        pending_generation = self._start_pending_state({self._key: value})
+        try:
+            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
+        except Exception:
+            self._rollback_pending_state(pending_generation)
+            raise
+        self._schedule_readback_refresh()

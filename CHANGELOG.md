@@ -1,5 +1,94 @@
 # Changelog
 
+## Unreleased
+
+## v0.5.0
+- Promote the local MQTT transport framework from the beta branch to the stable release: redirected portal-broker mode, direct-device MQTT mode, shared broker settings, per-device stick validation, connection probing, and Home Assistant diagnostics. Individual WPM controls and the optional cloud-command bridge remain explicitly experimental.
+- Apply incoming MQTT value updates immediately and keep requested entity states visible only while device confirmation is pending; confirmed readback wins, while write errors and timeouts restore the last confirmed state.
+- Add experimental local WPM/WKF telemetry and controls, including operating-mode selects that are exposed only after their registers have been observed.
+- Include the beta.19 packet-checksum correction and beta.20 MQTT-session lifecycle fix so malformed edge-case climate commands and reconnect-driven client growth are not carried into the stable release.
+
+## v0.5.0-beta.20
+- Keep one MQTT client per configured device across transient disconnects and connection timeouts instead of replacing the session while Paho's old network loop may still reconnect. This prevents orphaned loop threads and an increasing number of broker connections.
+- Report MQTT connectivity only after a successful CONNACK and shut sessions down deterministically on integration unload.
+
+## v0.5.0-beta.19
+- Keep the generic AC packet checksum within one byte when the packet sum is already divisible by 256, preventing malformed climate commands such as the affected power-off frame.
+
+## v0.5.0-beta.18
+- Correct stale redirected-local-MQTT topics from the configured stick IP's unambiguous ARP/MAC mapping, avoiding cross-device topic selection on shared brokers.
+- Count native `HOST2PORTAL` traffic as local portal activity and allow the first heartbeat cycle after startup, so healthy redirected sticks no longer produce false idle warnings.
+- Keep the cloud/local bridge while its three MQTT connection legs are still pending and only recycle it after an actual connection failure.
+
+## v0.5.0-beta.17
+- Only expose experimental WPM operating-mode selects when their register has actually been observed in device readback; unavailable selects also reject direct service writes.
+- Show requested device state immediately through a pending overlay for climate, water-heater, number, switch, select, and vacation-date controls across cloud and local transports, without overwriting confirmed coordinator data; device readback confirms it, while write errors or a bounded timeout restore the last confirmed state.
+- Include the numerically sorted Value IDs from the latest device readback in communication diagnostics to make register support visible without exposing register contents.
+
+## v0.5.0-beta.16
+- Treat parsed local MQTT push value updates (`mqtt_push_values`) and direct local value polls (`local_device_values`) as fresh communication status sources, so diagnostic status no longer flips to degraded just because there is no ESP `/RESP` after a recent value push.
+
+## v0.5.0-beta.15
+- Clarify the runtime split between REMKO Cloud, redirected local portal MQTT, and direct local device MQTT. Direct local MQTT reads no longer require a cloud login once the local broker/topic settings are available.
+- Align WPM/WKF local MQTT temperature parsing with observed local MQTT register mappings: use value ID `5032` for outdoor temperature and expose value ID `5055` as mixed temperature.
+- Add experimental local WPM control entities for domestic hot water target temperature, temperature adjustment, fixed temperature, heating water target temperature, absence mode, party mode, heating circuit mode, and domestic hot water heating.
+- Add experimental local WPM operating mode selects for domestic hot water mode, main operating mode, time mode, and user profile.
+
+## v0.5.0-beta.14
+- Apply incoming MQTT `HOST2CLIENT`/`PORTAL2CLIENT` value updates to Home Assistant immediately instead of waiting for the next 30-second coordinator poll. The periodic poll remains as a startup/reconnect fallback.
+- Keep the local-portal support README status conservative: REMKO Cloud support is only marked fully supported when read and write are both supported on the main branch.
+- Remove the unobserved WPM/WKF DHW hysteresis candidate sensors and stop querying value IDs `1334` and `1402` on the WPM profile after tester feedback confirmed those IDs are not returned by the local WKF/WPM 4.26 value path.
+
+## v0.5.0-beta.10
+- Prefer the `CLIENT2HOST` SmartWeb value path for WPM/WKF cloud MQTT polling before trying the slower direct ESP Modbus roundtrip, avoiding long waits when the stick only echoes ESP `Tx` messages
+- Query the WKF/WPM firmware 4.26 value IDs explicitly (`1082`, `1951`, `5001`, `5033`, `5034`, `5039`, `5055`) so supported temperature/mode values are returned more reliably
+- For experimental WPM writes, treat cached readback as unconfirmed and fall back from ESP Modbus writes to the `CLIENT2HOST` value-write path so setpoints and WPM switches still have a chance to apply on sticks that only echo ESP `Tx`
+
+## v0.5.0-beta.9
+- Persist the SmartWeb portal MAC address after device metadata resolution so local MQTT setup can reuse it later
+- Use the portal MAC as an ARP/neighbor-table hint in the options flow to suggest a direct-device MQTT host candidate for SmartControl/WKF setups
+
+## v0.5.0-beta.8
+- Parse WKF/WPM firmware 4.26 local MQTT value IDs such as `1082`, `5034`, `5039`, and `5055`, so direct-device `V04P26` messages can populate the experimental WPM temperature entities
+- Add WPM outdoor and water temperature diagnostic sensors for local MQTT value payloads
+
+## v0.5.0-beta.7
+- Add best-effort local MQTT credential discovery for direct device MQTT setups: when username and password are left empty, the options flow tries to read the local SmartControl `smt.min.js` file, extract the device MQTT password, and probe with the known default user `0000000000000000`
+- Extend direct-device local MQTT probing to include the `V04P26` topic family used by some WKF/Firmware 4.26 installations, without subscribing to broad cloud wildcards
+
+## v0.5.0-beta.6
+- Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P26` response subscriptions (`V04P26/<device-id>/...` and `V04P26/SMT<device-id>/...`) for devices that may still use the firmware 4.26 topic family
+- Keep the additional subscriptions device-specific; the integration still does not subscribe to broad cloud topics such as `V04P26/#`
+
+## v0.5.0-beta.5
+- Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P28` response subscriptions (`V04P28/<device-id>/...` and `V04P28/SMT<device-id>/...`) to check whether SmartWeb responses for some sticks are published on the bridge-style topic family
+- Add MQTT diagnostic counts by topic prefix so debug logs can distinguish `V04P27` echoes from potential `V04P28` device/portal responses
+
+## v0.5.0-beta.4
+- Extend experimental WPM/WKF heat-pump polling to match the SmartWeb portal UART query chain more closely, including the additional holding-register blocks `3:101-200`, `3:201-300`, and `3:301-400`
+- Improve MQTT diagnostics by counting received messages by payload kind and topic channel, helping distinguish device/portal responses from local poll echoes in debug logs
+
+## v0.5.0-beta.3
+- Include the SmartWeb portal `DEV` value as `DEVID` in `CLIENT2HOST` value polls and writes. This mirrors the v0.4.21 stable fix in the local MQTT beta line and should help WKF/WPM devices that only echoed value poll requests
+
+## v0.5.0-beta.2
+- Detect WKF heat pumps as experimental WPM/heat-pump diagnostics devices instead of leaving them on the generic auto-detection parser. This mirrors the v0.4.20 stable fix in the local MQTT beta line
+
+## v0.5.0-beta.1
+- Pre-release for testing the experimental local MQTT work. This release is
+  intended for users who explicitly want to try local operation and provide
+  feedback; cloud-only users should stay on the latest stable release.
+- Add an experimental opt-in cloud-command bridge for redirected local MQTT setups, forwarding REMKO app cloud MQTT commands to the local broker and local responses back to the cloud topic
+- Add a per-device `Beep on command` switch entity so the command beep can be toggled directly from Home Assistant instead of only through the integration options
+- Restore extended AC switch behavior for Value-ID capable climate profiles: Power keeps the Value-ID path, while Eco, Turbo, Sleep, Bioclean, and Frost Protection fall back to the C0/ESP SET path when needed
+- Parse the Bioclean flag from C0 status frames so the switch can reflect device state after polling
+- Add the redirected WiFi-stick / local portal broker mode, direct local MQTT
+  probe groundwork, shared local broker settings, per-device stick-IP
+  validation, and diagnostic Local MQTT status sensors
+- Add documentation for Mosquitto 2.x listener separation, the stick-facing
+  `8883` TLS listener, per-client DNS rewrites with AdGuard Home, and the
+  `smartweb.remko.media` certificate requirement
+
 ## v0.4.25
 - Keep one MQTT client per configured device across transient disconnects and connection timeouts instead of replacing the session while Paho's old network loop may still reconnect. This prevents orphaned loop threads and an increasing number of REMKO cloud connections.
 - Report MQTT connectivity only after a successful CONNACK and shut sessions down deterministically on integration unload.

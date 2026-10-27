@@ -33,12 +33,15 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         self._last_saved_data = None
         self._field_value_update_times: dict[str, str] = {}
         self.last_successful_update: datetime | None = None
+        self._pending_push_update = None
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=interval),
         )
+        if hasattr(client, "set_mqtt_values_callback"):
+            client.set_mqtt_values_callback(self._handle_mqtt_values_update)
 
     async def async_load_last_known_data(self) -> None:
         """Prime the coordinator with the last successful state from HA storage."""
@@ -84,6 +87,37 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
                 continue
             merged[key] = value
         return merged
+
+    async def async_process_mqtt_values_update(
+        self,
+        data: dict,
+        topic: str | None = None,
+    ) -> None:
+        """Apply a push-style MQTT value update without waiting for the poll interval."""
+        data = self._merge_with_last_valid_data(data)
+        self._update_value_timestamps(data)
+        self._reset_backoff()
+        self.last_successful_update = datetime.now(timezone.utc)
+        self.async_set_updated_data(data)
+        await self._async_save_last_known_data(data)
+        _LOGGER.debug(
+            "Applied REMKO SmartWeb MQTT push update from %s",
+            topic or "unknown topic",
+        )
+
+    def _schedule_mqtt_values_update(self, data: dict, topic: str | None = None) -> None:
+        task = self.hass.async_create_task(
+            self.async_process_mqtt_values_update(data, topic)
+        )
+        self._pending_push_update = task
+
+    def _handle_mqtt_values_update(self, data: dict, topic: str | None = None) -> None:
+        """Schedule a coordinator update from the MQTT network thread."""
+        loop = getattr(self.hass, "loop", None)
+        if loop is not None and hasattr(loop, "call_soon_threadsafe"):
+            loop.call_soon_threadsafe(self._schedule_mqtt_values_update, data, topic)
+            return
+        self._schedule_mqtt_values_update(data, topic)
 
     def _update_value_timestamps(self, data: dict) -> None:
         if not isinstance(data, dict):

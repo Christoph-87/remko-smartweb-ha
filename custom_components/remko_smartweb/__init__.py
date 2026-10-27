@@ -6,6 +6,7 @@ from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
 
 from .api import RemkoSmartWebAccount, RemkoSmartWebClient
 from .const import (
@@ -14,9 +15,24 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PATH,
+    CONF_DEVICE_MAC,
     CONF_DEVICE_KIND,
-    CONF_SCAN_INTERVAL,
     CONF_BEEP,
+    CONF_LOCAL_MQTT_HOST,
+    CONF_LOCAL_MQTT_PORT,
+    CONF_LOCAL_MQTT_USER,
+    CONF_LOCAL_MQTT_PASSWORD,
+    CONF_LOCAL_MQTT_TOPIC,
+    CONF_LOCAL_MQTT_MODE,
+    CONF_LOCAL_MQTT_DETECTED_MODE,
+    CONF_LOCAL_MQTT_LAST_PROBE,
+    CONF_LOCAL_MQTT_CLOUD_BRIDGE,
+    CONF_LOCAL_MQTT_STICK_HOST,
+    DEFAULT_LOCAL_MQTT_PORT,
+    LOCAL_MQTT_MODE_AUTO,
+    LOCAL_MQTT_MODE_CLOUD,
+    LOCAL_MQTT_MODE_DEVICE_MQTT,
+    LOCAL_MQTT_MODE_PORTAL_BROKER,
     DEVICE_KIND_AUTO,
     DEFAULT_SCAN_INTERVAL,
     PLATFORMS,
@@ -29,6 +45,8 @@ _LOGGER = logging.getLogger(__name__)
 ACCOUNT_DATA = "accounts"
 SERVICE_SET_MXW_TIMER_SLOTS = "set_mxw_timer_slots"
 FRONTEND_PATH = "/remko_smartweb/remko-mxw-timer-card.js"
+GLOBAL_BROKER_STORE_VERSION = 1
+GLOBAL_BROKER_STORE_KEY = f"{DOMAIN}_global_local_mqtt_broker"
 
 
 def _account_key(email: str, password: str) -> tuple[str, str]:
@@ -72,8 +90,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_name = entry.data[CONF_DEVICE_NAME]
     device_path = entry.data.get(CONF_DEVICE_PATH)
     device_kind = entry.options.get(CONF_DEVICE_KIND, DEVICE_KIND_AUTO)
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     beep = entry.options.get(CONF_BEEP, False)
+    local_mqtt_topic = entry.data.get(CONF_LOCAL_MQTT_TOPIC) or None
+    local_mqtt_cloud_bridge = entry.options.get(CONF_LOCAL_MQTT_CLOUD_BRIDGE, False)
+    local_mqtt_stick_host = entry.options.get(CONF_LOCAL_MQTT_STICK_HOST) or None
+    configured_local_mqtt_mode = entry.options.get(CONF_LOCAL_MQTT_MODE, LOCAL_MQTT_MODE_AUTO)
+    global_broker = await _async_load_global_broker(hass)
+    (
+        local_mqtt_host,
+        local_mqtt_port,
+        local_mqtt_user,
+        local_mqtt_password,
+        local_mqtt_last_probe,
+    ) = _resolve_local_mqtt_connection(entry.options, configured_local_mqtt_mode, global_broker)
+    local_mqtt_mode = configured_local_mqtt_mode
+    if configured_local_mqtt_mode == LOCAL_MQTT_MODE_CLOUD:
+        local_mqtt_mode = LOCAL_MQTT_MODE_AUTO
+        local_mqtt_host = None
+    if configured_local_mqtt_mode == LOCAL_MQTT_MODE_AUTO:
+        local_mqtt_mode = (
+            entry.data.get(CONF_LOCAL_MQTT_DETECTED_MODE)
+            or _infer_local_mqtt_mode_from_topic(local_mqtt_topic)
+            or LOCAL_MQTT_MODE_AUTO
+        )
     account = _get_or_create_account(hass, email, password)
 
     client = RemkoSmartWebClient(
@@ -84,12 +123,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_kind=device_kind,
         beep=beep,
         account=account,
+        local_mqtt_host=local_mqtt_host,
+        local_mqtt_port=local_mqtt_port,
+        local_mqtt_user=local_mqtt_user,
+        local_mqtt_password=local_mqtt_password,
+        local_mqtt_topic=local_mqtt_topic,
+        local_mqtt_mode=local_mqtt_mode,
+        local_mqtt_last_probe=local_mqtt_last_probe,
+        local_mqtt_cloud_bridge=local_mqtt_cloud_bridge,
+        local_mqtt_stick_host=local_mqtt_stick_host,
     )
     coordinator = RemkoSmartWebCoordinator(
         hass,
         client,
         entry_id=entry.entry_id,
-        scan_interval=scan_interval,
+        scan_interval=DEFAULT_SCAN_INTERVAL,
     )
 
     try:
@@ -102,10 +150,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await hass.async_add_executor_job(released_account.close)
         raise
 
+    entry_data_update = dict(entry.data)
+    changed_entry_data = False
     if not device_path and client.device_path:
+        entry_data_update[CONF_DEVICE_PATH] = client.device_path
+        changed_entry_data = True
+    device_mac = getattr(client, "device_mac", None)
+    if device_mac and entry.data.get(CONF_DEVICE_MAC) != device_mac:
+        entry_data_update[CONF_DEVICE_MAC] = device_mac
+        changed_entry_data = True
+    if local_mqtt_host and client.topic and client.topic != local_mqtt_topic:
+        entry_data_update[CONF_LOCAL_MQTT_TOPIC] = client.topic
+        changed_entry_data = True
+    detected_local_mqtt_mode = getattr(client, "local_mqtt_mode", LOCAL_MQTT_MODE_AUTO)
+    if (
+        local_mqtt_host
+        and configured_local_mqtt_mode == LOCAL_MQTT_MODE_AUTO
+        and detected_local_mqtt_mode != LOCAL_MQTT_MODE_AUTO
+        and entry.data.get(CONF_LOCAL_MQTT_DETECTED_MODE) != detected_local_mqtt_mode
+    ):
+        entry_data_update[CONF_LOCAL_MQTT_DETECTED_MODE] = detected_local_mqtt_mode
+        changed_entry_data = True
+    if changed_entry_data:
         hass.config_entries.async_update_entry(
             entry,
-            data={**entry.data, CONF_DEVICE_PATH: client.device_path},
+            data=entry_data_update,
         )
 
     device_profile = get_device_profile(device_name, coordinator.data, device_kind)
@@ -118,9 +187,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "device_name": device_name,
         "device_profile": device_profile,
     }
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload a config entry when its options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -153,6 +228,48 @@ async def _async_register_static_path(hass: HomeAssistant) -> None:
     except Exception:
         hass.data[DOMAIN].pop("frontend_registered", None)
         raise
+
+
+def _infer_local_mqtt_mode_from_topic(topic: str | None) -> str | None:
+    """Infer a stored local topic's transport mode when auto-discovery has run before."""
+    if not topic:
+        return None
+    parts = topic.split("/")
+    if len(parts) >= 2 and (parts[0] == "V04P28" or parts[-1] == "SMTID"):
+        return LOCAL_MQTT_MODE_DEVICE_MQTT
+    if len(parts) >= 2 and parts[0] == "V04P27" and parts[1].upper().startswith("SMT"):
+        return LOCAL_MQTT_MODE_PORTAL_BROKER
+    return None
+
+
+async def _async_load_global_broker(hass: HomeAssistant) -> dict:
+    data = await Store(
+        hass,
+        GLOBAL_BROKER_STORE_VERSION,
+        GLOBAL_BROKER_STORE_KEY,
+    ).async_load()
+    return dict(data or {})
+
+
+def _resolve_local_mqtt_connection(
+    options: dict,
+    configured_mode: str,
+    global_broker: dict,
+) -> tuple[str | None, int, str | None, str | None, dict | None]:
+    if configured_mode == LOCAL_MQTT_MODE_CLOUD:
+        return None, DEFAULT_LOCAL_MQTT_PORT, None, None, None
+
+    if configured_mode == LOCAL_MQTT_MODE_PORTAL_BROKER:
+        source = global_broker or options
+    else:
+        source = options
+
+    host = source.get(CONF_LOCAL_MQTT_HOST) or None
+    port = int(source.get(CONF_LOCAL_MQTT_PORT, DEFAULT_LOCAL_MQTT_PORT))
+    user = source.get(CONF_LOCAL_MQTT_USER) or None
+    password = source.get(CONF_LOCAL_MQTT_PASSWORD) or None
+    last_probe = source.get(CONF_LOCAL_MQTT_LAST_PROBE)
+    return host, port, user, password, last_probe
 
 
 def _async_register_services(hass: HomeAssistant) -> None:

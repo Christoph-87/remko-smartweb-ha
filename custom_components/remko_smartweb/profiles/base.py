@@ -4,12 +4,14 @@ from ..const import DEVICE_KIND_DIAGNOSTICS
 
 SensorDescription = tuple[str, str, str | None]
 NumberDescription = tuple[str, str, float, float, float, str | None]
+SelectDescription = tuple[str, str, tuple[str, ...]]
 
 
 class SmartWebDeviceProfile:
     kind = DEVICE_KIND_DIAGNOSTICS
     sensor_descriptions: tuple[SensorDescription, ...] = ()
     number_descriptions: tuple[NumberDescription, ...] = ()
+    select_descriptions: tuple[SelectDescription, ...] = ()
     supports_climate = False
     supports_climate_write = False
     supports_water_heater = False
@@ -18,6 +20,7 @@ class SmartWebDeviceProfile:
     diagnostics_only = False
     profile_name = "Diagnostics"
     protocol_name = "diagnostics"
+    query_value_ids: tuple[int, ...] = ()
 
     def parse_c0_status(self, rx_hex: str) -> dict | None:
         return None
@@ -27,6 +30,10 @@ class SmartWebDeviceProfile:
 
     def build_value_write(self, overrides: dict) -> dict[str, str] | None:
         return None
+
+    def value_query_ids(self) -> tuple[int, ...]:
+        """Return SmartWeb value IDs this device profile wants to poll."""
+        return self.query_value_ids
 
     def sensors_for_data(self, data: dict | None) -> list[SensorDescription]:
         present = set(data.keys()) if isinstance(data, dict) else set()

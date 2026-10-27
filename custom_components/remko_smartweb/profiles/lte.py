@@ -65,6 +65,22 @@ class LteDeviceProfile(SmartWebDeviceProfile):
     profile_name = "LTE"
     protocol_name = "lte_ac_uart"
     supports_value_write = True
+    query_value_ids = (
+        1194,
+        1302,
+        5195,
+        5490,
+        5628,
+        5769,
+        5927,
+        5928,
+        5929,
+        5930,
+        5931,
+        5932,
+        5933,
+        5982,
+    )
     sensor_descriptions = (
         ("target_humidity", "Target Humidity", "percentage"),
         ("internal_humidity", "Internal Humidity", "percentage"),

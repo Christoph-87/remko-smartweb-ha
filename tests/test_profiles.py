@@ -34,7 +34,6 @@ from custom_components.remko_smartweb.api import (
     _build_kwt_set_cmd,
     _build_lte_set_cmd,
     _build_modbus_read_cmd,
-    _build_mqtt_response_topics,
     _build_mqtt_topic,
     _build_rbw_get_status_cmd,
     _build_rbw_set_cmd,
@@ -66,7 +65,7 @@ from custom_components.remko_smartweb.profiles.diagnostics import DiagnosticsDev
 from custom_components.remko_smartweb.profiles.domestic_hot_water import DHW_MODE_VALUE_IDS, DomesticHotWaterDeviceProfile
 from custom_components.remko_smartweb.profiles.kwt import KwtDeviceProfile
 from custom_components.remko_smartweb.profiles.lte import LteDeviceProfile
-from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile
+from custom_components.remko_smartweb.profiles.wpm import WpmDeviceProfile, WspDeviceProfile
 from custom_components.remko_smartweb.profiles.value_mapping import ValueWriteSpec, build_value_write
 
 
@@ -114,6 +113,12 @@ class ProfileParsingTests(unittest.TestCase):
             {"1000": "022B", "1001": "02"},
         )
 
+    def test_value_write_spec_encodes_signed_values(self):
+        specs = (ValueWriteSpec("offset", "1946", digits=4, scale=10, signed=True),)
+
+        self.assertEqual(build_value_write({"offset": -2.5}, specs), {"1946": "FFE7"})
+        self.assertEqual(build_value_write({"offset": 2.5}, specs), {"1946": "0019"})
+
     def test_value_write_spec_ignores_unknown_enum_values(self):
         specs = (ValueWriteSpec("mode", "1002", enum={"eco": 9}),)
 
@@ -135,7 +140,8 @@ class ProfileParsingTests(unittest.TestCase):
             'appframe.location.href="/webportal/Wifi/sd-card/lighttpd/webpages/smt.html'
             '?SMT_ID=70162fe655ec381ac6312ebf026aac54'
             '&SID=0123456789ABCDEF&SK=FEDCBA9876543210&us=3946&DEV=256'
-            '&NAME=Klima_Erdgeschoss&TYPE=MXW%20204%20-%20524";'
+            '&NAME=Klima_Erdgeschoss&TYPE=MXW%20204%20-%20524'
+            '&SMT_MAC=1C9DC263C758";'
         )
 
         self.assertEqual(
@@ -145,6 +151,7 @@ class ProfileParsingTests(unittest.TestCase):
                 "device_dev": "256",
                 "device_portal_name": "Klima_Erdgeschoss",
                 "device_type": "MXW 204 - 524",
+                "device_mac": "1C9DC263C758",
             },
         )
 
@@ -164,19 +171,6 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIsNone(_build_mqtt_topic(""))
         self.assertIsNone(_build_mqtt_topic("NaN"))
 
-    def test_build_mqtt_response_topics_includes_targeted_cross_version_candidates(self):
-        subscriptions = _build_mqtt_response_topics("V04P27/0123456789abcdef")
-        topics = [topic for topic, _qos in subscriptions]
-
-        self.assertIn("V04P27/0123456789ABCDEF/RESP", topics)
-        self.assertIn("V04P26/0123456789ABCDEF/RESP", topics)
-        self.assertIn("V04P26/SMT0123456789ABCDEF/RESP", topics)
-        self.assertIn("V04P28/0123456789ABCDEF/RESP", topics)
-        self.assertIn("V04P28/SMT0123456789ABCDEF/RESP", topics)
-        self.assertNotIn("V04P26/#", topics)
-        self.assertNotIn("V04P28/#", topics)
-        self.assertTrue(all(qos == 2 for _topic, qos in subscriptions))
-
     def test_value_query_list_includes_written_ids_with_status_ids(self):
         query_list = _value_query_list({"1333": "022B", "9999": "01"})
 
@@ -186,6 +180,11 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertIn(1352, query_list)
         self.assertEqual(query_list.count(1333), 1)
         self.assertGreater(len(query_list), 2)
+
+    def test_value_query_list_uses_profile_base_ids(self):
+        query_list = _value_query_list({"1333": "022B", "9999": "01"}, base_ids=(1194, 1333))
+
+        self.assertEqual(query_list, [1194, 1333, 9999])
 
     def test_wpm_read_ranges_match_frontend_query_chain(self):
         self.assertEqual(
@@ -375,10 +374,20 @@ class ProfileParsingTests(unittest.TestCase):
         self.assertEqual(status["swing"], "off")
         self.assertEqual(status["room"], 25)
         self.assertEqual(status["outdoor"], 25)
+        self.assertFalse(status["bioclean"])
         self.assertFalse(status["display"])
         self.assertFalse(status["frost_protection"])
         self.assertEqual(status["unit"], "C")
         self.assertEqual(status["_payload"][0], 0xC0)
+
+    def test_climate_c0_status_parses_bioclean_flag(self):
+        data = bytearray.fromhex(CLIMATE_C0_RX)
+        data[10 + 9] |= 0x20
+
+        status = ClimateDeviceProfile().parse_c0_status(data.hex())
+
+        self.assertIsNotNone(status)
+        self.assertTrue(status["bioclean"])
 
     def test_climate_c0_status_rejects_non_c0_frame(self):
         self.assertIsNone(ClimateDeviceProfile().parse_c0_status("63100450000108aa"))
@@ -411,6 +420,28 @@ class ProfileParsingTests(unittest.TestCase):
                 "sleep": True,
                 "display": True,
                 "unit": "C",
+            },
+        )
+
+    def test_climate_profile_builds_value_write(self):
+        values = ClimateDeviceProfile().build_value_write(
+            {
+                "power": True,
+                "setpoint": 21.5,
+                "mode": "heat",
+                "fan": "medium",
+                "swing": "vertical",
+            }
+        )
+
+        self.assertEqual(
+            values,
+            {
+                "1194": "01",
+                "1190": "2B",
+                "1192": "06",
+                "1191": "04",
+                "1193": "01",
             },
         )
 
@@ -709,6 +740,131 @@ class ProfileParsingTests(unittest.TestCase):
             {"4110": "01", "1352": "002D"},
         )
 
+    def test_wpm_profile_builds_local_mqtt_control_values(self):
+        profile = WpmDeviceProfile()
+
+        self.assertEqual(
+            profile.build_value_write(
+                {
+                    "wpm_dhw_target_temperature": 45.5,
+                    "wpm_temperature_adjustment": -2.5,
+                    "wpm_fixed_temperature": 35.0,
+                    "wpm_heating_water_target_temperature": 40.0,
+                    "wpm_absence_mode": True,
+                    "wpm_party_mode": False,
+                    "wpm_heating_circuit_mode": True,
+                    "wpm_dhw_heating": True,
+                    "wpm_dhw_mode": "solar_pv_only",
+                    "wpm_main_mode": "standby",
+                    "wpm_time_mode": "deactivation",
+                    "wpm_user_profile": "profile_c",
+                }
+            ),
+            {
+                "1079": "02",
+                "1082": "01C7",
+                "1893": "01",
+                "1894": "00",
+                "1936": "02",
+                "1946": "FFE7",
+                "1951": "03",
+                "1972": "01",
+                "1974": "015E",
+                "2149": "01",
+                "5085": "0190",
+                "5693": "01",
+            },
+        )
+
+    def test_wpm_profile_parses_wkf_426_local_mqtt_values(self):
+        status = WpmDeviceProfile().parse_values_status(
+            {
+                "1082": "01C2",
+                "1079": "02",
+                "1893": "01",
+                "1894": "00",
+                "1936": "02",
+                "1951": "03",
+                "1946": "FFE7",
+                "1972": "01",
+                "1974": "015E",
+                "2149": "01",
+                "5001": "0A",
+                "5032": "0082",
+                "5034": "00FF",
+                "5039": "0212",
+                "5055": "00C8",
+                "5085": "0190",
+                "5693": "01",
+            }
+        )
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 3)
+        self.assertEqual(status["wpm_unit_on"], 10)
+        self.assertEqual(status["wpm_absence_mode"], 1)
+        self.assertEqual(status["wpm_party_mode"], 0)
+        self.assertEqual(status["wpm_heating_circuit_mode"], 1)
+        self.assertEqual(status["wpm_dhw_heating"], 1)
+        self.assertEqual(status["wpm_dhw_mode"], "solar_pv_only")
+        self.assertEqual(status["wpm_main_mode"], "standby")
+        self.assertEqual(status["wpm_time_mode"], "deactivation")
+        self.assertEqual(status["wpm_user_profile"], "profile_c")
+        self.assertEqual(status["wpm_outdoor_temperature"], 13.0)
+        self.assertEqual(status["wpm_mixed_temperature"], 20.0)
+        self.assertEqual(status["wpm_water_temperature"], 53.0)
+        self.assertEqual(status["wpm_dhw_target_temperature"], 45.0)
+        self.assertEqual(status["wpm_temperature_adjustment"], -2.5)
+        self.assertEqual(status["wpm_fixed_temperature"], 35.0)
+        self.assertEqual(status["wpm_heating_water_target_temperature"], 40.0)
+        self.assertEqual(status["wpm_target_temperature"], 45.0)
+        self.assertEqual(status["wpm_setpoint_ch"], 45.0)
+        self.assertEqual(status["wpm_setpoint_hp"], 25.5)
+        self.assertNotIn("wpm_dhw_hysteresis_bottom_candidate", status)
+        self.assertNotIn("wpm_dhw_hysteresis_top_candidate", status)
+
+    def test_value_query_list_includes_wkf_426_wpm_values(self):
+        query = WpmDeviceProfile().value_query_ids()
+
+        for value_id in (
+            1082,
+            1079,
+            1893,
+            1894,
+            1936,
+            1946,
+            1951,
+            1972,
+            1974,
+            2149,
+            5001,
+            5032,
+            5033,
+            5034,
+            5039,
+            5055,
+            5085,
+            5693,
+        ):
+            with self.subTest(value_id=value_id):
+                self.assertIn(value_id, query)
+        for value_id in (1334, 1402):
+            with self.subTest(value_id=value_id):
+                self.assertNotIn(value_id, query)
+
+    def test_wsp_profile_uses_wsp_main_mode_candidate(self):
+        profile = WspDeviceProfile()
+        status = profile.parse_values_status({"1088": "04", "1951": "03"})
+
+        self.assertEqual(status["wpm_heat_cool_mode"], 4)
+        self.assertIn(1088, profile.value_query_ids())
+        self.assertNotIn(1951, profile.value_query_ids())
+
+    def test_auto_profile_uses_wsp_query_ids_for_wsp_names(self):
+        profile = get_parser_profile("WSP 80")
+
+        self.assertIn(1088, profile.value_query_ids())
+        self.assertNotIn(1951, profile.value_query_ids())
+
     def test_kwt_profile_parses_readonly_climate_values(self):
         values = {
             "1194": "01",
@@ -843,6 +999,7 @@ class ProfileParsingTests(unittest.TestCase):
             for key, _name, _min, _max, _step, _unit in profile.number_descriptions
         }
         switch_keys = {
+            "beep",
             "power",
             "eco",
             "frost_protection",
@@ -851,11 +1008,21 @@ class ProfileParsingTests(unittest.TestCase):
             "bioclean",
             "wpm_heat_cool_mode",
             "wpm_manual_defrost",
+            "wpm_absence_mode",
+            "wpm_party_mode",
+            "wpm_heating_circuit_mode",
+            "wpm_dhw_heating",
+        }
+        select_keys = {
+            key
+            for profile in profiles
+            for key, _name, _options in profile.select_descriptions
         }
 
         self.assertLessEqual(sensor_keys, set(translations["sensor"]))
         self.assertLessEqual(number_keys, set(translations["number"]))
         self.assertLessEqual(switch_keys, set(translations["switch"]))
+        self.assertLessEqual(select_keys, set(translations["select"]))
         self.assertIn("dhw_vacation_end_date", translations["date"])
         self.assertEqual(
             set(DHW_MODE_VALUE_IDS),
@@ -882,6 +1049,33 @@ class ProfileParsingTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(leaf_paths(translation), expected_paths)
+
+    def test_config_flow_static_option_labels_use_translations(self):
+        source = (COMPONENT_PATH / "config_flow.py").read_text(encoding="utf-8")
+        forbidden = (
+            "Auto-detect",
+            "Air conditioner / climate",
+            "Domestic hot water",
+            "Diagnostics only",
+            "Automatic probe",
+            "Redirected WiFi stick / local portal broker",
+            "Direct device MQTT / SmartControl bridge",
+            "Use new credentials",
+            "Other / Unknown",
+        )
+
+        for label in forbidden:
+            with self.subTest(label=label):
+                self.assertNotIn(label, source)
+
+    def test_config_flow_selector_options_are_plain_values(self):
+        source = (COMPONENT_PATH / "config_flow.py").read_text(encoding="utf-8")
+        self.assertNotIn("dict(DEVICE_KIND_OPTIONS)", source)
+
+    def test_options_updates_reload_config_entry(self):
+        source = (COMPONENT_PATH / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("entry.add_update_listener", source)
+        self.assertIn("async_reload(entry.entry_id)", source)
 
 
 if __name__ == "__main__":

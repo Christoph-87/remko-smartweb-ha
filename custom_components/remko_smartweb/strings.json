@@ -33,6 +33,8 @@
     },
     "error": {
       "cannot_connect": "Cannot connect. Check credentials and device name.",
+      "local_mqtt_auth_failed": "Local MQTT login or ACL check failed. Check username, password, listener settings and permissions.",
+      "local_mqtt_tcp_failed": "Cannot reach the local MQTT host and port from Home Assistant.",
       "no_devices": "No new devices found for this account."
     }
   },
@@ -41,7 +43,6 @@
       "init": {
         "title": "REMKO SmartWeb Options",
         "data": {
-          "scan_interval": "Polling interval (seconds)",
           "device_kind": "Device type"
         }
       },
@@ -53,6 +54,71 @@
           "max_temp": "Max temperature (override)",
           "beep": "Beep on command (unit confirms each command with a beep)"
         }
+      },
+      "local_broker": {
+        "title": "Local connection",
+        "description": "Choose how this device should connect. Suggested stick IPs: {candidate_list}. Suggestions already used by another REMKO entry are hidden. You can always enter or correct the stick IP manually.",
+        "data": {
+          "local_mqtt_mode": "Local MQTT mode",
+          "local_mqtt_stick_host": "Stick IP candidate (for validation)",
+          "local_mqtt_cloud_bridge": "Bridge REMKO app commands through Home Assistant"
+        },
+        "data_description": {
+          "local_mqtt_mode": "Cloud uses REMKO SmartWeb only. Direct device MQTT connects to the stick IP. Redirected WiFi-stick setups use the shared local broker configured in the next step.",
+          "local_mqtt_stick_host": "Only used as a hint to detect mismatches. It is not used as the broker host.",
+          "local_mqtt_cloud_bridge": "Experimental. Use only for redirected WiFi-stick setups where the REMKO app loses control while the stick is connected locally."
+        }
+      },
+      "local_device": {
+        "title": "Direct device MQTT",
+        "description": "Use this only for sticks or SmartControl devices that provide MQTT directly on their own IP. If username and password are left empty, the integration tries to read the local smt.min.js file and probe with the default user 0000000000000000.",
+        "data": {
+          "local_mqtt_host": "Stick MQTT host",
+          "local_mqtt_port": "Stick MQTT port",
+          "local_mqtt_user": "Stick MQTT username",
+          "local_mqtt_password": "Stick MQTT password"
+        }
+      },
+      "global_broker": {
+        "title": "Shared local MQTT broker",
+        "description": "These broker settings are shared by all redirected REMKO WiFi sticks. Device-specific options only store the selected mode and stick IP hint.",
+        "data": {
+          "local_mqtt_host": "Local broker host",
+          "local_mqtt_port": "Local broker port",
+          "local_mqtt_user": "Local broker username",
+          "local_mqtt_password": "Local broker password"
+        }
+      }
+    }
+  },
+  "selector": {
+    "account": {
+      "options": {
+        "new": "Use new credentials"
+      }
+    },
+    "device_kind": {
+      "options": {
+        "auto": "Auto-detect",
+        "climate": "Air conditioner / climate",
+        "dhw": "Domestic hot water",
+        "diagnostics": "Diagnostics only"
+      }
+    },
+    "local_mqtt_mode": {
+      "options": {
+        "cloud": "REMKO cloud only",
+        "portal_broker": "Redirected WiFi stick / local portal broker",
+        "device_mqtt": "Direct device MQTT / SmartControl bridge"
+      }
+    },
+    "model": {
+      "options": {
+        "mxw_204": "MXW 204",
+        "mxw_264": "MXW 264",
+        "mxw_354": "MXW 354",
+        "mxw_524": "MXW 524",
+        "other": "Other / Unknown"
       }
     }
   },
@@ -101,6 +167,30 @@
       },
       "wpm_target_temperature": {
         "name": "WPM target temperature"
+      },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM DHW target temperature"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM temperature adjustment"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM fixed temperature"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM heating water target temperature"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
       },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
@@ -177,6 +267,12 @@
       },
       "dhw_ambient_temperature": {
         "name": "DHW ambient temperature"
+      },
+      "dhw_hysteresis_bottom": {
+        "name": "DHW heat pump startup hysteresis bottom"
+      },
+      "dhw_hysteresis_top": {
+        "name": "DHW heat pump startup hysteresis top"
       },
       "dhw_mode": {
         "name": "DHW mode",
@@ -255,8 +351,41 @@
       "wpm_manual_defrost": {
         "name": "WPM manual defrost"
       },
+      "wpm_outdoor_temperature": {
+        "name": "WPM outdoor temperature"
+      },
+      "wpm_mixed_temperature": {
+        "name": "WPM mixed temperature"
+      },
+      "wpm_water_temperature": {
+        "name": "WPM water temperature"
+      },
       "wpm_target_temperature": {
         "name": "WPM target temperature"
+      },
+      "wpm_dhw_target_temperature": {
+        "name": "WPM DHW target temperature"
+      },
+      "wpm_temperature_adjustment": {
+        "name": "WPM temperature adjustment"
+      },
+      "wpm_fixed_temperature": {
+        "name": "WPM fixed temperature"
+      },
+      "wpm_heating_water_target_temperature": {
+        "name": "WPM heating water target temperature"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
       },
       "wpm_setpoint_ch": {
         "name": "WPM CH setpoint"
@@ -267,14 +396,35 @@
       "wpm_unit_on": {
         "name": "WPM unit on"
       },
+      "wpm_absence_mode": {
+        "name": "WPM absence mode"
+      },
+      "wpm_party_mode": {
+        "name": "WPM party mode"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM heating circuit mode"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM one-time DHW heating"
+      },
       "diagnostics": {
         "name": "Diagnostics"
+      },
+      "communication_status": {
+        "name": "Communication status"
+      },
+      "local_portal_status": {
+        "name": "Local MQTT status"
       },
       "last_sync": {
         "name": "Last Synchronisation"
       }
     },
     "switch": {
+      "beep": {
+        "name": "Beep on command"
+      },
       "power": {
         "name": "Power"
       },
@@ -298,6 +448,44 @@
       },
       "wpm_manual_defrost": {
         "name": "WPM manual defrost"
+      },
+      "wpm_absence_mode": {
+        "name": "WPM absence mode"
+      },
+      "wpm_party_mode": {
+        "name": "WPM party mode"
+      },
+      "wpm_heating_circuit_mode": {
+        "name": "WPM heating circuit mode"
+      },
+      "wpm_dhw_heating": {
+        "name": "WPM one-time DHW heating"
+      },
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
+      }
+    },
+    "select": {
+      "wpm_dhw_mode": {
+        "name": "WPM DHW mode"
+      },
+      "wpm_main_mode": {
+        "name": "WPM main mode"
+      },
+      "wpm_time_mode": {
+        "name": "WPM time mode"
+      },
+      "wpm_user_profile": {
+        "name": "WPM user profile"
       }
     },
     "water_heater": {

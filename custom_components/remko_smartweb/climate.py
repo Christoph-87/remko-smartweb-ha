@@ -7,8 +7,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.event import async_call_later
 
+from ._account import UnsupportedPayload
+from ._pending import PendingStateMixin
 from .const import DOMAIN, CONF_MIN_TEMP, CONF_MAX_TEMP, CONF_MODEL, DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 HVAC_MAP = {
@@ -39,6 +40,18 @@ def _infer_min_max_temp(device_name: str) -> tuple[int, int]:
     return DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP
 
 
+def _client_uses_local_portal_broker(client) -> bool:
+    uses_local_portal_broker = getattr(client, "uses_local_portal_broker", False)
+    if callable(uses_local_portal_broker):
+        return bool(uses_local_portal_broker())
+    if uses_local_portal_broker:
+        return True
+    uses_local_mqtt = getattr(client, "uses_local_mqtt", False)
+    if callable(uses_local_mqtt):
+        return bool(uses_local_mqtt())
+    return bool(uses_local_mqtt)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
@@ -63,7 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities([RemkoSmartWebClimate(coordinator, client, device_name, min_temp, max_temp, profile)])
 
 
-class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
+class RemkoSmartWebClimate(PendingStateMixin, CoordinatorEntity, ClimateEntity):
     _attr_has_entity_name = True
     _attr_name = None
     _attr_translation_key = "climate"
@@ -94,6 +107,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator)
         self._client = client
         self._profile = profile
+        self._init_pending_state()
         self._attr_min_temp = min_temp
         self._attr_max_temp = max_temp
         if not getattr(profile, "supports_climate_presets", True):
@@ -121,9 +135,9 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        if self.coordinator.data.get("power") != "ON":
+        if self._display_value("power") != "ON":
             return HVACMode.OFF
-        mode = self.coordinator.data.get("mode")
+        mode = self._display_value("mode")
         return HVAC_MAP.get(mode, HVACMode.AUTO)
 
     @property
@@ -148,7 +162,7 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def target_temperature(self):
-        return self.coordinator.data.get("setpoint")
+        return self._display_value("setpoint")
 
     @property
     def current_temperature(self):
@@ -156,18 +170,18 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def fan_mode(self):
-        return self.coordinator.data.get("fan")
+        return self._display_value("fan")
 
     @property
     def swing_mode(self):
-        return self.coordinator.data.get("swing")
+        return self._display_value("swing")
 
     @property
     def preset_mode(self):
         if not getattr(self._profile, "supports_climate_presets", True):
             return None
         for key in ("eco", "turbo", "sleep", "bioclean", "frost_protection"):
-            if self.coordinator.data.get(key):
+            if self._display_value(key):
                 return key
         return "none"
 
@@ -185,8 +199,17 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         await self._async_set({"power": False})
 
     async def async_set_temperature(self, **kwargs):
+        overrides = {}
         if (temp := kwargs.get("temperature")) is not None:
-            await self._async_set({"setpoint": float(temp)})
+            overrides["setpoint"] = float(temp)
+        if (hvac_mode := kwargs.get("hvac_mode")) is not None:
+            if hvac_mode == HVACMode.OFF:
+                overrides["power"] = False
+            else:
+                overrides["power"] = True
+                overrides["mode"] = MODE_MAP.get(hvac_mode, "auto")
+        if overrides:
+            await self._async_set(overrides)
 
     async def async_set_fan_mode(self, fan_mode: str):
         if fan_mode in FAN_MODES:
@@ -217,23 +240,44 @@ class RemkoSmartWebClimate(CoordinatorEntity, ClimateEntity):
         value_write = self._profile.build_value_write(overrides)
         if getattr(self._profile, "supports_value_write", False) and not value_write:
             return
-        # HA calls can arrive quickly; we use a single read->write cycle per call.
-        # Optimistic UI update to avoid flicker (skip for setpoint changes).
-        if self.coordinator.data is not None and "setpoint" not in overrides:
-            data = dict(self.coordinator.data)
-            for k, v in overrides.items():
-                if k == "power":
-                    data["power"] = "ON" if v else "OFF"
-                else:
-                    data[k] = v
-            self.coordinator.data = data
-            self.async_write_ha_state()
-        if value_write:
-            await self.hass.async_add_executor_job(self._client.set_value_ids, value_write)
-        else:
-            await self.hass.async_add_executor_job(self._client.set_values, overrides)
-
-        async def _do_refresh(_now):
-            await self.coordinator.async_request_refresh()
-
-        async_call_later(self.hass, 2.0, _do_refresh)
+        use_value_write = (
+            bool(value_write)
+            and not _client_uses_local_portal_broker(self._client)
+            and getattr(self._profile, "protocol_name", "") != "default_ac_uart"
+        )
+        pending_values = {}
+        for key, value in overrides.items():
+            pending_values[key] = (
+                ("ON" if value else "OFF")
+                if key == "power"
+                else value
+            )
+        pending_generation = self._start_pending_state(pending_values)
+        try:
+            if use_value_write:
+                await self.hass.async_add_executor_job(
+                    self._client.set_value_ids,
+                    value_write,
+                )
+            else:
+                if (
+                    _client_uses_local_portal_broker(self._client)
+                    or getattr(self._profile, "protocol_name", "") == "default_ac_uart"
+                ):
+                    self._client.prime_status_cache(self.coordinator.data)
+                try:
+                    await self.hass.async_add_executor_job(
+                        self._client.set_values,
+                        overrides,
+                    )
+                except UnsupportedPayload:
+                    if not value_write:
+                        raise
+                    await self.hass.async_add_executor_job(
+                        self._client.set_value_ids,
+                        value_write,
+                    )
+        except Exception:
+            self._rollback_pending_state(pending_generation)
+            raise
+        self._schedule_readback_refresh()

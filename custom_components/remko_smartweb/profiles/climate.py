@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..const import DEVICE_KIND_CLIMATE
 from .base import SmartWebDeviceProfile
+from .value_mapping import ValueWriteSpec, build_value_write
 
 
 def _hex_to_bytes(hexstr: str):
@@ -57,6 +58,13 @@ def _first_reverse(mapping: dict[int, str]) -> dict[str, int]:
 MODE_VALUE_IDS = _first_reverse(MODE_BY_VALUE_ID)
 FAN_VALUE_IDS = _first_reverse(FAN_BY_VALUE_ID)
 SWING_VALUE_IDS = _first_reverse(SWING_BY_VALUE_ID)
+CLIMATE_VALUE_WRITE_SPECS = (
+    ValueWriteSpec("power", "1194", enum={True: 0x01, False: 0x02}),
+    ValueWriteSpec("setpoint", "1190", scale=2),
+    ValueWriteSpec("mode", "1192", enum=MODE_VALUE_IDS),
+    ValueWriteSpec("fan", "1191", enum=FAN_VALUE_IDS),
+    ValueWriteSpec("swing", "1193", enum=SWING_VALUE_IDS),
+)
 MXW_TIMER_VALUE_IDS = ("1195", "1196", "1197", "1198", "1210", "1211")
 MXW_TIMER_MODE_VALUES = {"on": 0x01, "off": 0x02}
 MXW_TIMER_MODE_BY_VALUE = {value: key for key, value in MXW_TIMER_MODE_VALUES.items()}
@@ -172,8 +180,37 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
     kind = DEVICE_KIND_CLIMATE
     supports_climate = True
     supports_climate_write = True
+    supports_value_write = True
     profile_name = "Generic AC"
     protocol_name = "default_ac_uart"
+    query_value_ids = (
+        1046,
+        1190,
+        1191,
+        1192,
+        1193,
+        1194,
+        1195,
+        1196,
+        1197,
+        1198,
+        1199,
+        1200,
+        1218,
+        1210,
+        1211,
+        1228,
+        1229,
+        1298,
+        1451,
+        3024,
+        5000,
+        5315,
+        5530,
+        5532,
+        5534,
+        5539,
+    )
     sensor_descriptions = (
         ("room", "Room Temperature", "temperature"),
         ("outdoor", "Outdoor Temperature", "temperature"),
@@ -199,6 +236,7 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         vertical = (payload[7] & 0x03) > 0
         horizontal = (payload[7] & 0x0C) > 0
         eco = ((payload[9] & 0x10) >> 4) > 0
+        bioclean = ((payload[9] & 0x20) >> 5) > 0
         turbo = ((payload[10] & 0x02) >> 1) > 0
         sleep = (payload[10] & 0x01) > 0
         display = ((payload[10] & 0x10) >> 4) > 0
@@ -245,6 +283,7 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
             "fan": fan,
             "swing": swing,
             "eco": eco,
+            "bioclean": bioclean,
             "turbo": turbo,
             "sleep": sleep,
             "display": display,
@@ -306,6 +345,9 @@ class ClimateDeviceProfile(SmartWebDeviceProfile):
         if not any(value is not None for key, value in status.items() if key != "unit"):
             return None
         return status
+
+    def build_value_write(self, overrides: dict) -> dict[str, str] | None:
+        return build_value_write(overrides, CLIMATE_VALUE_WRITE_SPECS)
 
 
 class ReadOnlyAcUartClimateDeviceProfile(ClimateDeviceProfile):
