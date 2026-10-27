@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## v0.5.0-beta.19
 - Keep the generic AC packet checksum within one byte when the packet sum is already divisible by 256, preventing malformed climate commands such as the affected power-off frame.
 
 ## v0.5.0-beta.18
