@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.25
+- Keep one MQTT client per configured device across transient disconnects and connection timeouts instead of replacing the session while Paho's old network loop may still reconnect. This prevents orphaned loop threads and an increasing number of REMKO cloud connections.
+- Report MQTT connectivity only after a successful CONNACK and shut sessions down deterministically on integration unload.
+
 ## v0.4.24
 - Extend WKF/WPM MQTT diagnostics with narrowly scoped `V04P26` response subscriptions (`V04P26/<device-id>/...` and `V04P26/SMT<device-id>/...`) for devices that may still use the firmware 4.26 topic family
 - Keep the additional subscriptions device-specific; the integration still does not subscribe to broad cloud topics such as `V04P26/#`
