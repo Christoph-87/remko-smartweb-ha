@@ -1,8 +1,8 @@
 # REMKO SmartWeb — Home Assistant Integration
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Status](https://img.shields.io/badge/status-beta-yellow)
-![Version](https://img.shields.io/badge/version-v0.5.0--beta.20-blue)
+![Status](https://img.shields.io/badge/status-stable-green)
+![Version](https://img.shields.io/badge/version-v0.5.0-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device from Home Assistant — temperatures, operating modes, switches, and more. Works via the REMKO SmartWeb cloud (internet connection required).
 

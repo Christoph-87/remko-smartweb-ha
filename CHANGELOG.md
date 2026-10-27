@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0
+- Promote the local MQTT transport framework from the beta branch to the stable release: redirected portal-broker mode, direct-device MQTT mode, shared broker settings, per-device stick validation, connection probing, and Home Assistant diagnostics. Individual WPM controls and the optional cloud-command bridge remain explicitly experimental.
+- Apply incoming MQTT value updates immediately and keep requested entity states visible only while device confirmation is pending; confirmed readback wins, while write errors and timeouts restore the last confirmed state.
+- Add experimental local WPM/WKF telemetry and controls, including operating-mode selects that are exposed only after their registers have been observed.
+- Include the beta.19 packet-checksum correction and beta.20 MQTT-session lifecycle fix so malformed edge-case climate commands and reconnect-driven client growth are not carried into the stable release.
+
 ## v0.5.0-beta.20
 - Keep one MQTT client per configured device across transient disconnects and connection timeouts instead of replacing the session while Paho's old network loop may still reconnect. This prevents orphaned loop threads and an increasing number of broker connections.
 - Report MQTT connectivity only after a successful CONNACK and shut sessions down deterministically on integration unload.
