@@ -712,6 +712,41 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(snapshots, [("mqtt_push_values", values)])
         self.assertEqual(client._last_status_source, "mqtt_push_values")
 
+    def test_register_mapping_capture_records_forward_and_reverse_changes(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client._record_register_mapping_update({"1082": "01C2", "5039": "0212"})
+
+        client.start_register_mapping_capture()
+        client._record_register_mapping_update({"1082": "01C3", "5039": "0212"})
+        client._record_register_mapping_update({"1082": "01C2", "5039": "0212"})
+
+        capture = client.register_mapping_capture()
+        self.assertEqual(capture["status"], "capturing")
+        self.assertEqual(capture["baseline_values_count"], 2)
+        self.assertEqual(capture["observations_count"], 2)
+        self.assertEqual(capture["changed_ids"], ["1082"])
+        self.assertEqual(
+            capture["observations"][0]["changes"],
+            [{"id": "1082", "old": "01C2", "new": "01C3"}],
+        )
+        self.assertEqual(
+            capture["observations"][1]["changes"],
+            [{"id": "1082", "old": "01C3", "new": "01C2"}],
+        )
+
+    def test_register_mapping_capture_waits_for_first_baseline(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+
+        client.start_register_mapping_capture()
+        self.assertEqual(client.register_mapping_capture()["status"], "waiting_for_baseline")
+
+        client._record_register_mapping_update({"5001": "01"})
+
+        capture = client.register_mapping_capture()
+        self.assertEqual(capture["status"], "capturing")
+        self.assertEqual(capture["baseline_values_count"], 1)
+        self.assertEqual(capture["observations_count"], 0)
+
     def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()

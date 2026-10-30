@@ -65,6 +65,11 @@
         "default": "mdi:thermometer"
       }
     },
+    "button": {
+      "start_register_mapping_capture": {
+        "default": "mdi:record-rec"
+      }
+    },
     "sensor": {
       "room": {
         "default": "mdi:thermometer"
@@ -248,6 +253,9 @@
       },
       "communication_status": {
         "default": "mdi:access-point-network"
+      },
+      "register_mapping_capture": {
+        "default": "mdi:database-search"
       }
     },
     "switch": {

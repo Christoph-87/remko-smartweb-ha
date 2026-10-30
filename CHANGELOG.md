@@ -4,6 +4,7 @@
 - Treat cached WPM status as a debug-level transient fallback instead of a communication warning when the integration still has valid MQTT data.
 - Keep WPM switches and number controls unavailable, and reject service writes, until the corresponding value ID has been observed in device readback. This prevents speculative one-time DHW or temperature writes on firmware variants that do not expose those registers.
 - Log value-ID differences between incoming MQTT push datasets at debug level, allowing unknown firmware-specific registers to be mapped through controlled portal changes without writing unknown IDs.
+- Add a read-only WPM register mapping assistant: a diagnostic button starts a bounded in-memory capture, while a diagnostic sensor exposes changed value IDs with their previous and new values.
 
 ## v0.5.0
 - Promote the local MQTT transport framework from the beta branch to the stable release: redirected portal-broker mode, direct-device MQTT mode, shared broker settings, per-device stick validation, connection probing, and Home Assistant diagnostics. Individual WPM controls and the optional cloud-command bridge remain explicitly experimental.

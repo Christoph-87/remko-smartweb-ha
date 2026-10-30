@@ -8,6 +8,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -129,6 +130,14 @@ class RemkoSmartWebClient:
         self._last_status = None
         self._last_status_source = None
         self._last_mapping_values = None
+        self._last_mqtt_values: dict[str, object] | None = None
+        self._register_mapping_lock = threading.RLock()
+        self._register_mapping_capture = {
+            "status": "idle",
+            "started_at": None,
+            "baseline_values_count": 0,
+            "observations": [],
+        }
         self._last_device_list_error = None
         self._last_device_list_empty = False
         self._last_support_snapshot_signature = None
@@ -1131,6 +1140,7 @@ class RemkoSmartWebClient:
         # registers can be mapped through controlled changes in the official
         # portal without guessing their semantics or writing unknown IDs.
         self._log_mapping_snapshot("mqtt_push_values", values)
+        self._record_register_mapping_update(values)
         parsed_values = self._parse_values_status_update(
             values,
             source="mqtt_push_values",
@@ -1145,6 +1155,92 @@ class RemkoSmartWebClient:
         callback = self._mqtt_values_callback
         if callback is not None:
             callback(parsed_values, topic)
+
+    def start_register_mapping_capture(self) -> None:
+        """Start a bounded, read-only capture of MQTT register changes."""
+        lock = self._register_mapping_state_lock()
+        with lock:
+            baseline = dict(getattr(self, "_last_mqtt_values", None) or {})
+            self._register_mapping_capture = {
+                "status": "capturing" if baseline else "waiting_for_baseline",
+                "started_at": datetime.now(UTC).isoformat(),
+                "baseline_values_count": len(baseline),
+                "observations": [],
+            }
+
+    def register_mapping_capture(self) -> dict:
+        """Return a copy of the current register mapping capture."""
+        lock = self._register_mapping_state_lock()
+        with lock:
+            capture = self._register_mapping_capture
+            observations = [
+                {**observation, "changes": [dict(change) for change in observation["changes"]]}
+                for observation in capture["observations"]
+            ]
+            return {
+                **capture,
+                "observations": observations,
+                "observations_count": len(observations),
+                "changed_ids": sorted(
+                    {
+                        change["id"]
+                        for observation in observations
+                        for change in observation["changes"]
+                    },
+                    key=lambda value_id: int(value_id) if value_id.isdigit() else value_id,
+                ),
+            }
+
+    def _record_register_mapping_update(self, values: dict) -> None:
+        """Record value transitions while the mapping assistant is active."""
+        incoming = {str(key): value for key, value in values.items()}
+        lock = self._register_mapping_state_lock()
+        with lock:
+            previous = dict(getattr(self, "_last_mqtt_values", None) or {})
+            current = dict(previous)
+            current.update(incoming)
+            self._last_mqtt_values = current
+            capture = self._register_mapping_capture
+            if capture["status"] == "idle":
+                return
+            if capture["status"] == "waiting_for_baseline":
+                capture["status"] = "capturing"
+                capture["baseline_values_count"] = len(current)
+                return
+
+            changes = []
+            for value_id in sorted(
+                incoming,
+                key=lambda item: int(item) if item.isdigit() else item,
+            ):
+                old_value = previous.get(value_id)
+                new_value = current.get(value_id)
+                if old_value != new_value:
+                    changes.append({"id": value_id, "old": old_value, "new": new_value})
+            if not changes:
+                return
+            capture["observations"].append(
+                {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "changes": changes[:50],
+                }
+            )
+            capture["observations"] = capture["observations"][-20:]
+
+    def _register_mapping_state_lock(self):
+        """Initialize mapping state for normal and lightweight test clients."""
+        lock = getattr(self, "_register_mapping_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._register_mapping_lock = lock
+        if not hasattr(self, "_register_mapping_capture"):
+            self._register_mapping_capture = {
+                "status": "idle",
+                "started_at": None,
+                "baseline_values_count": 0,
+                "observations": [],
+            }
+        return lock
 
     def _mqtt_write_values(self, values: dict[str, str], timeout=10, write_id: str | None = None) -> dict | None:
         """Write Smart-Web value IDs via CLIENT2HOST and wait for a values update."""
