@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.1
 - Treat cached WPM status as a debug-level transient fallback instead of a communication warning when the integration still has valid MQTT data.
 - Keep WPM switches and number controls unavailable, and reject service writes, until the corresponding value ID has been observed in device readback. This prevents speculative one-time DHW or temperature writes on firmware variants that do not expose those registers.
 - Log value-ID differences between incoming MQTT push datasets at debug level, allowing unknown firmware-specific registers to be mapped through controlled portal changes without writing unknown IDs.
