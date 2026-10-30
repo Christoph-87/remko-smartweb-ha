@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.2
+- Detect repeated missing device readback only when the redirected local MQTT broker remains connected and fresh WiFi-stick heartbeats are still arriving.
+- Close and recreate integration-owned MQTT and cloud-bridge sessions with a 15-minute cooldown, then accept recovery only after fresh parseable device data arrives.
+- Expose recovery counters in diagnostics and create a Home Assistant repair issue when integration-local recovery is exhausted; external brokers and container services are never restarted automatically.
+- Keep recovery read-only: it never sends climate power, mode, or setpoint commands.
+
 ## v0.5.1
 - Treat cached WPM status as a debug-level transient fallback instead of a communication warning when the integration still has valid MQTT data.
 - Keep WPM switches and number controls unavailable, and reject service writes, until the corresponding value ID has been observed in device readback. This prevents speculative one-time DHW or temperature writes on firmware variants that do not expose those registers.
