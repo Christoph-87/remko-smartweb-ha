@@ -1419,7 +1419,16 @@ class RemkoSmartWebClient:
             ),
             "last_error": error,
         }
-        _LOGGER.warning("REMKO SmartWeb support snapshot: %s", _debug_value(snapshot))
+        # A cached status is an expected transient fallback when a device keeps
+        # sending valid MQTT push values but does not answer an individual ESP
+        # request. Keep the details available for diagnostics without raising a
+        # warning that suggests communication has failed.
+        log = (
+            _LOGGER.debug
+            if reason == "status_unparseable_using_last_status"
+            else _LOGGER.warning
+        )
+        log("REMKO SmartWeb support snapshot: %s", _debug_value(snapshot))
 
     def _log_mapping_snapshot(self, stage: str, values: dict) -> None:
         if not _LOGGER.isEnabledFor(logging.DEBUG):

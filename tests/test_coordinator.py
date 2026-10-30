@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 from collections import deque
 from datetime import date, timedelta
 import sys
@@ -2019,6 +2020,33 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(communication_diagnostics["last_values_count"], 1)
         self.assertEqual(communication_diagnostics["last_value_ids"], ["5039"])
 
+    def test_cached_status_support_snapshot_is_debug_not_warning(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.device_name = "WKF 120"
+        client.profile = WpmDeviceProfile()
+        client.topic = "V04P26/SMTABCDEF123456"
+        client.smt_user = 12345
+        client._mqtt = None
+        client._last_support_snapshot_signature = None
+        client.diagnostic_metadata = lambda: {
+            "Detected Profile": "WPM Heat Pump",
+            "Profile Class": "WpmDeviceProfile",
+            "Profile Protocol": "wpm_modbus",
+        }
+
+        with self.assertLogs(
+            "custom_components.remko_smartweb.client",
+            level="DEBUG",
+        ) as captured:
+            client._log_support_snapshot_once(
+                "status_unparseable_using_last_status",
+                stage="read_status",
+                values={},
+                error="Unable to parse status",
+            )
+
+        self.assertEqual(captured.records[0].levelno, logging.DEBUG)
+
     def test_communication_diagnostics_lists_observed_value_ids_numerically(self):
         client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
         client.topic = "V04P26/SMTABCDEF123456"
@@ -2798,6 +2826,30 @@ class CoordinatorTests(unittest.TestCase):
                 self.assertTrue(entity.wrote_state)
                 self.assertEqual(len(hass.scheduled_callbacks), 2)
 
+    def test_wpm_dhw_heating_switch_is_unavailable_without_readback(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_dhw_target_temperature": 45.0},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        entity = RemkoSmartWebSwitch(
+            coordinator,
+            client,
+            "WKF 120",
+            "wpm_dhw_heating",
+            "WPM One-Time DHW Heating",
+            WpmDeviceProfile(),
+        )
+
+        asyncio.run(entity.async_turn_on())
+
+        self.assertFalse(entity.available)
+        self.assertIsNone(client.values)
+        self.assertFalse(hasattr(entity, "wrote_state"))
+        self.assertEqual(hass.scheduled_callbacks, [])
+
     def test_lte_power_switch_entity_writes_main_value_id(self):
         hass = HomeAssistant()
         coordinator = types.SimpleNamespace(
@@ -2886,6 +2938,35 @@ class CoordinatorTests(unittest.TestCase):
                 self.assertEqual(entity.native_value, updated)
                 self.assertTrue(entity.wrote_state)
                 self.assertEqual(len(hass.scheduled_callbacks), 2)
+
+    def test_wpm_number_is_unavailable_without_readback(self):
+        hass = HomeAssistant()
+        coordinator = types.SimpleNamespace(
+            hass=hass,
+            data={"wpm_water_temperature": 43.0},
+            async_request_refresh=lambda: None,
+        )
+        client = ValueCaptureClient()
+        profile = WpmDeviceProfile()
+        description = next(
+            item
+            for item in profile.number_descriptions
+            if item[0] == "wpm_dhw_target_temperature"
+        )
+        entity = RemkoSmartWebNumber(
+            coordinator,
+            client,
+            "WKF 120",
+            profile,
+            description,
+        )
+
+        asyncio.run(entity.async_set_native_value(45.0))
+
+        self.assertFalse(entity.available)
+        self.assertIsNone(client.values)
+        self.assertFalse(hasattr(entity, "wrote_state"))
+        self.assertEqual(hass.scheduled_callbacks, [])
 
     def test_wpm_select_entities_write_mode_value_ids(self):
         cases = (

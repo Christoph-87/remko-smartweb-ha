@@ -112,6 +112,18 @@ class RemkoSmartWebSwitch(PendingStateMixin, CoordinatorEntity, SwitchEntity):
             return self._display_value("power") == "ON"
         return bool(self._display_value(self._key))
 
+    @property
+    def available(self) -> bool:
+        """Expose value controls only after the device confirmed the value ID."""
+        if self._key == CONF_BEEP:
+            return bool(getattr(super(), "available", True))
+        coordinator_data = self.coordinator.data
+        return bool(
+            getattr(super(), "available", True)
+            and isinstance(coordinator_data, dict)
+            and self._key in coordinator_data
+        )
+
     async def async_turn_on(self, **kwargs):
         await self._async_set(True)
 
@@ -132,6 +144,8 @@ class RemkoSmartWebSwitch(PendingStateMixin, CoordinatorEntity, SwitchEntity):
                 if callable(update_entry):
                     update_entry(self._entry, options=options)
             self.async_write_ha_state()
+            return
+        if not self.available:
             return
         if (
             not getattr(self._profile, "supports_value_write", False)
