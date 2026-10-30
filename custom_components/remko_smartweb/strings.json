@@ -199,6 +199,11 @@
         "name": "WPM HP setpoint"
       }
     },
+    "button": {
+      "start_register_mapping_capture": {
+        "name": "Start register mapping capture"
+      }
+    },
     "sensor": {
       "room": {
         "name": "Room temperature"
@@ -419,6 +424,9 @@
       },
       "last_sync": {
         "name": "Last Synchronisation"
+      },
+      "register_mapping_capture": {
+        "name": "Register mapping capture"
       }
     },
     "switch": {

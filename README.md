@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-v0.5.0-blue)
+![Version](https://img.shields.io/badge/version-v0.5.1-blue)
 
 Control and monitor your REMKO heat pump, air conditioner, or hot water device
 from Home Assistant — temperatures, operating modes, switches, and more. The
@@ -103,6 +103,7 @@ is optional and experimental; configure one device at a time by following
 | Device list is empty or cannot be parsed | Update the integration and restart Home Assistant |
 | A command reverts after a few seconds | The device did not confirm it within 30 seconds; collect a debug log |
 | Local MQTT does not work | Follow [Local MQTT setup](docs/local_connection_modes.md) and verify broker traffic before testing writes |
+| Unknown WKF/WPM register IDs | Use the read-only [WPM register mapping assistant](docs/wpm_register_mapping.md) |
 | Commands feel slow | A few seconds of delay is normal on the REMKO Cloud path |
 | A control doesn't work | Enable debug logging (see below), try the same action in the REMKO app, then open an issue |
 

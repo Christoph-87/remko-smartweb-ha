@@ -44,6 +44,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for (key, name, kind) in profile.sensors_for_data(coordinator.data)
     ]
     entities.append(RemkoSmartWebDiagnosticSensor(coordinator, client, device_name))
+    if getattr(profile, "protocol_name", None) == "wpm_modbus":
+        entities.append(RemkoSmartWebRegisterMappingSensor(coordinator, client, device_name))
     entities.append(RemkoSmartWebCommunicationStatusSensor(coordinator, client, device_name))
     if _client_uses_local_mqtt(client):
         entities.append(RemkoSmartWebLocalPortalStatusSensor(coordinator, client, device_name))
@@ -171,6 +173,36 @@ class RemkoSmartWebDiagnosticSensor(CoordinatorEntity, SensorEntity):
             key.lower().replace(" ", "_"): value
             for key, value in self._client.diagnostic_metadata().items()
             if value not in (None, "")
+        }
+
+
+class RemkoSmartWebRegisterMappingSensor(CoordinatorEntity, SensorEntity):
+    """Expose the read-only WPM register mapping assistant result."""
+
+    def __init__(self, coordinator, client, device_name: str):
+        super().__init__(coordinator)
+        self._client = client
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "register_mapping_capture"
+        self._attr_unique_id = f"{device_name.lower().replace(' ', '_')}_register_mapping_capture"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_name)},
+            name=device_name,
+            manufacturer="REMKO",
+            model="SmartWeb",
+        )
+
+    @property
+    def native_value(self):
+        return self._client.register_mapping_capture()["status"]
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            key: value
+            for key, value in self._client.register_mapping_capture().items()
+            if key != "status" and value not in (None, "")
         }
 
 

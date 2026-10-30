@@ -53,7 +53,19 @@ class RemkoSmartWebNumber(PendingStateMixin, CoordinatorEntity, NumberEntity):
     def native_value(self):
         return self._display_value(self._key)
 
+    @property
+    def available(self) -> bool:
+        """Expose controls only after the device confirmed their value ID."""
+        coordinator_data = self.coordinator.data
+        return bool(
+            getattr(super(), "available", True)
+            and isinstance(coordinator_data, dict)
+            and self._key in coordinator_data
+        )
+
     async def async_set_native_value(self, value: float) -> None:
+        if not self.available:
+            return
         value_write = self._profile.build_value_write({self._key: value})
         if not value_write:
             return

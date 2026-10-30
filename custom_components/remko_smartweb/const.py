@@ -40,4 +40,4 @@ LOCAL_MQTT_MODE_DEVICE_MQTT = "device_mqtt"
 DEFAULT_LOCAL_MQTT_PORT = 1883
 DEFAULT_DEVICE_MQTT_USER = "0000000000000000"
 
-PLATFORMS = ["sensor", "climate", "water_heater", "switch", "number", "date", "select"]
+PLATFORMS = ["sensor", "climate", "water_heater", "switch", "number", "date", "select", "button"]

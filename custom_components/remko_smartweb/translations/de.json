@@ -199,6 +199,11 @@
         "name": "WPM Solltemperatur WP"
       }
     },
+    "button": {
+      "start_register_mapping_capture": {
+        "name": "Register-Zuordnung starten"
+      }
+    },
     "sensor": {
       "room": {
         "name": "Raumtemperatur"
@@ -419,6 +424,9 @@
       },
       "last_sync": {
         "name": "Letzte Synchronisation"
+      },
+      "register_mapping_capture": {
+        "name": "Register-Zuordnung"
       }
     },
     "switch": {
