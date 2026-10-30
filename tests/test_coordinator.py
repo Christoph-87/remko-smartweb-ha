@@ -36,6 +36,7 @@ ha_water_heater = types.ModuleType("homeassistant.components.water_heater")
 ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
 ha_helpers = types.ModuleType("homeassistant.helpers")
+ha_issue_registry = types.ModuleType("homeassistant.helpers.issue_registry")
 ha_selector = types.ModuleType("homeassistant.helpers.selector")
 ha_event = types.ModuleType("homeassistant.helpers.event")
 ha_entity = types.ModuleType("homeassistant.helpers.entity")
@@ -44,6 +45,15 @@ ha_storage = types.ModuleType("homeassistant.helpers.storage")
 ha_const = types.ModuleType("homeassistant.const")
 ha_exceptions = types.ModuleType("homeassistant.exceptions")
 voluptuous = types.ModuleType("voluptuous")
+
+
+class IssueSeverity:
+    WARNING = "warning"
+
+
+ha_issue_registry.IssueSeverity = IssueSeverity
+ha_issue_registry.async_create_issue = lambda *args, **kwargs: None
+ha_issue_registry.async_delete_issue = lambda *args, **kwargs: None
 
 
 class WaterHeaterEntity:
@@ -281,6 +291,7 @@ sys.modules.setdefault("homeassistant.components.water_heater", ha_water_heater)
 sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
 sys.modules.setdefault("homeassistant.helpers", ha_helpers)
+sys.modules.setdefault("homeassistant.helpers.issue_registry", ha_issue_registry)
 sys.modules.setdefault("homeassistant.helpers.selector", ha_selector)
 sys.modules.setdefault("homeassistant.helpers.event", ha_event)
 sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
@@ -1065,6 +1076,138 @@ class CoordinatorTests(unittest.TestCase):
 
         self.assertIs(client._mqtt, session)
         self.assertEqual(session.ensure_calls, 1)
+
+    def test_local_mqtt_auto_recovery_closes_owned_sessions_after_two_failures(self):
+        class Session:
+            def __init__(self):
+                self.closed = False
+
+            def diagnostic_snapshot(self):
+                return {
+                    "mqtt_connected": True,
+                    "last_host2portal_age_s": 30,
+                }
+
+            def close(self):
+                self.closed = True
+
+        class Bridge:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        client = RemkoSmartWebClient(
+            "user@example.com",
+            "secret",
+            "EG",
+            local_mqtt_host="broker.local",
+            local_mqtt_topic="V04P27/SMT001122334455",
+            local_mqtt_mode="portal_broker",
+        )
+        session = Session()
+        bridge = Bridge()
+        client._mqtt = session
+        client._mqtt_cloud_bridge = bridge
+        reconnects = []
+        client._ensure_mqtt = lambda: reconnects.append(True)
+
+        self.assertFalse(client._maybe_auto_recover_local_mqtt())
+        self.assertFalse(session.closed)
+        self.assertTrue(client._maybe_auto_recover_local_mqtt())
+
+        self.assertTrue(session.closed)
+        self.assertTrue(bridge.closed)
+        self.assertIsNone(client._mqtt)
+        self.assertIsNone(client._mqtt_cloud_bridge)
+        self.assertEqual(reconnects, [True])
+        self.assertEqual(client._mqtt_auto_recovery_count, 1)
+
+    def test_local_mqtt_auto_recovery_requires_fresh_stick_heartbeat(self):
+        class Session:
+            def diagnostic_snapshot(self):
+                return {
+                    "mqtt_connected": True,
+                    "last_host2portal_age_s": 181,
+                }
+
+        client = RemkoSmartWebClient(
+            "user@example.com",
+            "secret",
+            "EG",
+            local_mqtt_host="broker.local",
+            local_mqtt_topic="V04P27/SMT001122334455",
+            local_mqtt_mode="portal_broker",
+        )
+        client._mqtt = Session()
+
+        self.assertFalse(client._maybe_auto_recover_local_mqtt())
+        self.assertEqual(client._mqtt_readback_failure_count, 0)
+
+    def test_local_mqtt_auto_recovery_has_cooldown_and_success_reset(self):
+        client = RemkoSmartWebClient(
+            "user@example.com",
+            "secret",
+            "EG",
+            local_mqtt_host="broker.local",
+            local_mqtt_topic="V04P27/SMT001122334455",
+            local_mqtt_mode="portal_broker",
+        )
+        client._mqtt_diagnostic_snapshot = lambda: {
+            "mqtt_connected": True,
+            "last_host2portal_age_s": 10,
+        }
+        client._mqtt = types.SimpleNamespace(close=lambda: None)
+        client._ensure_mqtt = lambda: None
+
+        self.assertFalse(client._maybe_auto_recover_local_mqtt())
+        self.assertTrue(client._maybe_auto_recover_local_mqtt())
+        client._mqtt = types.SimpleNamespace(close=lambda: None)
+        self.assertFalse(client._maybe_auto_recover_local_mqtt())
+        self.assertFalse(client._maybe_auto_recover_local_mqtt())
+        self.assertEqual(client._mqtt_auto_recovery_count, 1)
+
+        client._mqtt_readback_failure_count = 1
+        client._mqtt_broker_repair_required = True
+        client._record_mqtt_readback_success()
+        self.assertEqual(client._mqtt_readback_failure_count, 0)
+        self.assertFalse(client.mqtt_broker_repair_required)
+
+    def test_coordinator_creates_and_clears_broker_repair_issue_on_transition(self):
+        client = types.SimpleNamespace(
+            device_name="EG",
+            mqtt_broker_repair_required=True,
+            set_mqtt_values_callback=lambda callback: None,
+        )
+        coordinator = RemkoSmartWebCoordinator(HomeAssistant(), client, "entry-1")
+        created = []
+        deleted = []
+        original_create = ha_issue_registry.async_create_issue
+        original_delete = ha_issue_registry.async_delete_issue
+        ha_issue_registry.async_create_issue = lambda *args, **kwargs: created.append(
+            (args, kwargs)
+        )
+        ha_issue_registry.async_delete_issue = lambda *args, **kwargs: deleted.append(
+            (args, kwargs)
+        )
+        try:
+            coordinator._sync_mqtt_repair_issue()
+            coordinator._sync_mqtt_repair_issue()
+            client.mqtt_broker_repair_required = False
+            coordinator._sync_mqtt_repair_issue()
+            coordinator._sync_mqtt_repair_issue()
+        finally:
+            ha_issue_registry.async_create_issue = original_create
+            ha_issue_registry.async_delete_issue = original_delete
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0][0][2], "local_mqtt_broker_entry-1")
+        self.assertEqual(
+            created[0][1]["translation_key"],
+            "local_mqtt_broker_repair",
+        )
+        self.assertEqual(len(deleted), 1)
 
     def test_mqtt_session_cloud_subscriptions_include_targeted_response_diagnostics(self):
         class FakeMqttClient:

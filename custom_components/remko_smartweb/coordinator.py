@@ -6,6 +6,7 @@ import logging
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 
 from .api import DeviceNotFound, RemkoSmartWebClient, SmartWebLoginError, UnsupportedPayload
@@ -26,6 +27,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         scan_interval: int | None = None,
     ) -> None:
         self.client = client
+        self._entry_id = entry_id
         interval = max(1, scan_interval or DEFAULT_SCAN_INTERVAL)
         self._base_interval = interval
         self._failure_count = 0
@@ -34,6 +36,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         self._field_value_update_times: dict[str, str] = {}
         self.last_successful_update: datetime | None = None
         self._pending_push_update = None
+        self._mqtt_repair_issue_created = False
         super().__init__(
             hass,
             _LOGGER,
@@ -100,6 +103,7 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
         self.last_successful_update = datetime.now(timezone.utc)
         self.async_set_updated_data(data)
         await self._async_save_last_known_data(data)
+        self._sync_mqtt_repair_issue()
         _LOGGER.debug(
             "Applied REMKO SmartWeb MQTT push update from %s",
             topic or "unknown topic",
@@ -133,9 +137,35 @@ class RemkoSmartWebCoordinator(DataUpdateCoordinator[dict]):
     def last_value_update_time(self, key: str) -> str | None:
         return self._field_value_update_times.get(key)
 
+    def _sync_mqtt_repair_issue(self) -> None:
+        """Expose external-broker action only after local recovery was exhausted."""
+        issue_id = f"local_mqtt_broker_{self._entry_id}"
+        if getattr(self.client, "mqtt_broker_repair_required", False):
+            if self._mqtt_repair_issue_created:
+                return
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="local_mqtt_broker_repair",
+                translation_placeholders={
+                    "device": str(getattr(self.client, "device_name", self._entry_id)),
+                },
+                persistent=True,
+            )
+            self._mqtt_repair_issue_created = True
+            return
+        if not self._mqtt_repair_issue_created:
+            return
+        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        self._mqtt_repair_issue_created = False
+
     async def _async_update_data(self) -> dict:
         try:
             data = await self.hass.async_add_executor_job(self.client.read_status)
+            self._sync_mqtt_repair_issue()
             if (
                 getattr(self.client, "_last_status_source", None) == "cached_last_status"
                 and isinstance(self.data, dict)

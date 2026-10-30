@@ -85,6 +85,10 @@ from .profiles import (
 
 _LOGGER = logging.getLogger(__name__)
 
+MQTT_AUTO_RECOVERY_FAILURE_THRESHOLD = 2
+MQTT_AUTO_RECOVERY_COOLDOWN_SECONDS = 15 * 60
+MQTT_AUTO_RECOVERY_HEARTBEAT_MAX_AGE_SECONDS = 180
+
 
 class RemkoSmartWebClient:
     def __init__(
@@ -157,6 +161,11 @@ class RemkoSmartWebClient:
         )
         self._local_mqtt_cloud_bridge_enabled = bool(local_mqtt_cloud_bridge)
         self._mqtt_values_callback: Callable[[dict, str], None] | None = None
+        self._mqtt_readback_failure_count = 0
+        self._mqtt_last_auto_recovery_monotonic: float | None = None
+        self._mqtt_last_auto_recovery_at: str | None = None
+        self._mqtt_auto_recovery_count = 0
+        self._mqtt_broker_repair_required = False
 
     @property
     def uses_local_mqtt(self) -> bool:
@@ -208,6 +217,70 @@ class RemkoSmartWebClient:
     ) -> None:
         """Register a callback for push-style MQTT value updates."""
         self._mqtt_values_callback = callback
+
+    @property
+    def mqtt_broker_repair_required(self) -> bool:
+        """Return whether integration-local recovery could not restore readback."""
+        return self._mqtt_broker_repair_required
+
+    def _record_mqtt_readback_success(self) -> None:
+        """Reset recovery tracking after a fresh, parseable device update."""
+        self._mqtt_readback_failure_count = 0
+        self._mqtt_broker_repair_required = False
+
+    def _maybe_auto_recover_local_mqtt(self) -> bool:
+        """Recreate owned MQTT sessions for the narrow stale-readback failure mode."""
+        if not self.uses_local_portal_broker:
+            return False
+        diagnostics = self._mqtt_diagnostic_snapshot()
+        if not isinstance(diagnostics, dict) or not diagnostics.get("mqtt_connected"):
+            self._mqtt_readback_failure_count = 0
+            return False
+        heartbeat_age = diagnostics.get("last_host2portal_age_s")
+        if (
+            not isinstance(heartbeat_age, (int, float))
+            or heartbeat_age > MQTT_AUTO_RECOVERY_HEARTBEAT_MAX_AGE_SECONDS
+        ):
+            self._mqtt_readback_failure_count = 0
+            return False
+        self._mqtt_readback_failure_count += 1
+        if self._mqtt_readback_failure_count < MQTT_AUTO_RECOVERY_FAILURE_THRESHOLD:
+            return False
+        now = time.monotonic()
+        last_recovery = self._mqtt_last_auto_recovery_monotonic
+        if (
+            last_recovery is not None
+            and now - last_recovery < MQTT_AUTO_RECOVERY_COOLDOWN_SECONDS
+        ):
+            return False
+
+        self._mqtt_last_auto_recovery_monotonic = now
+        self._mqtt_last_auto_recovery_at = datetime.now(UTC).isoformat()
+        self._mqtt_auto_recovery_count += 1
+        self._mqtt_readback_failure_count = 0
+        _LOGGER.warning(
+            "REMKO SmartWeb local MQTT for %r is connected and receiving fresh "
+            "stick heartbeats but no parseable readback; recreating integration-owned "
+            "MQTT sessions (attempt %s)",
+            self.device_name,
+            self._mqtt_auto_recovery_count,
+        )
+        if self._mqtt_cloud_bridge is not None:
+            self._mqtt_cloud_bridge.close()
+            self._mqtt_cloud_bridge = None
+        if self._mqtt is not None:
+            self._mqtt.close()
+            self._mqtt = None
+        try:
+            self._ensure_mqtt()
+        except Exception:
+            self._mqtt_broker_repair_required = True
+            _LOGGER.exception(
+                "REMKO SmartWeb MQTT auto-recovery could not reconnect %r",
+                self.device_name,
+            )
+            return False
+        return True
 
     def _mqtt_credentials_ready(self) -> bool:
         if not self.topic:
@@ -1133,6 +1206,7 @@ class RemkoSmartWebClient:
             merged = parsed_values
         self._last_status = merged
         self._last_status_source = source
+        self._record_mqtt_readback_success()
         return merged
 
     def _handle_mqtt_values_update(self, values: dict, topic: str) -> None:
@@ -1448,7 +1522,16 @@ class RemkoSmartWebClient:
     def _mqtt_diagnostic_snapshot(self):
         if self._mqtt is None:
             return None
-        return self._mqtt.diagnostic_snapshot()
+        snapshot = self._mqtt.diagnostic_snapshot()
+        snapshot.update(
+            {
+                "auto_recovery_count": self._mqtt_auto_recovery_count,
+                "last_auto_recovery_at": self._mqtt_last_auto_recovery_at,
+                "readback_failure_count": self._mqtt_readback_failure_count,
+                "broker_repair_required": self._mqtt_broker_repair_required,
+            }
+        )
+        return snapshot
 
     def _log_poll_summary(
         self,
@@ -1714,7 +1797,7 @@ class RemkoSmartWebClient:
         self._log_poll_summary("wpm_esp", parsed=parsed, values=values, duration=time.monotonic() - started)
         return parsed
 
-    def read_status(self) -> dict:
+    def read_status(self, *, _auto_recovery_attempted: bool = False) -> dict:
         started = time.monotonic()
         if self.uses_cloud_transport:
             self._ensure_login()
@@ -1755,10 +1838,12 @@ class RemkoSmartWebClient:
         if protocol_name == "rbw_modbus":
             parsed_rbw = self._read_status_rbw_modbus(started)
             if parsed_rbw:
+                self._record_mqtt_readback_success()
                 return parsed_rbw
         elif protocol_name == "kwt_modbus":
             parsed_kwt = self._read_status_kwt_modbus(started)
             if parsed_kwt:
+                self._record_mqtt_readback_success()
                 return parsed_kwt
         elif protocol_name == "wpm_modbus":
             # WPM/WKF SmartWeb values are the most reliable readback for both
@@ -1780,6 +1865,7 @@ class RemkoSmartWebClient:
                 return parsed_values
             parsed_wpm = self._read_status_wpm_modbus(started)
             if parsed_wpm:
+                self._record_mqtt_readback_success()
                 return parsed_wpm
 
         tx = _build_status_cmd()
@@ -1803,6 +1889,7 @@ class RemkoSmartWebClient:
             self._last_payload = parsed.get("_payload")
             self._last_status = parsed
             self._last_status_source = "esp_rx"
+            self._record_mqtt_readback_success()
             self._log_poll_summary("esp_rx", parsed=parsed, duration=time.monotonic() - started)
             return parsed
         self._log_unsupported_payload(
@@ -1834,6 +1921,20 @@ class RemkoSmartWebClient:
         )
 
         if self._local_mqtt_host and self._last_status:
+            if (
+                not _auto_recovery_attempted
+                and self._maybe_auto_recover_local_mqtt()
+            ):
+                recovered_status = self.read_status(_auto_recovery_attempted=True)
+                if self._last_status_source == "cached_last_status":
+                    self._mqtt_broker_repair_required = True
+                    _LOGGER.error(
+                        "REMKO SmartWeb MQTT auto-recovery for %r completed but "
+                        "fresh device readback is still missing; inspect or restart "
+                        "the external local MQTT broker",
+                        self.device_name,
+                    )
+                return recovered_status
             self._last_status_source = "cached_last_status"
             self._log_support_snapshot_once(
                 "status_unparseable_using_last_status",
