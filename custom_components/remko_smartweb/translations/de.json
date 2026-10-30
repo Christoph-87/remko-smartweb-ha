@@ -1,4 +1,10 @@
 {
+  "issues": {
+    "local_mqtt_broker_repair": {
+      "title": "Lokaler MQTT-Broker benötigt Aufmerksamkeit",
+      "description": "REMKO SmartWeb hat seine eigenen MQTT-Sitzungen für {device} neu aufgebaut, erhält aber weiterhin keinen frischen Geräte-Readback. Prüfe den externen lokalen MQTT-Broker und starte ihn bei Bedarf manuell neu. Die Integration startet externe Dienste nicht automatisch neu."
+    }
+  },
   "config": {
     "step": {
       "account": {
