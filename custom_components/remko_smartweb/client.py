@@ -1127,6 +1127,10 @@ class RemkoSmartWebClient:
         return merged
 
     def _handle_mqtt_values_update(self, values: dict, topic: str) -> None:
+        # Keep a value-ID diff in debug logs so unknown firmware-specific
+        # registers can be mapped through controlled changes in the official
+        # portal without guessing their semantics or writing unknown IDs.
+        self._log_mapping_snapshot("mqtt_push_values", values)
         parsed_values = self._parse_values_status_update(
             values,
             source="mqtt_push_values",

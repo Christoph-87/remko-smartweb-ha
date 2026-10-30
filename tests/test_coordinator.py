@@ -692,6 +692,26 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(coordinator._failure_count, 0)
         self.assertIsNotNone(coordinator.last_successful_update)
 
+    def test_mqtt_push_update_records_value_id_mapping_snapshot(self):
+        client = RemkoSmartWebClient.__new__(RemkoSmartWebClient)
+        client.profile = WpmDeviceProfile()
+        client._last_status = None
+        client._mqtt_values_callback = lambda *_args: None
+        snapshots = []
+        client._log_mapping_snapshot = lambda stage, values: snapshots.append(
+            (stage, values)
+        )
+        client._log_poll_summary = lambda *_args, **_kwargs: None
+        values = {"1082": "01C2", "5039": "0212"}
+
+        client._handle_mqtt_values_update(
+            values,
+            "V04P26/ABC/HOST2CLIENT",
+        )
+
+        self.assertEqual(snapshots, [("mqtt_push_values", values)])
+        self.assertEqual(client._last_status_source, "mqtt_push_values")
+
     def test_mqtt_session_ignores_client2host_value_echo_as_status(self):
         session = _MqttSession.__new__(_MqttSession)
         session._lock = threading.Lock()
