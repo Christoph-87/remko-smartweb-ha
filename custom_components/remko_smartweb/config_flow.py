@@ -316,7 +316,7 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {"value": entry_id, "label": label}
             for entry_id, label in existing.items()
         ]
-        options.append("new")
+        options.append({"value": "new", "label": "Use new credentials"})
         schema = vol.Schema({
             vol.Required("account"): SelectSelector(
                 SelectSelectorConfig(
