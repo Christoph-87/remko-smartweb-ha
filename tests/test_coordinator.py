@@ -37,6 +37,7 @@ ha_core = types.ModuleType("homeassistant.core")
 ha_config_entries = types.ModuleType("homeassistant.config_entries")
 ha_helpers = types.ModuleType("homeassistant.helpers")
 ha_issue_registry = types.ModuleType("homeassistant.helpers.issue_registry")
+ha_translation = types.ModuleType("homeassistant.helpers.translation")
 ha_selector = types.ModuleType("homeassistant.helpers.selector")
 ha_event = types.ModuleType("homeassistant.helpers.event")
 ha_entity = types.ModuleType("homeassistant.helpers.entity")
@@ -54,6 +55,14 @@ class IssueSeverity:
 ha_issue_registry.IssueSeverity = IssueSeverity
 ha_issue_registry.async_create_issue = lambda *args, **kwargs: None
 ha_issue_registry.async_delete_issue = lambda *args, **kwargs: None
+
+
+async def async_get_translations(*args, **kwargs):
+    return {}
+
+
+ha_translation.async_get_translations = async_get_translations
+ha_helpers.translation = ha_translation
 
 
 class WaterHeaterEntity:
@@ -171,6 +180,7 @@ class Store:
 class HomeAssistant:
     def __init__(self):
         self.scheduled_callbacks = []
+        self.config = types.SimpleNamespace(language="en")
         self.config_entries = types.SimpleNamespace(async_update_entry=self.async_update_entry)
         self.updated_entries = []
         self.loop = ImmediateLoop()
@@ -292,6 +302,7 @@ sys.modules.setdefault("homeassistant.core", ha_core)
 sys.modules.setdefault("homeassistant.config_entries", ha_config_entries)
 sys.modules.setdefault("homeassistant.helpers", ha_helpers)
 sys.modules.setdefault("homeassistant.helpers.issue_registry", ha_issue_registry)
+sys.modules.setdefault("homeassistant.helpers.translation", ha_translation)
 sys.modules.setdefault("homeassistant.helpers.selector", ha_selector)
 sys.modules.setdefault("homeassistant.helpers.event", ha_event)
 sys.modules.setdefault("homeassistant.helpers.entity", ha_entity)
