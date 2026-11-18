@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.3
+- Fix adding another device when an existing SmartWeb account is available by keeping account selector options type-consistent.
+- Preserve the translated “Use new credentials” selector label for the active Home Assistant language.
+
 ## v0.5.2
 - Detect repeated missing device readback only when the redirected local MQTT broker remains connected and fresh WiFi-stick heartbeats are still arriving.
 - Close and recreate integration-owned MQTT and cloud-bridge sessions with a 15-minute cooldown, then accept recovery only after fresh parseable device data arrives.
