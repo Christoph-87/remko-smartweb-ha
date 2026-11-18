@@ -1068,6 +1068,9 @@ class ProfileParsingTests(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertNotIn(label, source)
 
+        self.assertIn("translation.async_get_translations", source)
+        self.assertIn("selector.account.options.new", source)
+
     def test_config_flow_selector_options_are_plain_values(self):
         source = (COMPONENT_PATH / "config_flow.py").read_text(encoding="utf-8")
         self.assertNotIn("dict(DEVICE_KIND_OPTIONS)", source)

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.helpers import translation
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
@@ -316,7 +317,21 @@ class RemkoSmartWebConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {"value": entry_id, "label": label}
             for entry_id, label in existing.items()
         ]
-        options.append("new")
+        translations = await translation.async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "selector",
+            {DOMAIN},
+        )
+        options.append(
+            {
+                "value": "new",
+                "label": translations.get(
+                    f"component.{DOMAIN}.selector.account.options.new",
+                    "new",
+                ),
+            }
+        )
         schema = vol.Schema({
             vol.Required("account"): SelectSelector(
                 SelectSelectorConfig(
